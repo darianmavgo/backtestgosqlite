@@ -135,6 +135,15 @@ make ui
 # Open http://localhost:8080 in your browser
 ```
 
+### 7. Other Utilities
+```bash
+# Run Market Scanner (checks latest dates for signals)
+./bin/scan_check
+
+# Run Empirical Stop-Loss Probability Analysis (on DFEN)
+./bin/stop_prob
+```
+
 ---
 
 ## 🛠️ Writing Your Own Strategy in Go (Under 35 Lines)
@@ -257,6 +266,8 @@ backtestgosqlite/
 │   ├── backtest/main.go              # Single strategy backtester & tear sheet CLI
 │   ├── compare/main.go               # Concurrent multi-strategy benchmark suite
 │   ├── download/main.go              # Multi-source data loader (CSV, Yahoo, Stooq)
+│   ├── scan_check/main.go            # Market scanner & recent signal detection CLI
+│   ├── stop_prob/main.go             # Empirical stop-loss probability analysis CLI
 │   ├── ui/main.go                    # Local Web Dashboard UI Server
 │   └── server/main.go                # Automated execution HTTP server
 │

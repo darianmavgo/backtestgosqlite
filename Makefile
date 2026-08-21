@@ -25,6 +25,10 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/server ./cmd/server
 	@echo "Building cmd/compare..."
 	$(GOBUILD) -o $(BIN_DIR)/compare ./cmd/compare
+	@echo "Building cmd/scan_check..."
+	$(GOBUILD) -o $(BIN_DIR)/scan_check ./cmd/scan_check
+	@echo "Building cmd/stop_prob..."
+	$(GOBUILD) -o $(BIN_DIR)/stop_prob ./cmd/stop_prob
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
 
 tidy:
