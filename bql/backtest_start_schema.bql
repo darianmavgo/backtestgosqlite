@@ -1,0 +1,12 @@
+CREATE TABLE wc_2022.backtest_start
+(
+ idx integer,
+    Date DATETIME,
+    open NUMERIC(5, 2),
+    high NUMERIC(5, 2),
+    low NUMERIC(5, 2),
+    close NUMERIC(5, 2),
+    Adj_Close NUMERIC(5, 2),
+    volume NUMERIC(10,0),
+    symbol TEXT 
+    );

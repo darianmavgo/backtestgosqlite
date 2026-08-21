@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whitings Creek 20% in 10d Strategy Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a', 700: '#15803d' },
+            dark: { 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .badge-win { background-color: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+    .badge-mid { background-color: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4); }
+    .badge-low { background-color: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.4); }
+  </style>
+</head>
+<body class="bg-dark-950 text-slate-100 min-h-screen">
+  <!-- Navbar -->
+  <nav class="border-b border-slate-800 bg-dark-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center space-x-3">
+          <div class="w-8 h-8 rounded bg-gradient-to-tr from-green-500 to-emerald-400 flex items-center justify-center font-bold text-dark-950">WC</div>
+          <div>
+            <span class="font-bold text-lg text-white">Whitings Creek</span>
+            <span class="text-xs ml-2 px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">20% in 10d @ 90% Confidence</span>
+          </div>
+        </div>
+        <div class="flex items-center space-x-4">
+          <button onclick="switchTab('tab-leaderboard')" id="nav-leaderboard" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-white bg-slate-800">Strategy Leaderboard</button>
+          <button onclick="switchTab('tab-inspector')" id="nav-inspector" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-white">Signal & Chart Inspector</button>
+          <button onclick="switchTab('tab-cache')" id="nav-cache" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-white">Local Cache & SQL Console</button>
+          <button onclick="triggerBacktest()" id="btn-backtest" class="px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1">
+            <span>⚡ Run Backtest</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- KPI Header Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-dark-900 border border-slate-800 rounded-lg p-4">
+        <div class="text-xs text-slate-400 font-medium">Cached Local Bars</div>
+        <div class="text-2xl font-bold text-white mt-1" id="kpi-bars">95,682</div>
+        <div class="text-xs text-emerald-400 mt-1">across 100 instruments (2022–2026)</div>
+      </div>
+      <div class="bg-dark-900 border border-slate-800 rounded-lg p-4">
+        <div class="text-xs text-slate-400 font-medium">Top Win Rate Candidate (20% Target)</div>
+        <div class="text-2xl font-bold text-emerald-400 mt-1" id="kpi-top-winner">QLD (100%)</div>
+        <div class="text-xs text-slate-400 mt-1">6 entries, 6 wins (+21.4% avg gain)</div>
+      </div>
+      <div class="bg-dark-900 border border-slate-800 rounded-lg p-4">
+        <div class="text-xs text-slate-400 font-medium">High Probability Candidates (&ge;60% Win)</div>
+        <div class="text-2xl font-bold text-white mt-1" id="kpi-count-high">12 Symbols</div>
+        <div class="text-xs text-slate-400 mt-1">EURL, BNKU, TQQQ, WEBL, SOXL...</div>
+      </div>
+      <div class="bg-dark-900 border border-slate-800 rounded-lg p-4">
+        <div class="text-xs text-slate-400 font-medium">Strategy Target / Bracket Floor</div>
+        <div class="text-2xl font-bold text-white mt-1">+20% / -7%</div>
+        <div class="text-xs text-slate-400 mt-1">10 trading days max hold</div>
+      </div>
+    </div>
+
+    <!-- TAB 1: Strategy Leaderboard -->
+    <div id="tab-leaderboard" class="tab-content">
+      <div class="bg-dark-900 border border-slate-800 rounded-lg overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <h2 class="font-semibold text-lg text-white">Historical Signals & Results Leaderboard</h2>
+            <span id="summary-count" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300">Loading...</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <input type="text" id="filter-search" oninput="renderSummaryTable()" placeholder="Search symbol..." class="bg-slate-950 border border-slate-700 text-xs rounded px-3 py-1.5 text-white focus:outline-none focus:border-emerald-500">
+            <select id="filter-category" onchange="renderSummaryTable()" class="bg-slate-950 border border-slate-700 text-xs rounded px-3 py-1.5 text-white">
+              <option value="all">All Categories</option>
+              <option value="90">90%+ Win Rate (20% Target)</option>
+              <option value="60">60%+ Win Rate</option>
+              <option value="Leveraged ETF">Leveraged ETFs</option>
+              <option value="Stock / Equity">Stocks & Equities</option>
+            </select>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-950 text-xs uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Symbol</th>
+                <th class="py-3 px-4">Category</th>
+                <th class="py-3 px-4 text-center">Entries</th>
+                <th class="py-3 px-4 text-center">3% Win Rate</th>
+                <th class="py-3 px-4 text-center">5% Win Rate</th>
+                <th class="py-3 px-4 text-center">20% in 10d Wins</th>
+                <th class="py-3 px-4 text-center">20% Win Rate</th>
+                <th class="py-3 px-4 text-right">Avg Max 10d Gain</th>
+                <th class="py-3 px-4 text-right">Peak 10d Gain</th>
+                <th class="py-3 px-4 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="summary-table-body" class="divide-y divide-slate-800/60 font-mono text-xs">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Signal & Chart Inspector -->
+    <div id="tab-inspector" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left: Symbol Selector & Signals List -->
+        <div class="bg-dark-900 border border-slate-800 rounded-lg p-4 flex flex-col h-[700px]">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="font-semibold text-white">Select Instrument</h3>
+            <select id="inspector-symbol-select" onchange="loadSymbolInspector(this.value)" class="bg-slate-950 border border-slate-700 text-xs rounded px-2.5 py-1 text-white font-mono">
+              <!-- Options populated dynamically -->
+            </select>
+          </div>
+
+          <div class="mt-4 flex-1 overflow-y-auto pr-1">
+            <div class="text-xs text-slate-400 font-sans mb-2 font-medium">Triggered Signal History (Entry = 1)</div>
+            <div id="signals-timeline-list" class="space-y-2.5">
+              <!-- Signal cards rendered dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Interactive Chart & Stats -->
+        <div class="lg:col-span-2 bg-dark-900 border border-slate-800 rounded-lg p-4 flex flex-col h-[700px]">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div>
+              <span id="chart-symbol-title" class="text-lg font-bold text-white font-mono">QLD</span>
+              <span id="chart-symbol-badge" class="text-xs ml-2 px-2 py-0.5 rounded badge-win">100% 20-in-10 Rate</span>
+            </div>
+            <div class="text-xs text-slate-400" id="chart-range-info">Loading bars...</div>
+          </div>
+
+          <div class="flex-1 mt-4 relative">
+            <canvas id="priceChart"></canvas>
+          </div>
+
+          <!-- Bottom Stat Strip -->
+          <div class="grid grid-cols-4 gap-2 pt-3 border-t border-slate-800 text-center font-mono text-xs">
+            <div class="bg-slate-950 p-2 rounded">
+              <span class="text-slate-500 block text-[10px]">TOTAL ENTRIES</span>
+              <span id="stat-entries" class="font-bold text-white">-</span>
+            </div>
+            <div class="bg-slate-950 p-2 rounded">
+              <span class="text-slate-500 block text-[10px]">20% WIN RATE</span>
+              <span id="stat-win20" class="font-bold text-emerald-400">-</span>
+            </div>
+            <div class="bg-slate-950 p-2 rounded">
+              <span class="text-slate-500 block text-[10px]">AVG MAX GAIN</span>
+              <span id="stat-avg-gain" class="font-bold text-white">-</span>
+            </div>
+            <div class="bg-slate-950 p-2 rounded">
+              <span class="text-slate-500 block text-[10px]">PEAK 10D SURGE</span>
+              <span id="stat-peak-gain" class="font-bold text-emerald-400">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Local Cache & SQL Console -->
+    <div id="tab-cache" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left: Cached Databases Overview -->
+        <div class="bg-dark-900 border border-slate-800 rounded-lg p-4">
+          <h3 class="font-semibold text-white mb-3">Local SQLite Database Cache</h3>
+          <div id="databases-list" class="space-y-3">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Right: Interactive SQL Query Console -->
+        <div class="lg:col-span-2 bg-dark-900 border border-slate-800 rounded-lg p-4 flex flex-col h-[700px]">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-white">Interactive SQL Console</h3>
+            <div class="flex items-center space-x-2">
+              <select id="query-db-select" class="bg-slate-950 border border-slate-700 text-xs rounded px-2.5 py-1 text-white font-mono">
+                <option value="wc_master_backtest.db">wc_master_backtest.db (Master)</option>
+                <option value="settings.db">settings.db (Config & Signals)</option>
+              </select>
+              <button onclick="runCustomQuery()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold">Execute SQL</button>
+            </div>
+          </div>
+
+          <textarea id="sql-query-input" rows="4" class="w-full bg-slate-950 border border-slate-800 rounded p-3 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 resize-none">SELECT symbol, entries, wins_20_10d, win20_10d_rate, round(avg_max_gain_10d, 4) as avg_gain 
+FROM wc_summary 
+WHERE entries >= 5 
+ORDER BY win20_10d_rate DESC;</textarea>
+
+          <div class="mt-4 flex-1 overflow-auto border border-slate-800 rounded bg-slate-950">
+            <div id="query-results-container" class="p-2 text-xs font-mono text-slate-300">
+              Click "Execute SQL" to run queries directly against the local SQLite databases.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let summaryData = [];
+    let currentChart = null;
+
+    async function init() {
+      await loadSummary();
+      await loadDatabases();
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.add('hidden'); });
+      document.querySelectorAll('.nav-btn').forEach(function(el) {
+        el.classList.remove('bg-slate-800', 'text-white');
+        el.classList.add('text-slate-400');
+      });
+      document.getElementById(tabId).classList.remove('hidden');
+      var btnMap = {
+        'tab-leaderboard': 'nav-leaderboard',
+        'tab-inspector': 'nav-inspector',
+        'tab-cache': 'nav-cache'
+      };
+      document.getElementById(btnMap[tabId]).classList.add('bg-slate-800', 'text-white');
+      document.getElementById(btnMap[tabId]).classList.remove('text-slate-400');
+    }
+
+    async function loadSummary() {
+      try {
+        const res = await fetch('/api/summary');
+        summaryData = await res.json();
+        renderSummaryTable();
+        populateInspectorSelect();
+      } catch (err) {
+        console.error("Failed to load summary:", err);
+      }
+    }
+
+    function renderSummaryTable() {
+      const search = document.getElementById('filter-search').value.toUpperCase();
+      const cat = document.getElementById('filter-category').value;
+      const tbody = document.getElementById('summary-table-body');
+      tbody.innerHTML = '';
+
+      let filtered = summaryData.filter(function(row) {
+        if (search && !row.symbol.includes(search)) return false;
+        if (cat === '90' && row.win20_10d_rate < 0.90) return false;
+        if (cat === '60' && row.win20_10d_rate < 0.60) return false;
+        if (cat === 'Leveraged ETF' && row.category !== 'Leveraged ETF') return false;
+        if (cat === 'Stock / Equity' && row.category !== 'Stock / Equity') return false;
+        return true;
+      });
+
+      document.getElementById('summary-count').innerText = filtered.length + ' instruments';
+
+      filtered.forEach(function(row) {
+        const win20Pct = (row.win20_10d_rate * 100).toFixed(1);
+        const win3Pct = ((row.sum_win3 / row.entries) * 100).toFixed(1);
+        const win5Pct = ((row.sum_win5 / row.entries) * 100).toFixed(1);
+        const avgGain = (row.avg_max_gain_10d * 100).toFixed(1);
+        const peakGain = (row.max_max_gain_10d * 100).toFixed(1);
+
+        let badgeClass = 'badge-low';
+        if (row.win20_10d_rate >= 0.90) badgeClass = 'badge-win';
+        else if (row.win20_10d_rate >= 0.60) badgeClass = 'badge-mid';
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-900/60 transition';
+        tr.innerHTML = `
+          <td class="py-3 px-4 font-bold text-white flex items-center space-x-2">
+            <span>` + row.symbol + `</span>
+          </td>
+          <td class="py-3 px-4 text-slate-400 font-sans text-[11px]">` + row.category + `</td>
+          <td class="py-3 px-4 text-center font-bold">` + row.entries + `</td>
+          <td class="py-3 px-4 text-center text-slate-300">` + win3Pct + `%</td>
+          <td class="py-3 px-4 text-center text-slate-300">` + win5Pct + `%</td>
+          <td class="py-3 px-4 text-center font-bold text-white">` + row.wins_20_10d + `</td>
+          <td class="py-3 px-4 text-center">
+            <span class="px-2 py-0.5 rounded text-[11px] ` + badgeClass + `">` + win20Pct + `%</span>
+          </td>
+          <td class="py-3 px-4 text-right text-emerald-400 font-semibold">+` + avgGain + `%</td>
+          <td class="py-3 px-4 text-right text-slate-300">+` + peakGain + `%</td>
+          <td class="py-3 px-4 text-center">
+            <button onclick="inspectSymbol('` + row.symbol + `')" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-sans">Inspect &rarr;</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function populateInspectorSelect() {
+      const select = document.getElementById('inspector-symbol-select');
+      select.innerHTML = '';
+      summaryData.forEach(function(s) {
+        const opt = document.createElement('option');
+        opt.value = s.symbol;
+        opt.innerText = s.symbol + ' (' + (s.win20_10d_rate * 100).toFixed(0) + '% 20-in-10d)';
+        select.appendChild(opt);
+      });
+      if (summaryData.length > 0) {
+        loadSymbolInspector(summaryData[0].symbol);
+      }
+    }
+
+    function inspectSymbol(sym) {
+      document.getElementById('inspector-symbol-select').value = sym;
+      switchTab('tab-inspector');
+      loadSymbolInspector(sym);
+    }
+
+    async function loadSymbolInspector(sym) {
+      try {
+        const res = await fetch('/api/symbol?symbol=' + sym);
+        const data = await res.json();
+        renderInspector(data);
+      } catch (err) {
+        console.error("Failed to load symbol details:", err);
+      }
+    }
+
+    function renderInspector(data) {
+      document.getElementById('chart-symbol-title').innerText = data.symbol;
+      const summ = summaryData.find(function(s) { return s.symbol === data.symbol; });
+      if (summ) {
+        const rate = (summ.win20_10d_rate * 100).toFixed(1);
+        const badge = document.getElementById('chart-symbol-badge');
+        badge.innerText = rate + '% Win Rate (20% in 10d)';
+        badge.className = 'text-xs ml-2 px-2 py-0.5 rounded ' + (summ.win20_10d_rate >= 0.90 ? 'badge-win' : summ.win20_10d_rate >= 0.60 ? 'badge-mid' : 'badge-low');
+        document.getElementById('stat-entries').innerText = summ.entries;
+        document.getElementById('stat-win20').innerText = rate + '% (' + summ.wins_20_10d + '/' + summ.entries + ')';
+        document.getElementById('stat-avg-gain').innerText = '+' + (summ.avg_max_gain_10d * 100).toFixed(1) + '%';
+        document.getElementById('stat-peak-gain').innerText = '+' + (summ.max_max_gain_10d * 100).toFixed(1) + '%';
+      }
+
+      if (data.bars && data.bars.length > 0) {
+        document.getElementById('chart-range-info').innerText = data.bars[0].date + ' to ' + data.bars[data.bars.length - 1].date + ' (' + data.bars.length + ' bars)';
+      }
+
+      // Render signal timeline cards
+      const list = document.getElementById('signals-timeline-list');
+      list.innerHTML = '';
+      data.signals.forEach(function(sig, idx) {
+        const gainPct = (sig.max_gain_10d * 100).toFixed(1);
+        const won20 = sig.win20_10d === 1;
+        const card = document.createElement('div');
+        card.className = 'p-3 rounded border text-xs font-mono ' + (won20 ? 'bg-emerald-950/20 border-emerald-800/50' : 'bg-slate-950 border-slate-800');
+        card.innerHTML = `
+          <div class="flex items-center justify-between font-bold">
+            <span class="text-white">Signal #` + (idx + 1) + ` &bull; ` + sig.date + `</span>
+            <span class="` + (won20 ? 'text-emerald-400' : 'text-slate-400') + `">` + (won20 ? '✅ WON +20%' : '❌ Missed +20%') + `</span>
+          </div>
+          <div class="mt-1 text-[11px] text-slate-300 flex justify-between">
+            <span>Entry Limit: <b>$` + sig.buylimit.toFixed(2) + `</b></span>
+            <span>10d Max High: <b>$` + sig.maxhigh10.toFixed(2) + `</b></span>
+          </div>
+          <div class="mt-1 text-[11px] flex justify-between">
+            <span class="text-slate-400">10-Day Peak Surge:</span>
+            <span class="font-bold ` + (won20 ? 'text-emerald-400' : 'text-slate-300') + `">+` + gainPct + `%</span>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+
+      // Render Price Chart with ChartJS
+      renderChart(data);
+    }
+
+    function renderChart(data) {
+      const ctx = document.getElementById('priceChart').getContext('2d');
+      if (currentChart) {
+        currentChart.destroy();
+      }
+
+      const labels = data.bars.map(function(b) { return b.date; });
+      const closePrices = data.bars.map(function(b) { return b.close; });
+
+      // Build signal entry markers
+      const signalMap = {};
+      data.signals.forEach(function(s) { signalMap[s.date] = s; });
+
+      const entryPoints = data.bars.map(function(b) {
+        if (signalMap[b.date]) {
+          return b.close;
+        }
+        return null;
+      });
+
+      currentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Close Price ($)',
+              data: closePrices,
+              borderColor: '#38bdf8',
+              borderWidth: 1.5,
+              pointRadius: 0,
+              fill: false,
+              tension: 0.1
+            },
+            {
+              label: 'WC Buy Signal Entry',
+              data: entryPoints,
+              borderColor: '#22c55e',
+              backgroundColor: '#22c55e',
+              pointRadius: 6,
+              pointHoverRadius: 8,
+              showLine: false,
+              pointStyle: 'triangle'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                afterLabel: function(context) {
+                  const date = labels[context.dataIndex];
+                  if (signalMap[date]) {
+                    const s = signalMap[date];
+                    return '⚡ Signal Entry! 10d Peak Gain: +' + (s.max_gain_10d * 100).toFixed(1) + '% ' + (s.win20_10d ? '(Won 20%)' : '');
+                  }
+                  return '';
+                }
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { color: '#64748b', maxTicksLimit: 12 } },
+            y: { grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { color: '#64748b' } }
+          }
+        }
+      });
+    }
+
+    async function loadDatabases() {
+      try {
+        const res = await fetch('/api/databases');
+        const list = await res.json();
+        const container = document.getElementById('databases-list');
+        container.innerHTML = '';
+        list.forEach(function(db) {
+          const card = document.createElement('div');
+          card.className = 'p-3 rounded border border-slate-800 bg-slate-950 text-xs font-mono';
+          card.innerHTML = `
+            <div class="flex items-center justify-between font-bold text-white">
+              <span>💾 ` + db.name + `</span>
+              <span class="text-emerald-400 text-[11px]">` + db.size_mb + `</span>
+            </div>
+            <div class="mt-2 text-slate-400 space-y-0.5 text-[11px]">
+              <div>Total Daily Bars: <b class="text-slate-200">` + db.bars_count.toLocaleString() + `</b></div>
+              <div>Symbols Cached: <b class="text-slate-200">` + db.symbol_count + `</b></div>
+              <div>Date Range: <b class="text-slate-200">` + (db.start_date || 'N/A') + ` &rarr; ` + (db.end_date || 'N/A') + `</b></div>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (err) {
+        console.error("Failed to load database info:", err);
+      }
+    }
+
+    async function runCustomQuery() {
+      const q = document.getElementById('sql-query-input').value;
+      const targetDb = document.getElementById('query-db-select').value;
+      const container = document.getElementById('query-results-container');
+      container.innerHTML = '<div class="text-slate-400">Executing query...</div>';
+
+      try {
+        const res = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ database: targetDb, query: q })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          container.innerHTML = '<div class="text-rose-400 font-sans p-2">Error: ' + errText + '</div>';
+          return;
+        }
+        const data = await res.json();
+        if (!data.rows || data.rows.length === 0) {
+          container.innerHTML = '<div class="text-slate-400 p-2">Query returned 0 rows.</div>';
+          return;
+        }
+
+        let tableHtml = '<table class="w-full text-left text-xs border-collapse"><thead><tr class="bg-slate-900 border-b border-slate-800">';
+        data.columns.forEach(function(col) {
+          tableHtml += '<th class="p-2 text-slate-400 uppercase font-sans text-[10px]">' + col + '</th>';
+        });
+        tableHtml += '</tr></thead><tbody class="divide-y divide-slate-800/40">';
+        data.rows.forEach(function(r) {
+          tableHtml += '<tr class="hover:bg-slate-900/40">';
+          data.columns.forEach(function(col) {
+            tableHtml += '<td class="p-2 text-slate-200">' + (r[col] !== undefined && r[col] !== null ? r[col] : 'NULL') + '</td>';
+          });
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table>';
+        container.innerHTML = tableHtml;
+      } catch (err) {
+        container.innerHTML = '<div class="text-rose-400 p-2 font-sans">Execution error: ' + err + '</div>';
+      }
+    }
+
+    async function triggerBacktest() {
+      const btn = document.getElementById('btn-backtest');
+      btn.innerText = '⏳ Running...';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/backtest/run', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message);
+        checkBacktestStatus();
+      } catch (err) {
+        alert('Failed to trigger backtest: ' + err);
+        btn.innerText = '⚡ Run Backtest';
+        btn.disabled = false;
+      }
+    }
+
+    async function checkBacktestStatus() {
+      const interval = setInterval(async function() {
+        const res = await fetch('/api/backtest/status');
+        const st = await res.json();
+        if (!st.running) {
+          clearInterval(interval);
+          document.getElementById('btn-backtest').innerText = '⚡ Run Backtest';
+          document.getElementById('btn-backtest').disabled = false;
+          await loadSummary();
+          await loadDatabases();
+        }
+      }, 3000);
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
