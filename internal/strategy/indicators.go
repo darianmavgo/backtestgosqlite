@@ -6,6 +6,12 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/internal/models"
 )
 
+// NOTE [Architectural Boundary]:
+// As documented in docs/SQLvsGOModels.md, rolling-window calculations and signal screening
+// natively belong in SQLite SQL pipelines (sql/strategies/) for maximum throughput, inspectability,
+// and zero-allocation performance. The pure Go indicator functions below are retained as
+// in-memory references and testing utilities.
+
 // CalcSMA calculates the Simple Moving Average for a given period.
 func CalcSMA(bars []models.Bar, period int) []float64 {
 	sma := make([]float64, len(bars))

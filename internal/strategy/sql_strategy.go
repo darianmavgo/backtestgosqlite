@@ -94,6 +94,7 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 		for _, sqlFile := range sqlFiles {
 			content, err := os.ReadFile(sqlFile)
 			if err != nil {
+				log.Printf("[sql_strategy %s] failed to read %s: %v", s.id, sqlFile, err)
 				continue
 			}
 			queries := strings.Split(string(content), ";")
@@ -102,18 +103,25 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 				if trimmed == "" {
 					continue
 				}
-				_, _ = db.Exec(trimmed)
+				if _, err := db.Exec(trimmed); err != nil {
+					log.Printf("[sql_strategy %s] SQL exec error in %s: %v (query: %.80s...)", s.id, filepath.Base(sqlFile), err, trimmed)
+				}
 			}
 		}
 	}
 
 	// Extract generated entry signals from any available signal table
 	var signals []models.Signal
+	baseDir := filepath.Base(s.pipelineDir)
+	cleanID := strings.TrimSuffix(strings.ReplaceAll(s.id, "-", "_"), "_sql")
 	tableCandidates := []string{
+		cleanID + "_signals",
+		baseDir + "_signals",
 		"rsi_oversold_signals",
 		"wc_backtest_details",
 		"wc_buy_signal_slice",
 		"entry",
+		"signals",
 	}
 
 	for _, tbl := range tableCandidates {
@@ -144,7 +152,12 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 }
 
 // AutoRegisterSQLStrategies scans the sql/strategies directory and registers any SQL pipeline folders.
-func AutoRegisterSQLStrategies(rootDir string) {
+func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
+	dbPath := "data/sample_stocks.db"
+	if len(defaultDBPath) > 0 && defaultDBPath[0] != "" {
+		dbPath = defaultDBPath[0]
+	}
+
 	stratDir := filepath.Join(rootDir, "sql", "strategies")
 	entries, err := os.ReadDir(stratDir)
 	if err != nil {
@@ -159,7 +172,7 @@ func AutoRegisterSQLStrategies(rootDir string) {
 			desc := fmt.Sprintf("SQL pipeline executed from sql/strategies/%s", dirName)
 			pipelinePath := filepath.Join(stratDir, dirName)
 
-			NewSQLPipelineStrategy(id, name, desc, pipelinePath, "data/wc_master_backtest.db", StrategyConfig{
+			cfg := StrategyConfig{
 				ID:                 id,
 				Name:               name,
 				Description:        desc,
@@ -170,7 +183,31 @@ func AutoRegisterSQLStrategies(rootDir string) {
 				AllocationPct:      0.20,
 				SlippagePct:        0.0005,
 				CommissionPerShare: 0.0001,
-			})
+			}
+
+			// Specific default config tuning for recognized strategies
+			switch dirName {
+			case "donchian_breakout":
+				cfg.TargetPct = 1.25
+				cfg.StopLossPct = 0.92
+				cfg.UseTrailingStop = true
+				cfg.TrailingStopPct = 0.06
+				cfg.HoldingWindow = 20
+			case "bb_capitulation":
+				cfg.TargetPct = 1.18
+				cfg.StopLossPct = 0.93
+				cfg.HoldingWindow = 10
+			case "rsi2_trend":
+				cfg.TargetPct = 1.10
+				cfg.StopLossPct = 0.94
+				cfg.HoldingWindow = 6
+			case "macd_crossover":
+				cfg.TargetPct = 1.15
+				cfg.StopLossPct = 0.95
+				cfg.HoldingWindow = 12
+			}
+
+			NewSQLPipelineStrategy(id, name, desc, pipelinePath, dbPath, cfg)
 		}
 	}
 }

@@ -127,7 +127,7 @@ func main() {
 	flag.Parse()
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
-	strategy.AutoRegisterSQLStrategies(".")
+	strategy.AutoRegisterSQLStrategies(".", *targetDb)
 
 	if *listFlag {
 		listStrategies()
@@ -137,6 +137,9 @@ func main() {
 	strat, exists := strategy.Get(*strategyType)
 	if !exists {
 		log.Fatalf("Strategy '%s' not found in registry. Run with -list to view available strategies.", *strategyType)
+	}
+	if sqlStrat, ok := strat.(*strategy.SQLPipelineStrategy); ok {
+		sqlStrat.SetDBPath(*targetDb)
 	}
 
 	cfg := strat.DefaultConfig()
@@ -192,6 +195,13 @@ func main() {
 
 	sim := simulator.NewPortfolioSimulator(cfg, *capital)
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
+
+	// Persist completed trades to SQLite table
+	if err := storage.SaveTrades(db, strat.ID(), trades); err != nil {
+		log.Printf("Warning: Failed to save simulation trades to SQLite: %v", err)
+	} else if len(trades) > 0 {
+		fmt.Printf("💾 Successfully persisted %d completed trades to SQLite 'trades' table.\n", len(trades))
+	}
 
 	printPerformanceTearSheet(strat.Name(), report)
 

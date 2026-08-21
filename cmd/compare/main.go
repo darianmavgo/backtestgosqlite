@@ -33,7 +33,13 @@ func main() {
 	flag.Parse()
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
-	strategy.AutoRegisterSQLStrategies(".")
+	strategy.AutoRegisterSQLStrategies(".", *targetDb)
+
+	for _, s := range strategy.List() {
+		if sqlStrat, ok := s.(*strategy.SQLPipelineStrategy); ok {
+			sqlStrat.SetDBPath(*targetDb)
+		}
+	}
 
 	db, err := storage.OpenSQLite(*targetDb)
 	if err != nil {

@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"sort"
-
 	"github.com/darianmavgo/backtestgosqlite/internal/models"
 )
 
@@ -45,45 +43,10 @@ func (s *WC4DayHoldStrategy) Validate() error {
 }
 
 func (s *WC4DayHoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var signals []models.Signal
-
-	for sym, bars := range barsBySymbol {
-		if len(bars) < 15 {
-			continue
-		}
-		for i := 12; i < len(bars); i++ {
-			// Trailing minimum low from Day -3 to Day -12
-			minLow := bars[i-3].Low
-			for j := 4; j <= 12; j++ {
-				if bars[i-j].Low < minLow {
-					minLow = bars[i-j].Low
-				}
-			}
-
-			// Cliff condition: Close < 0.90 * minLow
-			if bars[i].Close < 0.90*minLow {
-				signals = append(signals, models.Signal{
-					Idx:      bars[i].Idx,
-					Symbol:   sym,
-					Date:     bars[i].Date,
-					Open:     bars[i].Open,
-					High:     bars[i].High,
-					Low:      bars[i].Low,
-					Close:    bars[i].Close,
-					Volume:   bars[i].Volume,
-					BuyLimit: bars[i].Close,
-					Entry:    1,
-				})
-			}
-		}
+	// Delegate signal generation directly to the canonical SQLite pipeline
+	if sqlStrat, exists := Get("whitings_creek-sql"); exists {
+		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-
-	sort.Slice(signals, func(i, j int) bool {
-		if signals[i].Date == signals[j].Date {
-			return signals[i].Symbol < signals[j].Symbol
-		}
-		return signals[i].Date < signals[j].Date
-	})
-
-	return signals
+	pipe := NewSQLPipelineStrategy("wc-pipeline", s.Name(), s.Description(), "sql/strategies/whitings_creek", "data/wc_master_backtest.db", s.DefaultConfig())
+	return pipe.GenerateSignals(barsBySymbol)
 }

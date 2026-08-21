@@ -4,12 +4,26 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/internal/models"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var validTableRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+
+// ValidateTableName ensures the table name contains only safe SQL identifier characters.
+func ValidateTableName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if !validTableRegex.MatchString(name) {
+		return fmt.Errorf("invalid table name %q: must contain only alphanumeric characters and underscores", name)
+	}
+	return nil
+}
 
 // OpenSQLite opens or creates a SQLite database connection with optimized PRAGMAs.
 func OpenSQLite(dbPath string) (*sqlx.DB, error) {
@@ -100,6 +114,9 @@ func EnsureBarTable(db *sqlx.DB, tableName string) error {
 	if tableName == "" {
 		tableName = "backtest_start"
 	}
+	if err := ValidateTableName(tableName); err != nil {
+		return err
+	}
 	schema := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			idx INTEGER,
@@ -127,6 +144,9 @@ func UpsertBars(db *sqlx.DB, tableName string, bars []models.Bar) error {
 	}
 	if tableName == "" {
 		tableName = "backtest_start"
+	}
+	if err := ValidateTableName(tableName); err != nil {
+		return err
 	}
 	if err := EnsureBarTable(db, tableName); err != nil {
 		return err
@@ -174,6 +194,9 @@ func UpsertBars(db *sqlx.DB, tableName string, bars []models.Bar) error {
 func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDate string) (map[string][]models.Bar, []string, error) {
 	if tableName == "" {
 		tableName = "backtest_start"
+	}
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, nil, err
 	}
 
 	query := fmt.Sprintf(`
@@ -228,6 +251,9 @@ func FetchBenchmarkBars(db *sqlx.DB, tableName, benchmarkSymbol string) (map[str
 	if tableName == "" {
 		tableName = "backtest_start"
 	}
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
+	}
 	if benchmarkSymbol == "" {
 		benchmarkSymbol = "SPY"
 	}
@@ -255,4 +281,149 @@ func FetchBenchmarkBars(db *sqlx.DB, tableName, benchmarkSymbol string) (map[str
 // FetchAllBarsChronological loads all historical bars indexed by symbol and date.
 func FetchAllBarsChronological(db *sqlx.DB) (map[string][]models.Bar, []string, error) {
 	return FetchBars(db, "backtest_start", nil, "", "")
+}
+
+// EnsureTradeTable creates the institutional trades table schema.
+func EnsureTradeTable(db *sqlx.DB) error {
+	schema := `
+		CREATE TABLE IF NOT EXISTS trades (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			strategy_id TEXT,
+			symbol TEXT,
+			order_type TEXT,
+			entry_idx INTEGER,
+			entry_date TEXT,
+			entry_price REAL,
+			target_price REAL,
+			stop_loss_price REAL,
+			exit_date TEXT,
+			exit_price REAL,
+			exit_reason TEXT,
+			shares INTEGER,
+			invested_capital REAL,
+			gross_pnl REAL,
+			net_pnl REAL,
+			return_pct REAL,
+			hold_days INTEGER,
+			commission_paid REAL,
+			mae_pct REAL,
+			mfe_pct REAL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_trades_strat_sym ON trades(strategy_id, symbol, entry_date);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
+// SaveTrades persists completed simulation trades to the database.
+func SaveTrades(db *sqlx.DB, strategyID string, trades []models.Trade) error {
+	if len(trades) == 0 {
+		return nil
+	}
+	if err := EnsureTradeTable(db); err != nil {
+		return err
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO trades (
+			strategy_id, symbol, order_type, entry_idx, entry_date, entry_price,
+			target_price, stop_loss_price, exit_date, exit_price, exit_reason,
+			shares, invested_capital, gross_pnl, net_pnl, return_pct, hold_days,
+			commission_paid, mae_pct, mfe_pct
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, t := range trades {
+		_, err := stmt.Exec(
+			strategyID, t.Symbol, t.OrderType, t.EntryIdx, t.EntryDate, t.EntryPrice,
+			t.TargetPrice, t.StopLossPrice, t.ExitDate, t.ExitPrice, string(t.ExitReason),
+			t.Shares, t.InvestedCapital, t.GrossPnL, t.NetPnL, t.ReturnPct, t.HoldDays,
+			t.CommissionPaid, t.MaxAdverseExcursion, t.MaxFavorableExcursion,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// FetchTradeSummaryStats computes core trade performance aggregates natively in SQLite.
+func FetchTradeSummaryStats(db *sqlx.DB, strategyID string) (models.PerformanceReport, error) {
+	var report models.PerformanceReport
+	if err := EnsureTradeTable(db); err != nil {
+		return report, err
+	}
+
+	query := `
+		SELECT 
+			COUNT(*) AS total_trades,
+			COALESCE(SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END), 0) AS winning_trades,
+			COALESCE(SUM(CASE WHEN net_pnl <= 0 THEN 1 ELSE 0 END), 0) AS losing_trades,
+			COALESCE(ROUND(CAST(SUM(CASE WHEN net_pnl > 0 THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0), 4), 0) AS win_rate,
+			COALESCE(ROUND(SUM(net_pnl), 2), 0) AS net_profit,
+			COALESCE(ROUND(SUM(commission_paid), 2), 0) AS total_commission_paid,
+			COALESCE(ROUND(AVG(hold_days), 1), 0) AS avg_holding_days,
+			COALESCE(ROUND(AVG(return_pct), 4), 0) AS avg_trade_return_pct,
+			COALESCE(ROUND(AVG(CASE WHEN net_pnl > 0 THEN net_pnl ELSE NULL END), 2), 0) AS avg_win_amount,
+			COALESCE(ROUND(AVG(CASE WHEN net_pnl < 0 THEN ABS(net_pnl) ELSE NULL END), 2), 0) AS avg_loss_amount,
+			COALESCE(ROUND(SUM(CASE WHEN net_pnl > 0 THEN net_pnl ELSE 0 END) / 
+				NULLIF(SUM(CASE WHEN net_pnl < 0 THEN ABS(net_pnl) ELSE 0 END), 0), 4), 0) AS profit_factor,
+			COALESCE(ROUND(AVG(mae_pct), 4), 0) AS avg_mae,
+			COALESCE(ROUND(AVG(mfe_pct), 4), 0) AS avg_mfe
+		FROM trades
+		WHERE strategy_id = ?;
+	`
+	type sqlStats struct {
+		TotalTrades         int     `db:"total_trades"`
+		WinningTrades       int     `db:"winning_trades"`
+		LosingTrades        int     `db:"losing_trades"`
+		WinRate             float64 `db:"win_rate"`
+		NetProfit           float64 `db:"net_profit"`
+		TotalCommissionPaid float64 `db:"total_commission_paid"`
+		AvgHoldingDays      float64 `db:"avg_holding_days"`
+		AvgTradeReturnPct   float64 `db:"avg_trade_return_pct"`
+		AvgWinAmount        float64 `db:"avg_win_amount"`
+		AvgLossAmount       float64 `db:"avg_loss_amount"`
+		ProfitFactor        float64 `db:"profit_factor"`
+		AvgMAE              float64 `db:"avg_mae"`
+		AvgMFE              float64 `db:"avg_mfe"`
+	}
+
+	var stats sqlStats
+	if err := db.Get(&stats, query, strategyID); err != nil {
+		return report, err
+	}
+
+	report.TotalTrades = stats.TotalTrades
+	report.WinningTrades = stats.WinningTrades
+	report.LosingTrades = stats.LosingTrades
+	report.WinRate = stats.WinRate
+	report.NetProfit = stats.NetProfit
+	report.TotalCommissionPaid = stats.TotalCommissionPaid
+	report.AvgHoldingDays = stats.AvgHoldingDays
+	report.AvgTradeReturnPct = stats.AvgTradeReturnPct
+	report.AvgWinAmount = stats.AvgWinAmount
+	report.AvgLossAmount = stats.AvgLossAmount
+	report.ProfitFactor = stats.ProfitFactor
+	report.AvgMAE = stats.AvgMAE
+	report.AvgMFE = stats.AvgMFE
+
+	if report.AvgLossAmount > 0 {
+		report.PayoffRatio = report.AvgWinAmount / report.AvgLossAmount
+	}
+
+	return report, nil
 }
