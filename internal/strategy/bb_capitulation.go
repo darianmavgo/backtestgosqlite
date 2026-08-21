@@ -40,6 +40,10 @@ func (s *BBCapitulationStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
+func (s *BBCapitulationStrategy) Validate() error {
+	return ValidateConfig(s.DefaultConfig())
+}
+
 func (s *BBCapitulationStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 

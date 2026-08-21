@@ -133,6 +133,93 @@ func CalcBollinger(bars []models.Bar, period int, stdDevMultiplier float64) Boll
 	return bb
 }
 
+// MACD contains the MACD line, signal line, and histogram.
+type MACD struct {
+	MACD      []float64
+	Signal    []float64
+	Histogram []float64
+}
+
+// CalcMACD calculates Moving Average Convergence Divergence.
+func CalcMACD(bars []models.Bar, fastPeriod, slowPeriod, signalPeriod int) MACD {
+	n := len(bars)
+	macdResult := MACD{
+		MACD:      make([]float64, n),
+		Signal:    make([]float64, n),
+		Histogram: make([]float64, n),
+	}
+	if n < slowPeriod+signalPeriod {
+		return macdResult
+	}
+
+	fastEMA := CalcEMA(bars, fastPeriod)
+	slowEMA := CalcEMA(bars, slowPeriod)
+
+	for i := slowPeriod - 1; i < n; i++ {
+		macdResult.MACD[i] = fastEMA[i] - slowEMA[i]
+	}
+
+	// Calculate signal line as EMA of MACD line starting at slowPeriod-1
+	startIdx := slowPeriod - 1
+	validMACD := macdResult.MACD[startIdx:]
+	if len(validMACD) >= signalPeriod {
+		sum := 0.0
+		for i := 0; i < signalPeriod; i++ {
+			sum += validMACD[i]
+		}
+		sigEMA := sum / float64(signalPeriod)
+		macdResult.Signal[startIdx+signalPeriod-1] = sigEMA
+		macdResult.Histogram[startIdx+signalPeriod-1] = macdResult.MACD[startIdx+signalPeriod-1] - sigEMA
+
+		mult := 2.0 / float64(signalPeriod+1)
+		for i := signalPeriod; i < len(validMACD); i++ {
+			sigEMA = (validMACD[i]-sigEMA)*mult + sigEMA
+			actualIdx := startIdx + i
+			macdResult.Signal[actualIdx] = sigEMA
+			macdResult.Histogram[actualIdx] = macdResult.MACD[actualIdx] - sigEMA
+		}
+	}
+
+	return macdResult
+}
+
+// DonchianChannel contains the upper, middle, and lower bands of Donchian channels.
+type DonchianChannel struct {
+	Upper  []float64
+	Middle []float64
+	Lower  []float64
+}
+
+// CalcDonchian calculates Donchian Channels over a given lookback period.
+func CalcDonchian(bars []models.Bar, period int) DonchianChannel {
+	n := len(bars)
+	dc := DonchianChannel{
+		Upper:  make([]float64, n),
+		Middle: make([]float64, n),
+		Lower:  make([]float64, n),
+	}
+	if n < period {
+		return dc
+	}
+
+	for i := period - 1; i < n; i++ {
+		maxHigh := bars[i].High
+		minLow := bars[i].Low
+		for j := 0; j < period; j++ {
+			if bars[i-j].High > maxHigh {
+				maxHigh = bars[i-j].High
+			}
+			if bars[i-j].Low < minLow {
+				minLow = bars[i-j].Low
+			}
+		}
+		dc.Upper[i] = maxHigh
+		dc.Lower[i] = minLow
+		dc.Middle[i] = (maxHigh + minLow) / 2.0
+	}
+	return dc
+}
+
 // CalcATR calculates Average True Range for volatility estimation.
 func CalcATR(bars []models.Bar, period int) []float64 {
 	atr := make([]float64, len(bars))

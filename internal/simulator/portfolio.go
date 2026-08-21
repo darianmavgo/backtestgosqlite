@@ -3,6 +3,7 @@ package simulator
 import (
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/internal/analytics"
 	"github.com/darianmavgo/backtestgosqlite/internal/models"
@@ -17,6 +18,8 @@ type PortfolioSimulator struct {
 	Positions      map[string]*models.Position
 	ClosedTrades   []models.Trade
 	EquityCurve    []models.DailyEquityPoint
+	BenchmarkBars  map[string]models.Bar
+	Sizer          PositionSizer
 	tradeIDCounter int
 }
 
@@ -46,7 +49,13 @@ func NewPortfolioSimulator(config strategy.StrategyConfig, initialCapital float6
 		InitialCapital: initialCapital,
 		Cash:           initialCapital,
 		Positions:      make(map[string]*models.Position),
+		Sizer:          GetSizer(config),
 	}
+}
+
+// SetBenchmarkBars sets historical bars for the benchmark asset (e.g. SPY).
+func (s *PortfolioSimulator) SetBenchmarkBars(bars map[string]models.Bar) {
+	s.BenchmarkBars = bars
 }
 
 // Run executes the day-by-day chronological portfolio simulation across the market timeline.
@@ -90,7 +99,35 @@ func (s *PortfolioSimulator) Run(
 				pos.MaxHighSince = bar.High
 			}
 
-			// A. Stop-Loss Trigger (Conservative Check: Low <= StopLossPrice)
+			// Update trailing stop if enabled
+			if s.Config.UseTrailingStop && s.Config.TrailingStopPct > 0 {
+				potentialTrail := pos.MaxHighSince * (1.0 - s.Config.TrailingStopPct)
+				if potentialTrail > pos.TrailingStopPrice {
+					pos.TrailingStopPrice = potentialTrail
+				}
+			}
+
+			// A. Trailing-Stop Trigger
+			if s.Config.UseTrailingStop && pos.TrailingStopPrice > 0 && bar.Low <= pos.TrailingStopPrice {
+				exitPrice := pos.TrailingStopPrice * (1.0 - s.Config.SlippagePct)
+				if bar.Open < pos.TrailingStopPrice {
+					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
+				}
+				s.closePosition(sym, date, exitPrice, models.ExitReasonTrailingStop)
+				continue
+			}
+
+			// B. ATR-Stop Trigger
+			if s.Config.UseATRStop && pos.ATRStopPrice > 0 && bar.Low <= pos.ATRStopPrice {
+				exitPrice := pos.ATRStopPrice * (1.0 - s.Config.SlippagePct)
+				if bar.Open < pos.ATRStopPrice {
+					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
+				}
+				s.closePosition(sym, date, exitPrice, models.ExitReasonATRStop)
+				continue
+			}
+
+			// C. Fixed Stop-Loss Trigger (Conservative Check: Low <= StopLossPrice)
 			if bar.Low <= pos.StopLossPrice {
 				exitPrice := pos.StopLossPrice * (1.0 - s.Config.SlippagePct)
 				if bar.Open < pos.StopLossPrice {
@@ -100,7 +137,7 @@ func (s *PortfolioSimulator) Run(
 				continue
 			}
 
-			// B. Profit-Target Trigger (High >= TargetPrice)
+			// D. Profit-Target Trigger (High >= TargetPrice)
 			if bar.High >= pos.TargetPrice {
 				exitPrice := pos.TargetPrice * (1.0 - s.Config.SlippagePct)
 				if bar.Open > pos.TargetPrice {
@@ -110,7 +147,7 @@ func (s *PortfolioSimulator) Run(
 				continue
 			}
 
-			// C. Max Holding Days Exceeded (Time-Up Market Exit)
+			// E. Max Holding Days Exceeded (Time-Up Market Exit)
 			if pos.HoldDays >= s.Config.HoldingWindow {
 				exitPrice := bar.Close * (1.0 - s.Config.SlippagePct)
 				s.closePosition(sym, date, exitPrice, models.ExitReasonTimeUp)
@@ -133,17 +170,25 @@ func (s *PortfolioSimulator) Run(
 				}
 
 				totalEquity := s.calculateTotalEquity(barsBySymbolDate, date)
-				targetAlloc := totalEquity * s.Config.AllocationPct
-				if targetAlloc > s.Cash {
-					targetAlloc = s.Cash * 0.95 // Use available cash with 5% safety buffer
+
+				// Determine entry price based on OrderType
+				entryPrice := sig.Close * (1.0 + s.Config.SlippagePct)
+				orderType := strings.ToLower(sig.OrderType)
+				if orderType == "" {
+					orderType = "limit"
 				}
 
-				entryPrice := sig.Close * (1.0 + s.Config.SlippagePct)
+				if orderType == "market" {
+					entryPrice = sig.Close * (1.0 + s.Config.SlippagePct)
+				} else if orderType == "limit" && sig.BuyLimit > 0 {
+					entryPrice = sig.BuyLimit * (1.0 + s.Config.SlippagePct)
+				}
+
 				if entryPrice <= 0 {
 					continue
 				}
 
-				shares := int(targetAlloc / entryPrice)
+				shares := s.Sizer.CalculateShares(s.Cash, totalEquity, entryPrice, s.Config)
 				if shares <= 0 {
 					continue
 				}
@@ -155,18 +200,42 @@ func (s *PortfolioSimulator) Run(
 					continue
 				}
 
+				targetPrice := entryPrice * s.Config.TargetPct
+				if sig.TakeProfit > 0 {
+					targetPrice = sig.TakeProfit
+				}
+				stopLossPrice := entryPrice * s.Config.StopLossPct
+				if sig.StopLoss > 0 {
+					stopLossPrice = sig.StopLoss
+				}
+
+				var atrStopPrice float64
+				if s.Config.UseATRStop && s.Config.ATRStopMultiplier > 0 {
+					if atrVal, ok := sig.Metadata["atr"]; ok && atrVal > 0 {
+						atrStopPrice = entryPrice - s.Config.ATRStopMultiplier*atrVal
+					}
+				}
+
+				var trailingStopPrice float64
+				if s.Config.UseTrailingStop && s.Config.TrailingStopPct > 0 {
+					trailingStopPrice = entryPrice * (1.0 - s.Config.TrailingStopPct)
+				}
+
 				s.Cash -= (cost + commission)
 				s.Positions[sig.Symbol] = &models.Position{
-					Symbol:        sig.Symbol,
-					Shares:        shares,
-					EntryPrice:    entryPrice,
-					EntryDate:     date,
-					CurrentPrice:  entryPrice,
-					TargetPrice:   entryPrice * s.Config.TargetPct,
-					StopLossPrice: entryPrice * s.Config.StopLossPct,
-					HoldDays:      0,
-					MinLowSince:   entryPrice,
-					MaxHighSince:  entryPrice,
+					Symbol:            sig.Symbol,
+					Shares:            shares,
+					OrderType:         orderType,
+					EntryPrice:        entryPrice,
+					EntryDate:         date,
+					CurrentPrice:      entryPrice,
+					TargetPrice:       targetPrice,
+					StopLossPrice:     stopLossPrice,
+					TrailingStopPrice: trailingStopPrice,
+					ATRStopPrice:      atrStopPrice,
+					HoldDays:          0,
+					MinLowSince:       entryPrice,
+					MaxHighSince:      entryPrice,
 				}
 			}
 		}
@@ -211,7 +280,7 @@ func (s *PortfolioSimulator) Run(
 	}
 
 	// 5. Compute institutional performance metrics
-	report := analytics.CalculatePerformanceMetrics(s.InitialCapital, s.ClosedTrades, s.EquityCurve)
+	report := analytics.CalculatePerformanceMetricsWithBenchmark(s.InitialCapital, s.ClosedTrades, s.EquityCurve, s.BenchmarkBars)
 
 	return report, s.ClosedTrades, s.EquityCurve
 }
@@ -226,8 +295,6 @@ func (s *PortfolioSimulator) closePosition(symbol, date string, exitPrice float6
 	grossProceeds := float64(pos.Shares) * exitPrice
 	commission := float64(pos.Shares) * s.Config.CommissionPerShare
 	netProceeds := grossProceeds - commission
-	totalCost := float64(pos.Shares)*pos.EntryPrice + commission
-
 	netPnL := netProceeds - (float64(pos.Shares) * pos.EntryPrice)
 	returnPct := (exitPrice - pos.EntryPrice) / pos.EntryPrice
 
@@ -243,23 +310,25 @@ func (s *PortfolioSimulator) closePosition(symbol, date string, exitPrice float6
 	}
 
 	trade := models.Trade{
-		ID:                   s.tradeIDCounter,
-		Symbol:               symbol,
-		EntryDate:            pos.EntryDate,
-		EntryPrice:           pos.EntryPrice,
-		ExitDate:             date,
-		ExitPrice:            exitPrice,
-		Shares:               pos.Shares,
-		HoldDays:             pos.HoldDays,
-		NetPnL:               netPnL,
-		ReturnPct:            returnPct,
-		ExitReason:           reason,
-		CommissionPaid:       commission * 2, // Entry + exit
-		MaxAdverseExcursion:  mae,
+		ID:                    s.tradeIDCounter,
+		Symbol:                symbol,
+		OrderType:             pos.OrderType,
+		EntryDate:             pos.EntryDate,
+		EntryPrice:            pos.EntryPrice,
+		TargetPrice:           pos.TargetPrice,
+		StopLossPrice:         pos.StopLossPrice,
+		ExitDate:              date,
+		ExitPrice:             exitPrice,
+		Shares:                pos.Shares,
+		HoldDays:              pos.HoldDays,
+		NetPnL:                netPnL,
+		ReturnPct:             returnPct,
+		ExitReason:            reason,
+		CommissionPaid:        commission * 2, // Entry + exit
+		MaxAdverseExcursion:   mae,
 		MaxFavorableExcursion: mfe,
 	}
 
-	_ = totalCost
 	s.ClosedTrades = append(s.ClosedTrades, trade)
 	delete(s.Positions, symbol)
 }

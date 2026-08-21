@@ -57,6 +57,10 @@ func (s *SQLPipelineStrategy) DefaultConfig() StrategyConfig {
 	return s.config
 }
 
+func (s *SQLPipelineStrategy) Validate() error {
+	return ValidateConfig(s.config)
+}
+
 // SetDBPath sets the target database for executing the SQL pipeline.
 func (s *SQLPipelineStrategy) SetDBPath(dbPath string) {
 	s.dbPath = dbPath

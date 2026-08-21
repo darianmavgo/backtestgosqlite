@@ -13,6 +13,17 @@ func CalculatePerformanceMetrics(
 	trades []models.Trade,
 	equityPoints []models.DailyEquityPoint,
 ) models.PerformanceReport {
+	return CalculatePerformanceMetricsWithBenchmark(initialCapital, trades, equityPoints, nil)
+}
+
+// CalculatePerformanceMetricsWithBenchmark computes institutional risk and return metrics
+// including relative benchmark statistics (Alpha, Beta, Benchmark Return).
+func CalculatePerformanceMetricsWithBenchmark(
+	initialCapital float64,
+	trades []models.Trade,
+	equityPoints []models.DailyEquityPoint,
+	benchmarkBars map[string]models.Bar,
+) models.PerformanceReport {
 	report := models.PerformanceReport{
 		InitialCapital: initialCapital,
 		TotalTrades:    len(trades),
@@ -39,10 +50,13 @@ func CalculatePerformanceMetrics(
 	var totalWinPct, totalLossPct float64
 	var totalHoldDays int
 	var totalCommission float64
+	var sumMAE, sumMFE float64
 
 	for _, t := range trades {
 		totalCommission += t.CommissionPaid
 		totalHoldDays += t.HoldDays
+		sumMAE += t.MaxAdverseExcursion
+		sumMFE += t.MaxFavorableExcursion
 
 		if t.NetPnL > 0 {
 			report.WinningTrades++
@@ -60,6 +74,8 @@ func CalculatePerformanceMetrics(
 	if report.TotalTrades > 0 {
 		report.WinRate = float64(report.WinningTrades) / float64(report.TotalTrades)
 		report.AvgHoldingDays = float64(totalHoldDays) / float64(report.TotalTrades)
+		report.AvgMAE = sumMAE / float64(report.TotalTrades)
+		report.AvgMFE = sumMFE / float64(report.TotalTrades)
 	}
 
 	if report.WinningTrades > 0 {
@@ -81,6 +97,9 @@ func CalculatePerformanceMetrics(
 
 	// 2. Daily returns & Peak-to-Trough Drawdown calculation
 	var dailyReturns []float64
+	var drawdownSqSum float64
+	var sumPositiveReturns, sumNegativeReturns float64
+
 	peak := initialCapital
 	peakDate := equityPoints[0].Date
 	maxDrawdown := 0.0
@@ -98,6 +117,12 @@ func CalculatePerformanceMetrics(
 		}
 		dailyReturns = append(dailyReturns, ret)
 
+		if ret > 0 {
+			sumPositiveReturns += ret
+		} else if ret < 0 {
+			sumNegativeReturns += math.Abs(ret)
+		}
+
 		// Track running peak
 		if curr >= peak {
 			peak = curr
@@ -106,6 +131,7 @@ func CalculatePerformanceMetrics(
 		} else if peak > 0 {
 			dd := (peak - curr) / peak
 			currentDrawdownDays++
+			drawdownSqSum += (dd * 100.0) * (dd * 100.0)
 
 			if dd > maxDrawdown {
 				maxDrawdown = dd
@@ -125,7 +151,19 @@ func CalculatePerformanceMetrics(
 	report.MaxDrawdownPct = maxDrawdown
 	report.MaxDrawdownDuration = maxDrawdownDays
 
-	// 3. Annualized metrics (Sharpe, Sortino, CAGR)
+	// Ulcer Index: Sqrt(Mean(DrawdownPct^2))
+	if len(equityPoints) > 1 {
+		report.UlcerIndex = math.Sqrt(drawdownSqSum / float64(len(equityPoints)-1))
+	}
+
+	// Omega Ratio (threshold = 0)
+	if sumNegativeReturns > 0 {
+		report.OmegaRatio = sumPositiveReturns / sumNegativeReturns
+	} else if sumPositiveReturns > 0 {
+		report.OmegaRatio = 99.0
+	}
+
+	// 3. Annualized metrics (Sharpe, Sortino, CAGR, Calmar)
 	years := report.TotalCalendarYears
 	if years >= 0.5 && report.FinalEquity > 0 && report.InitialCapital > 0 {
 		report.CAGR = math.Pow(report.FinalEquity/report.InitialCapital, 1.0/years) - 1.0
@@ -133,15 +171,18 @@ func CalculatePerformanceMetrics(
 		report.CAGR = report.TotalReturnPct / years
 	}
 
+	// Calmar Ratio
+	if report.MaxDrawdownPct > 0 {
+		report.CalmarRatio = report.CAGR / report.MaxDrawdownPct
+	}
+
 	if len(dailyReturns) > 1 {
-		// Mean
 		var sumRet float64
 		for _, r := range dailyReturns {
 			sumRet += r
 		}
 		meanDailyRet := sumRet / float64(len(dailyReturns))
 
-		// Std Dev
 		var sumSqDiff float64
 		var sumDownsideSqDiff float64
 		for _, r := range dailyReturns {
@@ -164,6 +205,54 @@ func CalculatePerformanceMetrics(
 		// Annualized Sortino Ratio
 		if downsideStdDev > 0 {
 			report.SortinoRatio = (meanDailyRet / downsideStdDev) * math.Sqrt(252.0)
+		}
+	}
+
+	// 4. Benchmark analysis (Alpha & Beta)
+	if len(benchmarkBars) > 0 && len(equityPoints) > 1 {
+		var benchDailyReturns []float64
+		var stratMatchedReturns []float64
+
+		for i := 1; i < len(equityPoints); i++ {
+			pDate := equityPoints[i-1].Date
+			cDate := equityPoints[i].Date
+			pBar, okP := benchmarkBars[pDate]
+			cBar, okC := benchmarkBars[cDate]
+
+			if okP && okC && pBar.Close > 0 {
+				bRet := (cBar.Close - pBar.Close) / pBar.Close
+				sRet := dailyReturns[i-1]
+				benchDailyReturns = append(benchDailyReturns, bRet)
+				stratMatchedReturns = append(stratMatchedReturns, sRet)
+			}
+		}
+
+		if len(benchDailyReturns) > 5 {
+			var bSum, sSum float64
+			for i := 0; i < len(benchDailyReturns); i++ {
+				bSum += benchDailyReturns[i]
+				sSum += stratMatchedReturns[i]
+			}
+			bMean := bSum / float64(len(benchDailyReturns))
+			sMean := sSum / float64(len(stratMatchedReturns))
+
+			var covariance, bVariance float64
+			for i := 0; i < len(benchDailyReturns); i++ {
+				bDiff := benchDailyReturns[i] - bMean
+				sDiff := stratMatchedReturns[i] - sMean
+				covariance += bDiff * sDiff
+				bVariance += bDiff * bDiff
+			}
+
+			if bVariance > 0 {
+				beta := covariance / bVariance
+				report.Beta = beta
+				// Annualized Jensen's Alpha (assuming 0% risk-free rate)
+				annualizedStratReturn := sMean * 252.0
+				annualizedBenchReturn := bMean * 252.0
+				report.Alpha = annualizedStratReturn - (beta * annualizedBenchReturn)
+				report.BenchmarkReturnPct = (annualizedBenchReturn * report.TotalCalendarYears)
+			}
 		}
 	}
 

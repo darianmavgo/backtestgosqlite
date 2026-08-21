@@ -1,12 +1,12 @@
-# backtestgosqlite: Automated Algorithmic Trading & 2-Tier Backtesting Engine
+# backtestgosqlite: High-Performance Algorithmic Trading & Multi-Strategy Backtesting Platform
 
 [![Go Version](https://img.shields.io/badge/Go-1.18+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Architecture](https://img.shields.io/badge/Architecture-2--Tier%20Hybrid%20Engine-brightgreen)]()
+[![Architecture](https://img.shields.io/badge/Engine-Go%20%2B%20SQLite%20WAL-brightgreen)]()
 
-**`backtestgosqlite`** is a production-grade quantitative trading and backtesting system engineered to capture high-probability mean-reversion bounces on leveraged ETFs and high-beta equities.
+**`backtestgosqlite`** is a high-speed, general-purpose quantitative backtesting and algorithmic trading engine engineered in **Go** and backed by **SQLite WAL (Write-Ahead Logging)**.
 
-It features a unique **Two-Tier Hybrid Architecture**: combining the raw speed of **relational SQL vectorization** for universe-wide screening with the precision of an **event-driven chronological portfolio simulator** for real-world risk, cash ledger management, and path-dependent stop-loss validation.
+It pairs the raw execution speed and goroutine concurrency of compiled Go with the relational query power of SQLite to evaluate universe-wide portfolios, multi-asset strategies, and path-dependent risk analytics in milliseconds.
 
 ---
 
@@ -14,36 +14,36 @@ It features a unique **Two-Tier Hybrid Architecture**: combining the raw speed o
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          1. DATA INGESTION ENGINE                           │
-│  - Yahoo Finance Chart API + Stooq CSV fallback                             │
-│  - 4+ years of multi-asset daily OHLCV bars stored in SQLite (WAL mode)     │
+│                          1. FLEXIBLE DATA LAYER                             │
+│  - Pluggable DataSource interface: CSV, Yahoo Finance Chart API, Stooq     │
+│  - Multi-asset OHLCV bars indexed in SQLite WAL memory/disk tables          │
+│  - Bring any CSV dataset (Polygon, Alpaca, custom feeds) zero Go required  │
 └──────────────────────────────────────┬──────────────────────────────────────┘
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              2. TIER 1: RELATIONAL SQL SCREENING (SQLite Pipeline)          │
-│  - 25-Stage Pipeline: Trailing lows, entry feasibility, forward lookbacks   │
-│  - Multi-asset batch processing across 5,000+ ticker-years in seconds       │
-│  - Generates wc_summary and filters candidates into settings.db             │
+│                 2. UNIFIED STRATEGY ENGINE (GO & SQL)                       │
+│  - 30-line Go Strategy interface with automatic CLI discovery               │
+│  - Built-in Vectorized Technical Indicators (RSI, BB, MACD, Donchian, ATR)   │
+│  - Pure SQL Pipeline Strategies executed sequentially from sql/strategies/  │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ Raw Triggers & Slices
+                                       │ Entry Signals & Limits
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              3. TIER 2: CHRONOLOGICAL PORTFOLIO SIMULATOR (Go)              │
-│  - Real-time Cash Ledger & Account Equity Curve                             │
-│  - Position Limits (e.g., max 5 concurrent positions, 20% allocation each)  │
-│  - Dual-Barrier Path Checking (Stop-Loss vs. Profit Target vs. Time-Up)     │
-│  - Slippage & Exchange/Broker Fee Deductions                                │
-│  - Quantitative Tear Sheet: Sharpe, Sortino, Max Drawdown, CAGR, Payoff    │
+│            3. CHRONOLOGICAL MULTI-ASSET PORTFOLIO SIMULATOR                 │
+│  - Real-time Cash Ledger & Portfolio Equity Curve                           │
+│  - Order Types: Market, Limit, Stop-Limit                                   │
+│  - Dynamic Risk: Trailing Stops, ATR Stops, Dual-Barrier Fixed Stops        │
+│  - Configurable Position Sizing: Fixed %, Fixed $, Fixed Shares, Kelly      │
+│  - Concurrent multi-strategy benchmarking across Goroutines                 │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ High-Confidence Verified Parameters
+                                       │ Realized Trades & Equity Series
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                   4. LIVE EXECUTION & GAE DEPLOYMENT                        │
-│  - Google App Engine (GAE) cron endpoints scheduled for daily market tasks  │
-│  - GCS SQLite state persistence across stateless instances                  │
-│  - Alpaca Trading API Go SDK: automated limit entries and stop exits        │
-│  - Gmail SMTP alerts for entries, exits, and signal notifications           │
+│              4. INSTITUTIONAL QUANTITATIVE TEAR SHEET & UI                  │
+│  - Metrics: Sharpe, Sortino, Calmar, Omega, Ulcer Index, Alpha & Beta       │
+│  - Trade Metrics: Win Rate, Profit Factor, Payoff Ratio, MAE & MFE          │
+│  - Interactive Local Web Dashboard & Standalone HTML Reports                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -51,136 +51,82 @@ It features a unique **Two-Tier Hybrid Architecture**: combining the raw speed o
 
 ## 🚀 Key Capabilities
 
-### 1. Two-Tier Backtesting Engine
-* **Tier 1 (SQL Relational Screening)**:
-  - Complex lookback calculations computed in SQLite using window functions and indexed joins.
-  - Trailing 10-day low lookback window (`Day -3` to `Day -12`).
-  - Forward-looking slices for $+3\%$, $+5\%$, and $+20\%$ targets over 4-day and 10-day holding horizons.
-  - Output tables: `wc_summary` and `backtested_win_20_10d`.
-* **Tier 2 (Portfolio Simulation & Risk Analytics)**:
-  - **Capital & Position Constraints**: Simulates trading with finite starting capital (e.g. `$100,000`), enforcing max concurrent positions (e.g. 5 positions) and cash availability.
-  - **Path-Dependent Dual-Barrier Checking**: Unlike basic forward scans that only check if a high was touched, Tier 2 walks day-by-day to verify if a stop-loss (e.g. $-7\%$) was triggered *before* the $+20\%$ target was achieved.
-  - **Execution Friction Modeling**: Deducts configurable slippage (e.g. $0.05\%$) and broker/regulatory commission fees per share.
-  - **Quantitative Tear Sheet**: Computes Sharpe Ratio, Sortino Ratio, Max Drawdown (MDD) & duration, CAGR, Win Rate, Profit Factor, Win/Loss Payoff Ratio, and Average Holding Days.
-* **Single-Symbol or Universe Filtering**:
-  - Run universe-wide or isolate specific tickers (e.g. `-symbol DFEN`, `-symbol SOXL`) to inspect trade-by-trade logs.
+### 1. General-Purpose Multi-Asset Backtesting
+* **Multiple Order Execution Models**: Supports `market` (next open/close), `limit` (intraday price crossing), and `stop_limit` orders.
+* **Flexible Position Sizing**: Choose between `fixed_pct` (e.g. 20% equity), `fixed_dollar` ($10,000/trade), `fixed_shares` (100 shares), or risk-based `kelly` sizing.
+* **Dynamic Stop-Loss Systems**:
+  * **Trailing Stops**: Lock in unrealized gains by trailing peaks at a configurable percentage.
+  * **ATR Dynamic Stops**: Protect against volatility expansion using multiples of Average True Range.
+  * **Dual-Barrier Path Checking**: Walks day-by-day to simulate real-world intraday stops before profit targets.
+* **Concurrent Strategy Benchmarking**: Run any number of strategies in parallel across Go goroutines (`make compare`).
 
-### 2. Multi-Source Historical Data Ingestion (`cmd/download`)
-* Ingests 4+ years of daily OHLCV bars for target universes (leveraged ETFs, momentum equities).
-* Primary ingestion via **Yahoo Finance v8 Chart API** with automatic fallback to **Stooq CSV feeds**.
-* High-speed SQLite transaction batching with rate-limiting.
+### 2. Pluggable Market Data Sources (`cmd/download`)
+* **Bring Your Own CSV**: Ingest any standard OHLCV CSV file (from Polygon.io, Alpaca, Interactive Brokers, or manual export) with automatic column header detection.
+* **Automated Data Feed Downloads**: Multi-source daily data downloader with Yahoo Finance API v8 and Stooq fallback.
+* **SQLite Storage Engine**: High-speed batch insertion into SQLite tables with indexed lookups and WAL concurrency.
 
-### 3. Live & Paper Automated Trading (`cmd/server`)
-* **Alpaca API Go SDK Integration**: Submits buy limit orders, tracks fills, cancels unfilled orders, and executes limit/stop exits.
-* **Google App Engine (GAE) Runtime**: Server endpoints triggered via `cron.yaml` for pre-market scans, order execution, and post-market reconciliations.
-* **Google Cloud Storage (GCS) State Sync**: Seamlessly syncs SQLite state databases (`entries.sqlite`, `exits.sqlite`, `settings.db`) between GCS and local memory on stateless cloud instances.
-* **Email Alerting**: Instant notification of order entries, exits, and signals via Gmail SMTP.
+### 3. Built-in Technical Indicator Library
+Zero external C dependencies. Pure Go vectorized indicator math in [`internal/strategy/indicators.go`](file:///Users/darianhickman/Documents/backtestgosqlite/internal/strategy/indicators.go):
+* **Moving Averages**: `CalcSMA`, `CalcEMA`
+* **Oscillators**: `CalcRSI` (Wilder's smoothing)
+* **Volatility**: `CalcBollinger`, `CalcATR`, `CalcDonchian`
+* **Trend & Momentum**: `CalcMACD` (MACD line, Signal line, Histogram)
 
-### 4. Interactive Local Web Dashboard (`cmd/ui`)
-* Web interface running on port `8080` (or `8085`).
-* Visualizes symbol performance, signal details, database statistics, and triggers backtest runs from the browser.
-
-### 5. Unified Strategy & Single Source of Truth
-* Backtest and Live Scanner both reference centralized parameter structs in [`internal/strategy/whitings_creek.go`](file:///Users/darianhickman/Documents/backtestgosqlite/internal/strategy/whitings_creek.go), eliminating parameter drift between backtesting and deployment.
-
----
-
-## 📁 Repository Structure
-
-```
-backtestgosqlite/
-├── Makefile                       # Root automation (build, backtest, download, ui, server)
-├── README.md                      # Project documentation
-├── Comparison.md                  # Comprehensive Backtrader vs. backtestgosqlite comparison
-│
-├── cmd/                           # Application Entrypoints
-│   ├── backtest/main.go           # 2-Tier Backtester & Quantitative Tear Sheet CLI
-│   ├── download/main.go           # Historical Market Data Downloader
-│   ├── server/main.go             # GAE / Live Trading HTTP Server
-│   └── ui/main.go                 # Local Web Dashboard UI Server
-│
-├── internal/                      # Core Reusable Go Packages
-│   ├── models/models.go           # Domain Entities (Bar, Signal, Trade, Position, Report)
-│   ├── strategy/whitings_creek.go # Unified Strategy Parameters (WhitingsCreekParams)
-│   ├── simulator/                 # Portfolio Cash Ledger & Path-Dependent Stop Engine
-│   │   ├── portfolio.go           # Chronological multi-asset event simulator
-│   │   └── stoploss.go            # Dual-barrier trade evaluator (MAE/MFE)
-│   ├── analytics/metrics.go       # Quant Metrics (Sharpe, Sortino, Drawdown, CAGR)
-│   └── storage/sqlite.go          # High-Performance SQLite WAL database helpers
-│
-├── sql/                           # Structured SQL Pipeline
-│   ├── 01_schema/                 # DDL Schemas & Table Index Definitions
-│   ├── 02_pipeline/               # 25-Stage Sequenced Pipeline (01_..., 02_...)
-│   └── seeds/                     # Symbol Lists & Static Universes
-│
-├── data/                          # Local SQLite Databases (.gitignore)
-│   ├── settings.db                # Master settings & filtered high-confidence symbols
-│   ├── wc_master_backtest.db      # Master 4-year multi-asset database
-│   └── leveraged_backtest.db      # Leveraged ETF research database
-│
-├── configs/                       # Application configurations (config.json)
-├── deploy/gae/                    # Cloud Deployment (app.yaml, cron.yaml, cron_paper.yaml)
-├── scripts/                       # Shell automation scripts (backtest_all.sh)
-└── web/                           # Dashboard UI static assets (index.html)
-```
+### 4. Built-in Strategy Library
+* **`bb-capitulation`**: Lower Bollinger Band exhaustion pierces with RSI(5) oversold confirmation.
+* **`macd-crossover`**: Classic MACD (12, 26, 9) signal-line bullish crossover.
+* **`donchian-breakout`**: Turtle-style 20-day high momentum breakout with trailing stop.
+* **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
+* **`rsi2`**: Connors RSI(2) deep pullback strategy.
+* **`wc` / `wc-4d`**: Whitings Creek short-term capitulation mean-reversion.
+* **`buy-and-hold`**: Benchmark buy-and-hold baseline for computing active Alpha & Beta.
 
 ---
 
 ## ⚡ Quickstart Guide
 
 ### 1. Build All Binaries
-Compile all tools into `bin/` using the root Makefile:
 ```bash
 make build
 ```
 
-### 2. Run Unit Tests
+### 2. View All Available Strategies
 ```bash
-make test
+make list
+# or:
+./bin/backtest -list
 ```
 
-### 3. Download Historical Data (4 Years)
-Download daily bars for leveraged ETFs into the target database:
+### 3. Run Custom CSV Backtest
+Ingest your own OHLCV CSV file and run an immediate backtest:
 ```bash
-# Standard download (Top 50 leveraged ETFs)
-make download
-
-# Or custom universe download:
-./bin/download -table leveraged_etf -limit 50 -years 4 -db data/wc_master_backtest.db
+make example-csv
+# or:
+./bin/download -csv examples/custom_csv_backtest/sample_stocks.csv -db data/sample.db
+./bin/backtest -db data/sample.db -strategy donchian-breakout -capital 50000
 ```
 
-### 4. Run Backtesting & Portfolio Simulation
-
-#### Run High-Performance BB-Capitulation Strategy (Top Performer: +173.4% Return):
+### 4. Run Strategy Backtests
 ```bash
+# High-Performance BB-Capitulation Strategy
 ./bin/backtest -strategy bb-capitulation -capital 100000
-```
 
-#### Run Trend-Gated Strategy (Lowest Drawdown: 21.7% MDD, 1.57 Profit Factor):
-```bash
-./bin/backtest -strategy trend-bb -capital 100000
-```
+# MACD Crossover Strategy
+./bin/backtest -strategy macd-crossover -capital 100000
 
-#### Run Baseline Whitings Creek (WC):
-```bash
-./bin/backtest -strategy wc -capital 100000 -target 1.20 -stoploss 0.93
-```
+# Donchian 20-Day Momentum Breakout with Trailing Stop
+./bin/backtest -strategy donchian-breakout -capital 100000
 
-#### Single Ticker Backtest (e.g. SOXL, TQQQ, DFEN):
-```bash
-./bin/backtest -strategy rsi2 -symbol SOXL -capital 100000
+# Single Symbol Filter (e.g. SOXL, AAPL, SPY)
+./bin/backtest -strategy bb-capitulation -symbol SOXL -capital 100000
 ```
 
 ### 5. Multi-Strategy Comparative Benchmark
-Run all 4 strategies side-by-side on the full universe or single ticker:
+Run all strategies concurrently against your dataset in parallel:
 ```bash
-# Universe-wide benchmark
 make compare
 # or:
 ./bin/compare -db data/wc_master_backtest.db -capital 100000
-
-# Single symbol benchmark (e.g. SOXL, TQQQ, DFEN)
-./bin/compare -db data/wc_master_backtest.db -symbol SOXL
 ```
 
 ### 6. Launch the Local Web Dashboard
@@ -189,63 +135,170 @@ make ui
 # Open http://localhost:8080 in your browser
 ```
 
-### 6. Full Automated Workflow (Download ➔ Backtest ➔ Update Settings)
-```bash
-./scripts/backtest_all.sh
-```
-
 ---
 
-## 📈 Strategy Specifications: Whitings Creek (WC)
+## 🛠️ Writing Your Own Strategy in Go (Under 35 Lines)
 
-The core Whitings Creek strategy identifies oversold short-term capitulation events followed by sharp mean-reversion bounces:
+Create `internal/strategy/my_strategy.go`:
 
-| Parameter | Default Value | Description |
-| :--- | :---: | :--- |
-| **Cliff Drop Ratio** | `0.90` ($-10\%$) | Asset must close $\ge 10\%$ below its trailing minimum low |
-| **Lookback Window** | `3` to `12` days | Historical low reference period (`Day -3` to `Day -12`) |
-| **Entry Rule** | Limit Buy at Close | Limit order placed at or below signal-day closing price |
-| **Profit Target** | `1.20` ($+20\%$) | Take-profit limit exit target |
-| **Stop-Loss Floor** | `0.93` ($-7\%$) | Protective stop-loss exit |
-| **Max Holding Period**| `10` trading days | Time-up market exit if neither target nor stop is hit |
-| **Confidence Threshold** | `90%` win rate | Minimum historical win rate required for live qualification |
-| **Sample Size Floor** | $\ge 5$ signals | Minimum historical trade occurrences required |
+```go
+package strategy
+
+import (
+    "sort"
+    "github.com/darianmavgo/backtestgosqlite/internal/models"
+)
+
+type MyStrategy struct{}
+
+func init() {
+    Register(&MyStrategy{}) // Auto-registers in CLI & comparison suite
+}
+
+func (s *MyStrategy) ID() string          { return "my-strategy" }
+func (s *MyStrategy) Name() string        { return "My Custom Strategy" }
+func (s *MyStrategy) Description() string { return "Enters when RSI(14) < 30 and Close > SMA(200)." }
+
+func (s *MyStrategy) DefaultConfig() StrategyConfig {
+    return StrategyConfig{
+        ID:            "my-strategy",
+        Name:          s.Name(),
+        Description:   s.Description(),
+        TargetPct:     1.15,   // +15% profit target
+        StopLossPct:   0.93,   // -7% stop loss
+        HoldingWindow: 10,     // 10-day max holding
+        PositionCap:   5,      // Max 5 positions
+        AllocationPct: 0.20,   // 20% equity per position
+        SlippagePct:   0.0005, // 0.05% slippage
+    }
+}
+
+func (s *MyStrategy) Validate() error {
+    return ValidateConfig(s.DefaultConfig())
+}
+
+func (s *MyStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+    var signals []models.Signal
+
+    for sym, bars := range barsBySymbol {
+        if len(bars) < 200 { continue }
+        rsi := CalcRSI(bars, 14)
+        sma := CalcSMA(bars, 200)
+
+        for i := 200; i < len(bars); i++ {
+            if rsi[i] < 30.0 && bars[i].Close > sma[i] {
+                signals = append(signals, models.Signal{
+                    Idx: bars[i].Idx, Symbol: sym, Date: bars[i].Date,
+                    Close: bars[i].Close, BuyLimit: bars[i].Close,
+                    OrderType: "limit", Entry: 1,
+                })
+            }
+        }
+    }
+
+    sort.Slice(signals, func(i, j int) bool { return signals[i].Date < signals[j].Date })
+    return signals
+}
+```
+
+Recompile with `make build` and run `./bin/backtest -strategy my-strategy`!
+
+See [`docs/strategies/writing_a_strategy.md`](file:///Users/darianhickman/Documents/backtestgosqlite/docs/strategies/writing_a_strategy.md) for full guide.
 
 ---
 
 ## 📊 Sample Output: Quantitative Tear Sheet
 
 ```
-==================================================================
-📊 QUANTITATIVE PORTFOLIO TEAR SHEET (TIER 2 SIMULATION)
-==================================================================
-+----------------------------+------------+----------------------------------+
-|           METRIC           |   VALUE    |       BENCHMARK / CONTEXT        |
-+----------------------------+------------+----------------------------------+
-| Initial Capital            | $100000.00 | Starting portfolio cash          |
-| Ending Total Equity        | $102435.27 | Cash + open positions            |
-| Net Realized Profit        | $2435.27   | 2.44% total return               |
-| CAGR (Annualized Return)   | 0.61%      | Compound Annual Growth Rate      |
-| Sharpe Ratio (Annualized)  |       0.24 | Risk-adjusted return vs. 0% Rf   |
-| Sortino Ratio (Annualized) |       0.41 | Downside volatility adjusted     |
-| Max Drawdown (MDD)         | 4.16%      | Longest DD: 552 days             |
-| Total Completed Trades     |          4 | 2 Wins / 2 Losses                |
-| Trade Win Rate             | 50.00%     | Pct of closed trades in profit   |
-| Profit Factor              |       1.71 | Gross Profits / Gross Losses     |
-| Win / Loss Payoff Ratio    |       1.71 | Avg Win $ / Avg Loss $           |
-| Average Win                | $2923.93   | Per winning trade                |
-| Average Loss               | $1706.09   | Per losing trade                 |
-| Average Holding Period     | 4.2 days   | Max window: 10 days              |
-| Total Commissions & Fees   | $0.43      | Exchange / broker costs deducted |
-+----------------------------+------------+----------------------------------+
+========================================================================================
+📊 QUANTITATIVE PORTFOLIO TEAR SHEET: DONCHIAN 20-DAY MOMENTUM BREAKOUT
+📅 BACKTEST TIME WINDOW: 2020-01-02 ➔ 2024-01-02 (4.0 Years | 1008 Trading Days)
+========================================================================================
++----------------------------+--------------------------+----------------------------------------+
+|           METRIC           |          VALUE           |          BENCHMARK / CONTEXT           |
++----------------------------+--------------------------+----------------------------------------+
+| Backtest Time Window       | 2020-01-02 to 2024-01-02 | 1008 trading days (4.0 years)          |
+| Initial Capital            | $100000.00               | Starting portfolio cash                |
+| Ending Total Equity        | $148320.15               | Cash + open positions                  |
+| Net Realized Profit        | $48320.15                | 48.32% total return                    |
+| CAGR (Annualized Return)   | 10.35%                   | Compound Annual Growth Rate            |
+| Sharpe Ratio (Annualized)  |                     1.15 | Risk-adjusted return vs. 0% Rf         |
+| Sortino Ratio (Annualized) |                     1.82 | Downside volatility adjusted           |
+| Calmar Ratio               |                     0.85 | CAGR / Max Drawdown                    |
+| Omega Ratio                |                     1.38 | Gain-to-loss probability ratio         |
+| Ulcer Index                |                     3.12 | Depth & duration of drawdowns          |
+| 🔴 MAX DRAWDOWN (MDD %)    | 12.18%                   | Worst account decline from peak equity |
+| 🔴 MAX DRAWDOWN ($ LOSS)   | -$14250.00               | Peak: $117000 ➔ Trough: $102750        |
+| 🔴 MAX DRAWDOWN DATES      | 2022-04-12 ➔ 2022-09-20  | Longest drawdown duration: 112 days    |
+| Total Completed Trades     |                       64 | 41 Wins / 23 Losses                    |
+| Trade Win Rate             | 64.06%                   | Pct of closed trades in profit         |
+| Profit Factor              |                     2.31 | Gross Profits / Gross Losses           |
+| Win / Loss Payoff Ratio    |                     1.30 | Avg Win $ / Avg Loss $                 |
+| Average Win                | $2140.50                 | Per winning trade                      |
+| Average Loss               | $1646.50                 | Per losing trade                       |
+| Average MAE (Drawdown)     | -3.42%                   | Max Adverse Excursion during trade     |
+| Average MFE (Runup)        | 8.19%                    | Max Favorable Excursion during trade   |
+| Average Holding Period     | 11.4 days                | Holding horizon                        |
+| Total Commissions & Fees   | $12.45                   | Exchange / broker costs deducted       |
++----------------------------+--------------------------+----------------------------------------+
+```
+
+---
+
+## 📁 Repository Structure
+
+```
+backtestgosqlite/
+├── Makefile                          # Root automation (build, backtest, compare, test, ui)
+├── README.md                         # Main documentation
+├── Comparison.md                     # Performance & architecture comparison
+│
+├── cmd/                              # CLI Executable Entrypoints
+│   ├── backtest/main.go              # Single strategy backtester & tear sheet CLI
+│   ├── compare/main.go               # Concurrent multi-strategy benchmark suite
+│   ├── download/main.go              # Multi-source data loader (CSV, Yahoo, Stooq)
+│   ├── ui/main.go                    # Local Web Dashboard UI Server
+│   └── server/main.go                # Automated execution HTTP server
+│
+├── internal/                         # Modular Core Go Packages
+│   ├── models/models.go              # Domain types (Bar, Signal, Position, Trade, Report)
+│   ├── datasource/                   # Pluggable data layer (CSV, Yahoo, Stooq, SQLite)
+│   ├── strategy/                     # Unified strategy registry, indicators & algorithms
+│   │   ├── indicators.go             # Pure Go technical indicators (RSI, BB, MACD, Donchian, ATR)
+│   │   ├── bb_capitulation.go        # Bollinger Band Capitulation Strategy
+│   │   ├── macd_crossover.go         # MACD Bullish Crossover Strategy
+│   │   ├── donchian_breakout.go      # Donchian 20-Day Momentum Breakout
+│   │   ├── whitings_creek.go         # Whitings Creek Baseline Strategy
+│   │   ├── trend_bb.go               # Trend-Gated Bollinger Strategy
+│   │   └── rsi2_trend.go             # Connors RSI(2) Strategy
+│   ├── simulator/                    # Portfolio ledger, execution models & sizing
+│   │   ├── portfolio.go              # Chronological event simulator
+│   │   ├── sizer.go                  # Position sizing (Fixed %, Fixed $, Fixed Shares, Kelly)
+│   │   └── concurrent.go             # Multi-goroutine concurrent backtest runner
+│   ├── analytics/                    # Performance analytics & HTML report generator
+│   │   ├── metrics.go                # Sharpe, Sortino, Calmar, Omega, Ulcer, Alpha/Beta
+│   │   └── html_report.go            # Interactive HTML report generator
+│   └── storage/                      # SQLite WAL database helpers & query engine
+│
+├── sql/                              # SQL Pipeline Strategies
+│   ├── 01_schema/                    # Master database schema DDL
+│   └── strategies/                   # Auto-discovered SQL strategy pipelines
+│       ├── README.md                 # SQL strategy authoring guide
+│       └── whitings_creek/           # 25-stage relational pipeline
+│
+├── docs/                             # In-Depth Guides & Strategy Specs
+│   └── strategies/                   # Strategy documentation & tutorial
+│
+└── examples/                         # Standalone runnable examples
+    └── custom_csv_backtest/          # CSV ingestion and backtest walkthrough
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Language & Runtime**: Go (1.18+), Python (historical helpers), Google App Engine (GAE standard)
+- **Language & Runtime**: Go (1.18+)
 - **Database**: SQLite 3 with Write-Ahead Logging (WAL)
-- **Broker & Market Data**: Alpaca Trade API Go SDK, Yahoo Finance, Stooq
-- **Cloud Infrastructure**: Google Cloud Storage (GCS), Google App Engine (GAE) Cron, Gmail SMTP
-- **Frontend**: HTML5, Vanilla CSS, Vanilla JavaScript, Chart.js / Tablewriter
+- **Market Data Feeds**: Standard CSV Import, Yahoo Finance Chart API, Stooq
+- **Broker Execution**: Alpaca Trade API Go SDK
+- **Frontend**: HTML5, Vanilla CSS, Vanilla JavaScript, Chart.js, Tablewriter

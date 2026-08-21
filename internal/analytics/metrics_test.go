@@ -10,9 +10,9 @@ func TestCalculatePerformanceMetrics(t *testing.T) {
 	initialCapital := 10000.0
 
 	trades := []models.Trade{
-		{NetPnL: 500, ReturnPct: 0.05, HoldDays: 5},
-		{NetPnL: 1000, ReturnPct: 0.10, HoldDays: 4},
-		{NetPnL: -200, ReturnPct: -0.02, HoldDays: 3},
+		{NetPnL: 500, ReturnPct: 0.05, HoldDays: 5, MaxAdverseExcursion: -0.01, MaxFavorableExcursion: 0.06},
+		{NetPnL: 1000, ReturnPct: 0.10, HoldDays: 4, MaxAdverseExcursion: -0.02, MaxFavorableExcursion: 0.11},
+		{NetPnL: -200, ReturnPct: -0.02, HoldDays: 3, MaxAdverseExcursion: -0.03, MaxFavorableExcursion: 0.01},
 	}
 
 	equityPoints := []models.DailyEquityPoint{
@@ -41,5 +41,8 @@ func TestCalculatePerformanceMetrics(t *testing.T) {
 	}
 	if report.ProfitFactor != 7.5 { // (500 + 1000) / 200 = 7.5
 		t.Errorf("expected profit factor 7.5, got %f", report.ProfitFactor)
+	}
+	if report.AvgMAE > -0.019 || report.AvgMAE < -0.021 {
+		t.Errorf("expected avg MAE ~ -0.02, got %f", report.AvgMAE)
 	}
 }

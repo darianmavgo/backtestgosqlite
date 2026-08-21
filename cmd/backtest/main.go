@@ -42,6 +42,14 @@ func printPerformanceTearSheet(strategyName string, report models.PerformanceRep
 	table.Append([]string{"CAGR (Annualized Return)", fmt.Sprintf("%.2f%%", report.CAGR*100), "Compound Annual Growth Rate"})
 	table.Append([]string{"Sharpe Ratio (Annualized)", fmt.Sprintf("%.2f", report.SharpeRatio), "Risk-adjusted return vs. 0% Rf"})
 	table.Append([]string{"Sortino Ratio (Annualized)", fmt.Sprintf("%.2f", report.SortinoRatio), "Downside volatility adjusted"})
+	table.Append([]string{"Calmar Ratio", fmt.Sprintf("%.2f", report.CalmarRatio), "CAGR / Max Drawdown"})
+	table.Append([]string{"Omega Ratio", fmt.Sprintf("%.2f", report.OmegaRatio), "Gain-to-loss probability ratio"})
+	table.Append([]string{"Ulcer Index", fmt.Sprintf("%.2f", report.UlcerIndex), "Depth & duration of drawdowns"})
+
+	if report.Beta != 0 || report.Alpha != 0 {
+		table.Append([]string{"Alpha (vs. Benchmark)", fmt.Sprintf("%.2f%%", report.Alpha*100), "Excess return over benchmark"})
+		table.Append([]string{"Beta (vs. Benchmark)", fmt.Sprintf("%.2f", report.Beta), "Systematic market volatility"})
+	}
 
 	// Highlighted Max Drawdown Details
 	table.Append([]string{
@@ -67,6 +75,8 @@ func printPerformanceTearSheet(strategyName string, report models.PerformanceRep
 	table.Append([]string{"Win / Loss Payoff Ratio", fmt.Sprintf("%.2f", report.PayoffRatio), "Avg Win $ / Avg Loss $"})
 	table.Append([]string{"Average Win", fmt.Sprintf("$%.2f", report.AvgWinAmount), "Per winning trade"})
 	table.Append([]string{"Average Loss", fmt.Sprintf("$%.2f", report.AvgLossAmount), "Per losing trade"})
+	table.Append([]string{"Average MAE (Drawdown)", fmt.Sprintf("%.2f%%", report.AvgMAE*100), "Max Adverse Excursion during trade"})
+	table.Append([]string{"Average MFE (Runup)", fmt.Sprintf("%.2f%%", report.AvgMFE*100), "Max Favorable Excursion during trade"})
 	table.Append([]string{"Average Holding Period", fmt.Sprintf("%.1f days", report.AvgHoldingDays), "Holding horizon"})
 	table.Append([]string{"Total Commissions & Fees", fmt.Sprintf("$%.2f", report.TotalCommissionPaid), "Exchange / broker costs deducted"})
 

@@ -40,6 +40,10 @@ func (s *RSI2TrendStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
+func (s *RSI2TrendStrategy) Validate() error {
+	return ValidateConfig(s.DefaultConfig())
+}
+
 func (s *RSI2TrendStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 

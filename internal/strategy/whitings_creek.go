@@ -41,6 +41,10 @@ func (s *WhitingsCreekStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
+func (s *WhitingsCreekStrategy) Validate() error {
+	return ValidateConfig(s.DefaultConfig())
+}
+
 func (s *WhitingsCreekStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 

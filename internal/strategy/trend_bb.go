@@ -40,6 +40,10 @@ func (s *TrendBBOversoldStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
+func (s *TrendBBOversoldStrategy) Validate() error {
+	return ValidateConfig(s.DefaultConfig())
+}
+
 func (s *TrendBBOversoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 

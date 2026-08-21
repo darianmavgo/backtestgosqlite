@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download ui server
+.PHONY: all build clean test tidy backtest download ui server compare example-csv list
 
 # Go Parameters
 GOCMD=go
@@ -35,12 +35,19 @@ test:
 	@echo "Running tests..."
 	$(GOTEST) -v ./internal/... ./cmd/...
 
+list: build
+	./$(BIN_DIR)/backtest -list
+
 backtest: build
-	@echo "Running Whitings Creek backtest pipeline..."
-	./$(BIN_DIR)/backtest -db data/wc_master_backtest.db -settings data/settings.db
+	@echo "Running default backtest (BB-Capitulation)..."
+	./$(BIN_DIR)/backtest -strategy bb-capitulation -capital 100000
+
+example-csv: build
+	@echo "Running custom CSV ingestion and backtest example..."
+	./examples/custom_csv_backtest/run_example.sh
 
 download: build
-	@echo "Downloading 4 years of history for top 50 leveraged ETFs..."
+	@echo "Downloading 4 years of history for top 50 symbols..."
 	./$(BIN_DIR)/download -db data/leveraged_backtest.db -settings data/settings.db -table leveraged_etf -limit 50 -years 4
 
 ui: build

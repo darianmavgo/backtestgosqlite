@@ -40,6 +40,10 @@ func (s *WC4DayHoldStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
+func (s *WC4DayHoldStrategy) Validate() error {
+	return ValidateConfig(s.DefaultConfig())
+}
+
 func (s *WC4DayHoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 

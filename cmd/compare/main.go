@@ -71,65 +71,63 @@ func main() {
 	drawdownCurvesMap := make(map[string][]float64)
 	var strategyDataList []analytics.StrategyReportData
 
-	for _, strat := range allStrategies {
-		config := strat.DefaultConfig()
-		signals := strat.GenerateSignals(barsBySymbol)
+	// Run all strategies concurrently across goroutines
+	simResults := simulator.RunConcurrent(allStrategies, barsBySymbol, sortedDates, *capital, nil)
 
+	for _, simRes := range simResults {
 		if symUpper != "" {
-			var filtered []models.Signal
-			for _, s := range signals {
-				if strings.ToUpper(s.Symbol) == symUpper {
-					filtered = append(filtered, s)
+			// Single symbol filter if requested
+			var filteredTrades []models.Trade
+			for _, t := range simRes.Trades {
+				if strings.ToUpper(t.Symbol) == symUpper {
+					filteredTrades = append(filteredTrades, t)
 				}
 			}
-			signals = filtered
+			simRes.Trades = filteredTrades
 		}
 
-		sim := simulator.NewPortfolioSimulator(config, *capital)
-		report, trades, curve := sim.Run(signals, barsBySymbol, sortedDates)
-
 		sType := "Go"
-		if strings.HasSuffix(strat.ID(), "-sql") {
+		if strings.HasSuffix(simRes.StrategyID, "-sql") {
 			sType = "SQL"
 		}
 
 		results = append(results, CompareResult{
-			ID:     strat.ID(),
-			Name:   strat.Name(),
+			ID:     simRes.StrategyID,
+			Name:   simRes.Name,
 			Type:   sType,
-			Report: report,
-			Trades: trades,
-			Curve:  curve,
+			Report: simRes.Report,
+			Trades: simRes.Trades,
+			Curve:  simRes.EquityCurve,
 		})
 
 		strategyDataList = append(strategyDataList, analytics.StrategyReportData{
-			ID:     strat.ID(),
-			Name:   strat.Name(),
+			ID:     simRes.StrategyID,
+			Name:   simRes.Name,
 			Type:   sType,
-			Report: report,
-			Trades: trades,
+			Report: simRes.Report,
+			Trades: simRes.Trades,
 		})
 
 		var eqSeries []float64
 		var ddSeries []float64
-		for _, pt := range curve {
+		for _, pt := range simRes.EquityCurve {
 			eqSeries = append(eqSeries, pt.TotalEquity)
 			ddSeries = append(ddSeries, pt.DrawdownPct)
 		}
-		equityCurvesMap[strat.ID()] = eqSeries
-		drawdownCurvesMap[strat.ID()] = ddSeries
+		equityCurvesMap[simRes.StrategyID] = eqSeries
+		drawdownCurvesMap[simRes.StrategyID] = ddSeries
 	}
 
 	// Render CLI table
 	fmt.Printf("\n==================================================================================================================================================================\n")
-	fmt.Printf("🏆 MULTI-STRATEGY COMPARATIVE TEAR SHEET (PORTFOLIO SIMULATION: GO & SQL STRATEGIES)\n")
+	fmt.Printf("🏆 MULTI-STRATEGY COMPARATIVE TEAR SHEET (CONCURRENT PORTFOLIO SIMULATION: GO & SQL STRATEGIES)\n")
 	fmt.Printf("📅 BACKTEST TIME WINDOW: %s ➔ %s (%.1f Years | %d Trading Days | Starting Capital: $%.2f)\n",
 		startDate, endDate, float64(totalDays)/252.0, totalDays, *capital)
 	fmt.Printf("==================================================================================================================================================================\n")
 
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{
-		"ID", "Type", "Strategy Name", "Trades", "Win Rate", "Net Profit", "Total Return", "Profit Factor", "🔴 MAX DRAWDOWN %", "🔴 MAX DRAWDOWN ($)", "DD Span", "Sharpe", "Sortino", "Avg Hold",
+		"ID", "Type", "Strategy Name", "Trades", "Win Rate", "Net Profit", "Total Return", "Profit Factor", "🔴 MAX DRAWDOWN %", "🔴 MAX DRAWDOWN ($)", "Calmar", "Sharpe", "Sortino", "Avg Hold",
 	})
 	table.SetBorder(true)
 	table.SetAutoWrapText(false)
@@ -147,7 +145,7 @@ func main() {
 			fmt.Sprintf("%.2f", rep.ProfitFactor),
 			fmt.Sprintf("%.2f%%", rep.MaxDrawdownPct*100),
 			fmt.Sprintf("-$%.2f", rep.MaxDrawdownDollars),
-			fmt.Sprintf("%dd", rep.MaxDrawdownDuration),
+			fmt.Sprintf("%.2f", rep.CalmarRatio),
 			fmt.Sprintf("%.2f", rep.SharpeRatio),
 			fmt.Sprintf("%.2f", rep.SortinoRatio),
 			fmt.Sprintf("%.1f days", rep.AvgHoldingDays),
