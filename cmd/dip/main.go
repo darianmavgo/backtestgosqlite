@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/darianmavgo/backtestgosqlite/internal/charting"
 	"github.com/darianmavgo/backtestgosqlite/internal/dipsim"
 	"github.com/darianmavgo/backtestgosqlite/internal/signals"
 	"github.com/darianmavgo/backtestgosqlite/internal/storage"
@@ -37,6 +38,7 @@ func main() {
 	capital := flag.Float64("capital", 100000.0, "Starting cash ($)")
 	cashYield := flag.Float64("yield", 0.045, "Annual cash yield on idle reserves (0.045 = 4.5%)")
 	regime := flag.String("regime", "", "Regime filter: 'VOO < SMA200', 'VOO < SMA50', 'VOO >= SMA200', or empty for all")
+	htmlOutput := flag.String("html", "", "Optional path to export interactive HTML chart (e.g. reports/tecl_dip.html)")
 	flag.Parse()
 
 	db, err := storage.OpenSQLite(*dbPath)
@@ -110,4 +112,14 @@ func main() {
 
 	// 6. Print results
 	dipsim.PrintResult(result)
+
+	// 7. Generate HTML Report if requested
+	if *htmlOutput != "" {
+		reportView := charting.FromResult(result, vooBars, *capital)
+		if err := charting.GenerateHTML(*htmlOutput, reportView); err != nil {
+			log.Printf("Warning: Failed to generate HTML report: %v", err)
+		} else {
+			fmt.Printf("\n✨ Interactive Chart saved to: %s\n\n", *htmlOutput)
+		}
+	}
 }
