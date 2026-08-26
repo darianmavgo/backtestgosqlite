@@ -40,6 +40,7 @@ type StrategyConfig struct {
 	UseTrailingStop    bool    `json:"use_trailing_stop,omitempty"`   // Whether to trail stop-loss from highest price
 	TrailingStopPct    float64 `json:"trailing_stop_pct,omitempty"`   // Trailing stop distance percentage (e.g. 0.05 for 5%)
 	HoldingWindow      int     `json:"holding_window"`                // Max holding days before time-up exit (e.g. 10)
+	ExitAtMarketOpen   bool    `json:"exit_at_market_open,omitempty"` // Whether to exit at market open on time-up exit
 	PositionCap        int     `json:"position_cap"`                  // Max concurrent open positions (e.g. 5)
 	AllocationPct      float64 `json:"allocation_pct"`                // Portfolio equity allocation per trade (e.g. 0.20 for 20%)
 	FixedShares        int     `json:"fixed_shares,omitempty"`        // Shares per position if PositionSizing == "fixed_shares"

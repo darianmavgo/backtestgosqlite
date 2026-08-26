@@ -1,4 +1,7 @@
 -- Consolidated Schema for Whitings Creek Strategy Pipeline
+CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
+CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
+
 DROP TABLE IF EXISTS entry;
 CREATE TABLE IF NOT EXISTS entry (
     symbol     TEXT NULL,

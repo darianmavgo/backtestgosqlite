@@ -205,6 +205,10 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.TargetPct = 1.15
 				cfg.StopLossPct = 0.95
 				cfg.HoldingWindow = 12
+			case "millwharf":
+				cfg.TargetPct = 1.15
+				cfg.StopLossPct = 0.93
+				cfg.HoldingWindow = 10
 			}
 
 			NewSQLPipelineStrategy(id, name, desc, pipelinePath, dbPath, cfg)

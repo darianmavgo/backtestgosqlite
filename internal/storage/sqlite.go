@@ -131,8 +131,9 @@ func EnsureBarTable(db *sqlx.DB, tableName string) error {
 			volume BIGINT,
 			symbol TEXT
 		);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_unique ON %s(symbol, Date);
 		CREATE INDEX IF NOT EXISTS idx_%s_sym_date ON %s(symbol, Date);
-	`, tableName, tableName, tableName)
+	`, tableName, tableName, tableName, tableName, tableName)
 	_, err := db.Exec(schema)
 	return err
 }
@@ -159,7 +160,7 @@ func UpsertBars(db *sqlx.DB, tableName string, bars []models.Bar) error {
 	defer tx.Rollback()
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (symbol, Date, timeframe, asset_class, open, high, low, close, "Adj Close", volume)
+		INSERT OR REPLACE INTO %s (symbol, Date, timeframe, asset_class, open, high, low, close, "Adj Close", volume)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, tableName)
 	stmt, err := tx.Prepare(query)

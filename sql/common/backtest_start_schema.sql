@@ -30,5 +30,7 @@ CREATE TABLE "backtest_start" (
   "volume" BIGINT,
   "symbol" TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
+CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
 
 PRAGMA foreign_keys = true;

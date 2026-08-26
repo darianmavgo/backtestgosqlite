@@ -1,4 +1,7 @@
 -- Schema for SQL-based RSI2 Trend Pullback Strategy
+CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
+CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
+
 DROP TABLE IF EXISTS rsi2_trend_signals;
 CREATE TABLE rsi2_trend_signals (
     idx INTEGER,

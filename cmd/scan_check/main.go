@@ -39,7 +39,7 @@ func main() {
 
 	// 1. Inspect recent status for each symbol
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Symbol", "Last Date", "Close", "RSI(2)", "RSI(5)", "RSI(14)", "Lower BB(20)", "SMA(50)", "MinLow(3-12)", "WC Cliff %"})
+	table.SetHeader([]string{"Symbol", "Last Date", "Close", "Decline Streak", "RSI(2)", "RSI(5)", "RSI(14)", "Lower BB(20)", "SMA(50)", "MinLow(3-12)", "WC Cliff %"})
 	table.SetBorder(true)
 
 	for sym, bars := range barsBySymbol {
@@ -54,6 +54,16 @@ func main() {
 		bb := strategy.CalcBollinger(bars, 20, 2.0)
 		sma50 := strategy.CalcSMA(bars, 50)
 
+		// Current decline streak
+		declineStreak := 0
+		for j := n - 1; j >= 1; j-- {
+			if bars[j].Close < bars[j-1].Close {
+				declineStreak++
+			} else {
+				break
+			}
+		}
+
 		// Min low Day -3 to -12
 		minLow := bars[n-3].Low
 		for j := 4; j <= 12 && n-j >= 0; j++ {
@@ -67,6 +77,7 @@ func main() {
 			sym,
 			lastBar.Date,
 			fmt.Sprintf("$%.2f", lastBar.Close),
+			fmt.Sprintf("%d days", declineStreak),
 			fmt.Sprintf("%.1f", rsi2[n-1]),
 			fmt.Sprintf("%.1f", rsi5[n-1]),
 			fmt.Sprintf("%.1f", rsi14[n-1]),

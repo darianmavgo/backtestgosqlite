@@ -150,6 +150,9 @@ func (s *PortfolioSimulator) Run(
 			// E. Max Holding Days Exceeded (Time-Up Market Exit)
 			if pos.HoldDays >= s.Config.HoldingWindow {
 				exitPrice := bar.Close * (1.0 - s.Config.SlippagePct)
+				if s.Config.ExitAtMarketOpen {
+					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
+				}
 				s.closePosition(sym, date, exitPrice, models.ExitReasonTimeUp)
 				continue
 			}
