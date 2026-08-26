@@ -2,6 +2,43 @@
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
 CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
 
+-- Calculated Slice Table: is_down_slice for decline & streak analysis
+DROP TABLE IF EXISTS is_down_slice;
+CREATE TABLE is_down_slice AS
+WITH step1 AS (
+    SELECT 
+        symbol,
+        substr(Date, 1, 10) AS date,
+        close,
+        LAG(close, 1) OVER (PARTITION BY symbol ORDER BY Date) AS prev_close,
+        (close < LAG(close, 1) OVER (PARTITION BY symbol ORDER BY Date)) AS is_down
+    FROM backtest_start
+),
+step2 AS (
+    SELECT 
+        symbol,
+        date,
+        close,
+        prev_close,
+        is_down,
+        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date) - 
+        ROW_NUMBER() OVER (PARTITION BY symbol, is_down ORDER BY date) AS streak_id
+    FROM step1
+)
+SELECT 
+    symbol,
+    date,
+    close,
+    prev_close,
+    is_down,
+    streak_id,
+    CASE 
+        WHEN is_down = 1 THEN COUNT(*) OVER (PARTITION BY symbol, is_down, streak_id)
+        ELSE 0 
+    END AS streak_days
+FROM step2;
+CREATE INDEX IF NOT EXISTS idx_is_down_slice_sym_date ON is_down_slice(symbol, date);
+
 DROP TABLE IF EXISTS study_buy_signals;
 CREATE TABLE IF NOT EXISTS study_buy_signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
