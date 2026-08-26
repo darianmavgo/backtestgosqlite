@@ -428,3 +428,35 @@ func FetchTradeSummaryStats(db *sqlx.DB, strategyID string) (models.PerformanceR
 
 	return report, nil
 }
+
+// FetchDipBars retrieves sorted daily OHLCV bars for a symbol, formatted for dip simulations.
+// This eliminates the 19 copies of the same SELECT query across cmd/ files.
+func FetchDipBars(db *sqlx.DB, symbol string) ([]models.BarData, error) {
+	query := `
+		SELECT substr(Date, 1, 10) AS Date, open, high, low, close, "Adj Close", volume
+		FROM backtest_start
+		WHERE symbol = ?
+		ORDER BY substr(Date, 1, 10) ASC;
+	`
+	var bars []models.BarData
+	err := db.Select(&bars, query, symbol)
+	return bars, err
+}
+
+// FetchSignalBars retrieves bars with SMA200 and SMA50 window functions pre-computed via SQL.
+// This eliminates the 6 copies of the same window-function query across cmd/ files.
+func FetchSignalBars(db *sqlx.DB, symbol string) ([]models.SignalBar, error) {
+	query := `
+		SELECT 
+			substr(Date, 1, 10) AS date,
+			close,
+			AVG(close) OVER (ORDER BY substr(Date, 1, 10) ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
+			AVG(close) OVER (ORDER BY substr(Date, 1, 10) ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma50
+		FROM backtest_start
+		WHERE symbol = ?
+		ORDER BY substr(Date, 1, 10) ASC;
+	`
+	var bars []models.SignalBar
+	err := db.Select(&bars, query, symbol)
+	return bars, err
+}

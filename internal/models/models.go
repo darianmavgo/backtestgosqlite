@@ -169,3 +169,31 @@ type PerformanceReport struct {
 	AvgMFE                  float64 `json:"avg_mfe"`
 	TotalCommissionPaid     float64 `json:"total_commission_paid"`
 }
+
+// BarData is the lightweight OHLCV bar type used by dip simulations.
+// Replaces the 19 ad-hoc "type BarData struct" definitions across cmd/ files.
+type BarData struct {
+	Date     string  `db:"Date" json:"date"`
+	Open     float64 `db:"open" json:"open"`
+	High     float64 `db:"high" json:"high"`
+	Low      float64 `db:"low" json:"low"`
+	Close    float64 `db:"close" json:"close"`
+	AdjClose float64 `db:"Adj Close" json:"adj_close"`
+	Volume   int64   `db:"volume" json:"volume"`
+}
+
+// SignalBar carries a date, close price, and pre-computed moving averages for regime detection.
+type SignalBar struct {
+	Date   string  `db:"date" json:"date"`
+	Close  float64 `db:"close" json:"close"`
+	SMA200 float64 `db:"sma200" json:"sma200"`
+	SMA50  float64 `db:"sma50" json:"sma50"`
+}
+
+// DailySnapshot records a single day's mark-to-market portfolio state for equity curves and drawdown charts.
+type DailySnapshot struct {
+	Date      string  `json:"date"`
+	Equity    float64 `json:"equity"`
+	Drawdown  float64 `json:"drawdown"`
+	ActivePos string  `json:"active_pos,omitempty"`
+}
