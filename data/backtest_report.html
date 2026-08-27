@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Millwharf Weekly Consistent Decline Performance Report - Quantitative Strategy Benchmark</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-card: rgba(20, 27, 45, 0.7);
+            --bg-card-hover: rgba(30, 41, 69, 0.85);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-focus: #3b82f6;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+            --accent-amber: #f59e0b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            padding: 2rem 1.5rem;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+
+        .header-title h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            background: linear-gradient(135deg, #ffffff 0%, #93c5fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .header-title p {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+        }
+
+        .badge-group {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .badge-green { border-color: rgba(16, 185, 129, 0.3); color: var(--accent-green); background: rgba(16, 185, 129, 0.1); }
+        .badge-blue { border-color: rgba(59, 130, 246, 0.3); color: var(--accent-blue); background: rgba(59, 130, 246, 0.1); }
+        .badge-red { border-color: rgba(239, 68, 68, 0.3); color: var(--accent-red); background: rgba(239, 68, 68, 0.1); }
+
+        /* KPI Banner Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: var(--bg-card-hover);
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+        }
+
+        .kpi-card.mdd-card::before {
+            background: linear-gradient(90deg, #ef4444, #f59e0b);
+        }
+
+        .kpi-card.window-card::before {
+            background: linear-gradient(90deg, #10b981, #06b6d4);
+        }
+
+        .kpi-label {
+            font-size: 0.825rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .kpi-value {
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 0.35rem;
+        }
+
+        .kpi-subtext {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Charts Layout */
+        .chart-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 1.25rem;
+            padding: 1.75rem;
+            margin-bottom: 2.5rem;
+            backdrop-filter: blur(12px);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .chart-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 380px;
+            width: 100%;
+        }
+
+        /* Tables */
+        .table-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 1.25rem;
+            padding: 1.75rem;
+            margin-bottom: 2.5rem;
+            backdrop-filter: blur(12px);
+            overflow-x: auto;
+        }
+
+        .table-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1.25rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+        }
+
+        td {
+            padding: 1.1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .text-green { color: var(--accent-green) !important; }
+        .text-red { color: var(--accent-red) !important; }
+        .text-blue { color: var(--accent-blue) !important; }
+        .text-amber { color: var(--accent-amber) !important; }
+
+        .font-sans { font-family: 'Outfit', sans-serif !important; }
+        .font-bold { font-weight: 600; }
+
+        /* Strategy Selector Tabs */
+        .tab-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.6rem 1.25rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active, .tab-btn:hover {
+            background: var(--accent-blue);
+            color: #ffffff;
+            border-color: var(--accent-blue);
+        }
+
+        .trade-badge {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-target { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-stop { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .badge-timeup { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .badge-end { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+
+        footer {
+            margin-top: 3rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-title">
+                <h1>Millwharf Weekly Consistent Decline Performance Report</h1>
+                <p>Quantitative Strategy & Portfolio Simulation Performance Report</p>
+            </div>
+            <div class="badge-group">
+                <div class="badge badge-green">
+                    <span>📅 Window: 2022-08-22 to 2026-08-21</span>
+                </div>
+                <div class="badge badge-blue">
+                    <span>⏱️ 4.0 Years (1004 Trading Days)</span>
+                </div>
+                <div class="badge">
+                    <span>💵 Starting Capital: $100000.00</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- KPI Banner -->
+        <div class="kpi-grid">
+            <div class="kpi-card window-card">
+                <div class="kpi-label">📅 Backtest Time Window <span>LIVE</span></div>
+                <div class="kpi-value" style="font-size: 1.35rem;">2022-08-22 ➔ 2026-08-21</div>
+                <div class="kpi-subtext">Total 1004 Sessions (4.0 Calendar Years)</div>
+            </div>
+
+            <div class="kpi-card mdd-card" id="kpi-mdd-card">
+                <div class="kpi-label">🔴 Max Drawdown (MDD) <span>PEAK-TO-TROUGH</span></div>
+                <div class="kpi-value text-red" id="kpi-mdd-val">--</div>
+                <div class="kpi-subtext" id="kpi-mdd-sub">--</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">📈 Top Net Realized Profit <span>RETURN</span></div>
+                <div class="kpi-value text-green" id="kpi-profit-val">--</div>
+                <div class="kpi-subtext" id="kpi-profit-sub">--</div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label">⚖️ Risk-Adjusted Return <span>SHARPE</span></div>
+                <div class="kpi-value text-blue" id="kpi-sharpe-val">--</div>
+                <div class="kpi-subtext" id="kpi-sharpe-sub">--</div>
+            </div>
+        </div>
+
+        <!-- Multi-Strategy Comparison Table -->
+        <div class="table-section">
+            <div class="table-title">🏆 Strategy Comparative Tear Sheet (Side-by-Side)</div>
+            <table id="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Strategy</th>
+                        <th>Type</th>
+                        <th>Completed Trades</th>
+                        <th>Win Rate</th>
+                        <th>Net Realized PnL</th>
+                        <th>Total Return</th>
+                        <th>Profit Factor</th>
+                        <th>🔴 Max Drawdown (%)</th>
+                        <th>🔴 Max Drawdown ($)</th>
+                        <th>DD Duration</th>
+                        <th>Sharpe</th>
+                        <th>Sortino</th>
+                        <th>Avg Hold</th>
+                    </tr>
+                </thead>
+                <tbody id="comparison-tbody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Interactive Equity Curve Chart -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <div class="chart-title">📊 Multi-Strategy Cumulative Portfolio Equity Curve ($)</div>
+            </div>
+            <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Underwater Drawdown Chart -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <div class="chart-title">🌊 Portfolio Underwater Drawdown (% Decline From Peak)</div>
+            </div>
+            <div class="chart-container">
+                <canvas id="drawdownChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Trade Log Section with Strategy Selector -->
+        <div class="table-section">
+            <div class="table-title">📜 Individual Trade Execution Log</div>
+            <div class="tab-group" id="strategy-tabs">
+                <!-- Strategy Tabs populated by JS -->
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Symbol</th>
+                        <th>Entry Date</th>
+                        <th>Entry Price</th>
+                        <th>Exit Date</th>
+                        <th>Exit Price</th>
+                        <th>Hold Days</th>
+                        <th>Exit Trigger</th>
+                        <th>Net PnL ($)</th>
+                        <th>Return (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="trades-tbody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            wc_2022 Algorithmic Trading & Backtesting Engine &bull; Generated on 2026-08-21
+        </footer>
+    </div>
+
+    <script>
+        const reportData = {"title":"Millwharf Weekly Consistent Decline Performance Report","symbol":"","start_date":"2022-08-22","end_date":"2026-08-21","total_days":1004,"total_years":3.984126984126984,"initial_cap":100000,"strategies":[{"id":"millwharf","name":"Millwharf Weekly Consistent Decline","type":"Go","report":{"start_date":"2022-08-22","end_date":"2026-08-21","total_trading_days":1004,"total_calendar_years":3.984126984126984,"initial_capital":100000,"final_equity":173289.32568527595,"net_profit":73289.32568527595,"total_return_pct":0.7328932568527595,"cagr":0.14797062042773002,"sharpe_ratio":1.2405822217884037,"sortino_ratio":1.9062593972300472,"calmar_ratio":1.2777948088468134,"omega_ratio":1.5306279205817588,"ulcer_index":5.111226495418094,"alpha":0,"beta":0,"benchmark_return_pct":0,"max_drawdown_pct":0.11580155076797566,"max_drawdown_dollars":19713.43190600336,"max_drawdown_peak_equity":170234.61063575852,"max_drawdown_trough_equity":150521.17872975516,"max_drawdown_peak_date":"2025-02-20","max_drawdown_trough_date":"2025-04-07","max_drawdown_days":337,"total_trades":87,"winning_trades":58,"losing_trades":29,"win_rate":0.6666666666666666,"profit_factor":1.9641775380890862,"avg_trade_return_pct":0,"avg_win_amount":2573.9061092490088,"avg_loss_amount":2620.848736263542,"payoff_ratio":0.9820887690445432,"avg_holding_days":3.7011494252873565,"avg_mae":-0.06532375349051503,"avg_mfe":0.11244822445426737,"total_commission_paid":20.06019999999999},"trades":[{"id":1,"symbol":"SOXL","order_type":"market","entry_idx":0,"entry_date":"2022-09-02","entry_price":12.866429656505584,"target_price":15.431999588012694,"stop_loss_price":0.0001,"exit_date":"2022-09-09","exit_price":14.252870228767396,"exit_reason":"TIME_UP","shares":1554,"invested_capital":0,"gross_pnl":0,"net_pnl":2154.373249294855,"return_pct":0.10775643354648841,"hold_days":4,"commission_paid":0.3108,"mae_pct":-0.06189984190980836,"mfe_pct":0.1541663676652676},{"id":2,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2022-09-26","entry_price":120.66029847335815,"target_price":144.7199981689453,"stop_loss_price":0.0001,"exit_date":"2022-09-28","exit_price":144.64763816986084,"exit_reason":"PROFIT_TARGET","shares":169,"invested_capital":0,"gross_pnl":0,"net_pnl":4053.843508708955,"return_pct":0.19880059970014993,"hold_days":2,"commission_paid":0.033800000000000004,"mae_pct":0,"mfe_pct":0.272332376223636},{"id":3,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2022-09-23","entry_price":11.875934885501861,"target_price":14.243999862670899,"stop_loss_price":0.0001,"exit_date":"2022-09-29","exit_price":12.623685114383699,"exit_reason":"TIME_UP","shares":1720,"invested_capital":0,"gross_pnl":0,"net_pnl":1285.958393676762,"return_pct":0.06296348338813235,"hold_days":4,"commission_paid":0.34400000000000003,"mae_pct":-0.04133861134750395,"mfe_pct":0.14096282283230607},{"id":4,"symbol":"FAS","order_type":"market","entry_idx":0,"entry_date":"2022-10-12","entry_price":53.326649236679074,"target_price":63.959999084472656,"stop_loss_price":0.0001,"exit_date":"2022-10-18","exit_price":65.31732347488403,"exit_reason":"PROFIT_TARGET","shares":403,"invested_capital":0,"gross_pnl":0,"net_pnl":4832.201417996598,"return_pct":0.22485332211643158,"hold_days":4,"commission_paid":0.0806,"mae_pct":-0.06950840448165277,"mfe_pct":0.24009286538732139},{"id":5,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2022-11-03","entry_price":9.754875,"target_price":11.7,"stop_loss_price":0.0001,"exit_date":"2022-11-09","exit_price":7.551222328424454,"exit_reason":"TIME_UP","shares":2302,"invested_capital":0,"gross_pnl":0,"net_pnl":-5073.038649966909,"return_pct":-0.22590270726949818,"hold_days":4,"commission_paid":0.46040000000000003,"mae_pct":-0.28343522893751444,"mfe_pct":0.18914905434151913},{"id":6,"symbol":"GUSH","order_type":"market","entry_idx":0,"entry_date":"2022-12-09","entry_price":33.48423252868652,"target_price":40.160998535156246,"stop_loss_price":0.0001,"exit_date":"2022-12-15","exit_price":35.977001432418824,"exit_reason":"TIME_UP","shares":640,"invested_capital":0,"gross_pnl":0,"net_pnl":1595.3080983886775,"return_pct":0.0744460516333085,"hold_days":4,"commission_paid":0.128,"mae_pct":0,"mfe_pct":0.14960077770578525},{"id":7,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2022-12-23","entry_price":6.313154942750931,"target_price":7.571999931335449,"stop_loss_price":0.0001,"exit_date":"2022-12-30","exit_price":6.006995228767395,"exit_reason":"TIME_UP","shares":3448,"invested_capital":0,"gross_pnl":0,"net_pnl":-1055.983493815229,"return_pct":-0.048495517179581164,"hold_days":4,"commission_paid":0.6896,"mae_pct":-0.18107505309522157,"mfe_pct":0.004252265322235597},{"id":8,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2023-02-10","entry_price":8.494244771003723,"target_price":10.187999725341797,"stop_loss_price":0.0001,"exit_date":"2023-02-15","exit_price":10.182905725479127,"exit_reason":"PROFIT_TARGET","shares":2537,"invested_capital":0,"gross_pnl":0,"net_pnl":4283.8791415041005,"return_pct":0.19880059970015007,"hold_days":3,"commission_paid":0.5074000000000001,"mae_pct":-0.08526299978422085,"mfe_pct":0.3291352281715498},{"id":9,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2023-02-24","entry_price":29.764875,"target_price":34.349998474121094,"stop_loss_price":0.0001,"exit_date":"2023-03-02","exit_price":31.854065838813785,"exit_reason":"TIME_UP","shares":753,"invested_capital":0,"gross_pnl":0,"net_pnl":1573.085401626779,"return_pct":0.07018980724138049,"hold_days":4,"commission_paid":0.1506,"mae_pct":-0.0028515051658781943,"mfe_pct":0.10096213935935132},{"id":10,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2023-03-10","entry_price":133.46669389343262,"target_price":160.07999267578126,"stop_loss_price":0.0001,"exit_date":"2023-03-16","exit_price":81.55919847488404,"exit_reason":"TIME_UP","shares":170,"invested_capital":0,"gross_pnl":0,"net_pnl":-8824.291221153258,"return_pct":-0.3889172190029257,"hold_days":4,"commission_paid":0.034,"mae_pct":-0.4783717142033158,"mfe_pct":0},{"id":11,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2023-04-10","entry_price":10.695344580173492,"target_price":12.827999496459961,"stop_loss_price":0.0001,"exit_date":"2023-04-14","exit_price":10.624685114383698,"exit_reason":"TIME_UP","shares":1960,"invested_capital":0,"gross_pnl":0,"net_pnl":-138.68855294799482,"return_pct":-0.006606562814327506,"hold_days":4,"commission_paid":0.392,"mae_pct":-0.03415922261585618,"mfe_pct":0.05746947513805459},{"id":12,"symbol":"GUSH","order_type":"market","entry_idx":0,"entry_date":"2023-04-21","entry_price":30.25511977100372,"target_price":34.54750061035156,"stop_loss_price":0.0001,"exit_date":"2023-04-27","exit_price":28.49324594497681,"exit_reason":"TIME_UP","shares":692,"invested_capital":0,"gross_pnl":0,"net_pnl":-1219.2858876106231,"return_pct":-0.05823390683501697,"hold_days":4,"commission_paid":0.1384,"mae_pct":-0.08375009770658863,"mfe_pct":0.04420345798543239},{"id":13,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2023-04-24","entry_price":7.323660171747207,"target_price":8.784000205993651,"stop_loss_price":0.0001,"exit_date":"2023-04-28","exit_price":7.086455152511597,"exit_reason":"TIME_UP","shares":2879,"invested_capital":0,"gross_pnl":0,"net_pnl":-683.2011503793201,"return_pct":-0.032388862081652245,"hold_days":4,"commission_paid":0.5758,"mae_pct":-0.06877162351535923,"mfe_pct":0.09098450552655672},{"id":14,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2023-05-11","entry_price":44.352166831970216,"target_price":51.88999938964844,"stop_loss_price":0.0001,"exit_date":"2023-05-17","exit_price":42.70863454246521,"exit_reason":"TIME_UP","shares":463,"invested_capital":0,"gross_pnl":0,"net_pnl":-761.0017500408193,"return_pct":-0.037056414757177136,"hold_days":4,"commission_paid":0.0926,"mae_pct":-0.0654345948874544,"mfe_pct":0.034673222697424365},{"id":15,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2023-06-23","entry_price":49.72485076332092,"target_price":59.64000091552734,"stop_loss_price":0.0001,"exit_date":"2023-06-29","exit_price":54.98249332237244,"exit_reason":"TIME_UP","shares":410,"invested_capital":0,"gross_pnl":0,"net_pnl":2155.5924492111203,"return_pct":0.10573470766311018,"hold_days":4,"commission_paid":0.082,"mae_pct":0,"mfe_pct":0.16237653606015148},{"id":16,"symbol":"FAS","order_type":"market","entry_idx":0,"entry_date":"2023-06-26","entry_price":58.19908316802978,"target_price":64.5,"stop_loss_price":0.0001,"exit_date":"2023-06-30","exit_price":63.178394084930424,"exit_reason":"TIME_UP","shares":353,"invested_capital":0,"gross_pnl":0,"net_pnl":1757.6614536659263,"return_pct":0.08555651817614723,"hold_days":4,"commission_paid":0.07060000000000001,"mae_pct":0,"mfe_pct":0.10637480669144773},{"id":17,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2023-08-07","entry_price":97.84890305328369,"target_price":117.36000366210936,"stop_loss_price":0.0001,"exit_date":"2023-08-11","exit_price":100.9495,"exit_reason":"TIME_UP","shares":216,"invested_capital":0,"gross_pnl":0,"net_pnl":669.707340490723,"return_pct":0.0316876004734348,"hold_days":4,"commission_paid":0.0432,"mae_pct":-0.01685155432088586,"mfe_pct":0.0833028955089831},{"id":18,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2023-08-18","entry_price":10.135065114498138,"target_price":12.156000137329102,"stop_loss_price":0.0001,"exit_date":"2023-08-24","exit_price":11.054470419406892,"exit_reason":"TIME_UP","shares":2103,"invested_capital":0,"gross_pnl":0,"net_pnl":1933.2990562231098,"return_pct":0.09071528347593455,"hold_days":4,"commission_paid":0.42060000000000003,"mae_pct":-0.023193289171038984,"mfe_pct":0.09619420607219101},{"id":19,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2023-08-22","entry_price":60.69032984733581,"target_price":72.79199981689453,"stop_loss_price":0.0001,"exit_date":"2023-08-28","exit_price":63.5582051525116,"exit_reason":"TIME_UP","shares":353,"invested_capital":0,"gross_pnl":0,"net_pnl":1012.3246827270543,"return_pct":0.0472542382351491,"hold_days":4,"commission_paid":0.07060000000000001,"mae_pct":-0.02686306827044479,"mfe_pct":0.0975389452966635},{"id":20,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2023-09-07","entry_price":29.964975763320922,"target_price":33.689998626708984,"stop_loss_price":0.0001,"exit_date":"2023-09-13","exit_price":30.854565838813784,"exit_reason":"TIME_UP","shares":731,"invested_capital":0,"gross_pnl":0,"net_pnl":650.2172451852811,"return_pct":0.029687662106564355,"hold_days":4,"commission_paid":0.1462,"mae_pct":-0.0031695311498892978,"mfe_pct":0.050559819933840684},{"id":21,"symbol":"DFEN","order_type":"market","entry_idx":0,"entry_date":"2023-09-13","entry_price":16.64831938934326,"target_price":19.329999923706055,"stop_loss_price":0.0001,"exit_date":"2023-09-19","exit_price":16.771610686302186,"exit_reason":"TIME_UP","shares":1323,"invested_capital":0,"gross_pnl":0,"net_pnl":162.9820858766564,"return_pct":0.007405630206604813,"hold_days":4,"commission_paid":0.2646,"mae_pct":-0.025126851385053484,"mfe_pct":0.03373792164805127},{"id":22,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2023-09-22","entry_price":9.414704847335814,"target_price":11.291999816894531,"stop_loss_price":0.0001,"exit_date":"2023-09-28","exit_price":9.625185114383697,"exit_reason":"TIME_UP","shares":2344,"invested_capital":0,"gross_pnl":0,"net_pnl":493.1313459602348,"return_pct":0.02235654441227065,"hold_days":4,"commission_paid":0.46880000000000005,"mae_pct":-0.028116147356488565,"mfe_pct":0.1258983211214878},{"id":23,"symbol":"BITX","order_type":"market","entry_idx":0,"entry_date":"2023-09-27","entry_price":10.12505988550186,"target_price":11.024999618530273,"stop_loss_price":0.0001,"exit_date":"2023-09-28","exit_price":11.01948711872101,"exit_reason":"PROFIT_TARGET","shares":2185,"invested_capital":0,"gross_pnl":0,"net_pnl":1954.1050045838424,"return_pct":0.08833796968449395,"hold_days":1,"commission_paid":0.437,"mae_pct":0,"mfe_pct":0.089376246432391},{"id":24,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2023-10-04","entry_price":66.033,"target_price":79.2,"stop_loss_price":0.0001,"exit_date":"2023-10-10","exit_price":69.36530152511597,"exit_reason":"TIME_UP","shares":341,"invested_capital":0,"gross_pnl":0,"net_pnl":1136.280720064544,"return_pct":0.05046418495473424,"hold_days":4,"commission_paid":0.0682,"mae_pct":-0.012614950884524613,"mfe_pct":0.12065179531446396},{"id":25,"symbol":"GUSH","order_type":"market","entry_idx":0,"entry_date":"2023-10-27","entry_price":36.64831606864929,"target_price":41.529998779296875,"stop_loss_price":0.0001,"exit_date":"2023-11-02","exit_price":37.13142652511597,"exit_reason":"TIME_UP","shares":621,"invested_capital":0,"gross_pnl":0,"net_pnl":299.94949346580995,"return_pct":0.013182337097336887,"hold_days":4,"commission_paid":0.1242,"mae_pct":-0.031606210446688626,"mfe_pct":0.06662472784192496},{"id":26,"symbol":"GUSH","order_type":"market","entry_idx":0,"entry_date":"2023-11-09","entry_price":32.436208168029786,"target_price":38.903997802734374,"stop_loss_price":0.0001,"exit_date":"2023-11-15","exit_price":34.53272423744202,"exit_reason":"TIME_UP","shares":704,"invested_capital":0,"gross_pnl":0,"net_pnl":1475.8769128662111,"return_pct":0.06463505408991142,"hold_days":4,"commission_paid":0.1408,"mae_pct":-0.004815895493199987,"mfe_pct":0.10832932680377168},{"id":27,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2023-11-13","entry_price":26.563274236679074,"target_price":31.68000030517578,"stop_loss_price":0.0001,"exit_date":"2023-11-17","exit_price":29.795094466209413,"exit_reason":"TIME_UP","shares":866,"invested_capital":0,"gross_pnl":0,"net_pnl":2798.6697187732757,"return_pct":0.12166498002975024,"hold_days":4,"commission_paid":0.17320000000000002,"mae_pct":0,"mfe_pct":0.14669595370938535},{"id":28,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2023-12-08","entry_price":31.565774236679076,"target_price":36.47999954223633,"stop_loss_price":0.0001,"exit_date":"2023-12-14","exit_price":34.60268893241882,"exit_reason":"TIME_UP","shares":750,"invested_capital":0,"gross_pnl":0,"net_pnl":2277.6110218048098,"return_pct":0.09620909891102514,"hold_days":4,"commission_paid":0.15,"mae_pct":-0.0701954540571555,"mfe_pct":0.14649488256988835},{"id":29,"symbol":"TNA","order_type":"market","entry_idx":0,"entry_date":"2024-01-05","entry_price":35.02750332069397,"target_price":42.01199798583984,"stop_loss_price":0.0001,"exit_date":"2024-01-11","exit_price":35.5722051525116,"exit_reason":"TIME_UP","shares":689,"invested_capital":0,"gross_pnl":0,"net_pnl":375.2306621223506,"return_pct":0.015550689606125248,"hold_days":4,"commission_paid":0.1378,"mae_pct":-0.034473014385708864,"mfe_pct":0.05688378982730847},{"id":30,"symbol":"BITX","order_type":"market","entry_idx":0,"entry_date":"2024-01-18","entry_price":20.640314160346982,"target_price":24.75599899291992,"stop_loss_price":0.0001,"exit_date":"2024-01-24","exit_price":19.64017461872101,"exit_reason":"TIME_UP","shares":1174,"invested_capital":0,"gross_pnl":0,"net_pnl":-1174.2812218688905,"return_pct":-0.04845563560012984,"hold_days":4,"commission_paid":0.2348,"mae_pct":-0.11774603123741746,"mfe_pct":0.0576389367970295},{"id":31,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2024-02-23","entry_price":69.9849719467163,"target_price":77.36000061035156,"stop_loss_price":0.0001,"exit_date":"2024-02-29","exit_price":70.8945353050232,"exit_reason":"TIME_UP","shares":342,"invested_capital":0,"gross_pnl":0,"net_pnl":311.0364685409612,"return_pct":0.012996552445565053,"hold_days":4,"commission_paid":0.0684,"mae_pct":-0.05265371682600762,"mfe_pct":0.055512357750513},{"id":32,"symbol":"SOXL","order_type":"market","entry_idx":0,"entry_date":"2024-03-19","entry_price":41.440708168029786,"target_price":49.689998626708984,"stop_loss_price":0.0001,"exit_date":"2024-03-25","exit_price":44.47775,"exit_reason":"TIME_UP","shares":580,"invested_capital":0,"gross_pnl":0,"net_pnl":1761.426262542724,"return_pct":0.07328643660373538,"hold_days":4,"commission_paid":0.116,"mae_pct":-0.019804421121793772,"mfe_pct":0.17662077886859137},{"id":33,"symbol":"DFEN","order_type":"market","entry_idx":0,"entry_date":"2024-04-12","entry_price":24.08203469467163,"target_price":26.6200008392334,"stop_loss_price":0.0001,"exit_date":"2024-04-18","exit_price":23.8280801525116,"exit_reason":"TIME_UP","shares":1013,"invested_capital":0,"gross_pnl":0,"net_pnl":-257.35725120811037,"return_pct":-0.010545393916246646,"hold_days":4,"commission_paid":0.2026,"mae_pct":-0.025829861059730362,"mfe_pct":0.0418554939686754},{"id":34,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2024-04-19","entry_price":5.572785171747207,"target_price":6.6840002059936525,"stop_loss_price":0.0001,"exit_date":"2024-04-24","exit_price":6.7316326334476475,"exit_reason":"PROFIT_TARGET","shares":4371,"invested_capital":0,"gross_pnl":0,"net_pnl":5064.885155092624,"return_pct":0.20794762869660607,"hold_days":3,"commission_paid":0.8742000000000001,"mae_pct":-0.11354916707265683,"mfe_pct":0.27584321203705076},{"id":35,"symbol":"FAS","order_type":"market","entry_idx":0,"entry_date":"2024-05-01","entry_price":97.34865305328368,"target_price":103.62000274658203,"stop_loss_price":0.0001,"exit_date":"2024-05-07","exit_price":103.56819274520875,"exit_reason":"PROFIT_TARGET","shares":260,"invested_capital":0,"gross_pnl":0,"net_pnl":1617.054319900515,"return_pct":0.06388932457566522,"hold_days":4,"commission_paid":0.052000000000000005,"mae_pct":-0.014572905773348547,"mfe_pct":0.06781135319196728},{"id":36,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2024-05-13","entry_price":39.79988877868652,"target_price":47.73599853515625,"stop_loss_price":0.0001,"exit_date":"2024-05-15","exit_price":47.712130535888676,"exit_reason":"PROFIT_TARGET","shares":645,"invested_capital":0,"gross_pnl":0,"net_pnl":5103.331433395387,"return_pct":0.19880059970015004,"hold_days":2,"commission_paid":0.129,"mae_pct":-0.043967196776767616,"mfe_pct":0.21859637019821337},{"id":37,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2024-07-11","entry_price":41.91094438934326,"target_price":47.18000030517578,"stop_loss_price":0.0001,"exit_date":"2024-07-15","exit_price":47.83607061004639,"exit_reason":"PROFIT_TARGET","shares":637,"invested_capital":0,"gross_pnl":0,"net_pnl":3774.241702587897,"return_pct":0.14137419967586612,"hold_days":2,"commission_paid":0.1274,"mae_pct":0,"mfe_pct":0.3113519603353867},{"id":38,"symbol":"GUSH","order_type":"market","entry_idx":0,"entry_date":"2024-07-24","entry_price":33.86692347335815,"target_price":38.18000030517578,"stop_loss_price":0.0001,"exit_date":"2024-07-30","exit_price":34.082948474884034,"exit_reason":"TIME_UP","shares":811,"invested_capital":0,"gross_pnl":0,"net_pnl":175.1151762374944,"return_pct":0.006378642621489495,"hold_days":4,"commission_paid":0.1622,"mae_pct":-0.011424832592963443,"mfe_pct":0.04051371660042132},{"id":39,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2024-08-02","entry_price":36.08803469467163,"target_price":43.28399963378906,"stop_loss_price":0.0001,"exit_date":"2024-08-08","exit_price":29.185400762557986,"exit_reason":"TIME_UP","shares":762,"invested_capital":0,"gross_pnl":0,"net_pnl":-5259.883256270593,"return_pct":-0.19127209310549712,"hold_days":4,"commission_paid":0.1524,"mae_pct":-0.42307748618136093,"mfe_pct":0},{"id":40,"symbol":"BITX","order_type":"market","entry_idx":0,"entry_date":"2024-08-05","entry_price":22.79139068698883,"target_price":27.336000823974608,"stop_loss_price":0.0001,"exit_date":"2024-08-08","exit_price":27.322332823562622,"exit_reason":"PROFIT_TARGET","shares":1171,"invested_capital":0,"gross_pnl":0,"net_pnl":5305.6161419279115,"return_pct":0.19880059970014993,"hold_days":3,"commission_paid":0.23420000000000002,"mae_pct":-0.0013772945467919323,"mfe_pct":0.24038067031611526},{"id":41,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2024-08-30","entry_price":27.533760457992553,"target_price":33.024000549316405,"stop_loss_price":0.0001,"exit_date":"2024-09-06","exit_price":21.589200381278992,"exit_reason":"TIME_UP","shares":999,"invested_capital":0,"gross_pnl":0,"net_pnl":-5938.715416636847,"return_pct":-0.21590076973986175,"hold_days":4,"commission_paid":0.1998,"mae_pct":-0.3738596005648875,"mfe_pct":0},{"id":42,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2024-09-06","entry_price":17.49874477100372,"target_price":20.987999725341798,"stop_loss_price":0.0001,"exit_date":"2024-09-12","exit_price":20.977505725479126,"exit_reason":"PROFIT_TARGET","shares":1504,"invested_capital":0,"gross_pnl":0,"net_pnl":5231.906075531011,"return_pct":0.19880059970015004,"hold_days":4,"commission_paid":0.3008,"mae_pct":0,"mfe_pct":0.25151831774926203},{"id":43,"symbol":"GUSH","order_type":"market","entry_idx":0,"entry_date":"2024-09-11","entry_price":26.18308507633209,"target_price":29.979999542236328,"stop_loss_price":0.0001,"exit_date":"2024-09-17","exit_price":27.516235686302185,"exit_reason":"TIME_UP","shares":1032,"invested_capital":0,"gross_pnl":0,"net_pnl":1375.7082294891343,"return_pct":0.05091648314488274,"hold_days":4,"commission_paid":0.2064,"mae_pct":-0.020741852424967667,"mfe_pct":0.08887093120486149},{"id":44,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2024-10-09","entry_price":47.0235,"target_price":52.06999969482422,"stop_loss_price":0.0001,"exit_date":"2024-10-15","exit_price":50.24486545753479,"exit_reason":"TIME_UP","shares":588,"invested_capital":0,"gross_pnl":0,"net_pnl":1894.1040890304614,"return_pct":0.06850543786691324,"hold_days":4,"commission_paid":0.11760000000000001,"mae_pct":-0.0015630320384604592,"mfe_pct":0.09732364613695482},{"id":45,"symbol":"TNA","order_type":"market","entry_idx":0,"entry_date":"2024-10-23","entry_price":42.86142015266418,"target_price":47.7400016784668,"stop_loss_price":0.0001,"exit_date":"2024-10-29","exit_price":43.54821469497681,"exit_reason":"TIME_UP","shares":653,"invested_capital":0,"gross_pnl":0,"net_pnl":448.4115361301474,"return_pct":0.016023606774259812,"hold_days":4,"commission_paid":0.1306,"mae_pct":-0.012165252532909357,"mfe_pct":0.04709552105976084},{"id":46,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2024-11-01","entry_price":11.775885457992553,"target_price":14.124000549316406,"stop_loss_price":0.0001,"exit_date":"2024-11-06","exit_price":15.127432728767396,"exit_reason":"PROFIT_TARGET","shares":2387,"invested_capital":0,"gross_pnl":0,"net_pnl":7999.904635339551,"return_pct":0.28461106238937417,"hold_days":3,"commission_paid":0.47740000000000005,"mae_pct":-0.08202228544268714,"mfe_pct":0.3247411786670923},{"id":47,"symbol":"SOXL","order_type":"market","entry_idx":0,"entry_date":"2024-11-15","entry_price":26.673329847335815,"target_price":31.99199981689453,"stop_loss_price":0.0001,"exit_date":"2024-11-21","exit_price":28.03597423744202,"exit_reason":"TIME_UP","shares":1114,"invested_capital":0,"gross_pnl":0,"net_pnl":1517.8744505783097,"return_pct":0.05108639970732069,"hold_days":4,"commission_paid":0.2228,"mae_pct":-0.025243561684634146,"mfe_pct":0.08422908732493826},{"id":48,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2024-11-20","entry_price":139.67980561065673,"target_price":159.0800018310547,"stop_loss_price":0.0001,"exit_date":"2024-11-25","exit_price":163.0484398803711,"exit_reason":"PROFIT_TARGET","shares":213,"invested_capital":0,"gross_pnl":0,"net_pnl":4977.497799449159,"return_pct":0.1673014518279905,"hold_days":3,"commission_paid":0.0426,"mae_pct":0,"mfe_pct":0.24728124054184097},{"id":49,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2024-12-03","entry_price":147.74383316802977,"target_price":174.22000122070312,"stop_loss_price":0.0001,"exit_date":"2024-12-09","exit_price":148.03594561004638,"exit_reason":"TIME_UP","shares":209,"invested_capital":0,"gross_pnl":0,"net_pnl":61.03060038147197,"return_pct":0.0019771548886537665,"hold_days":4,"commission_paid":0.041800000000000004,"mae_pct":-0.04902968206998745,"mfe_pct":0.048097932638609515},{"id":50,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2024-12-13","entry_price":102.16105561065673,"target_price":122.53200073242186,"stop_loss_price":0.0001,"exit_date":"2024-12-19","exit_price":91.04445133972169,"exit_reason":"TIME_UP","shares":303,"invested_capital":0,"gross_pnl":0,"net_pnl":-3368.3613940933164,"return_pct":-0.10881450083387191,"hold_days":4,"commission_paid":0.0606,"mae_pct":-0.15525537068985026,"mfe_pct":0.06625758371483546},{"id":51,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2024-12-19","entry_price":35.42770484733581,"target_price":42.49199981689453,"stop_loss_price":0.0001,"exit_date":"2024-12-26","exit_price":36.37180438995362,"exit_reason":"TIME_UP","shares":856,"invested_capital":0,"gross_pnl":0,"net_pnl":808.0636084808432,"return_pct":0.026648622785080112,"hold_days":4,"commission_paid":0.17120000000000002,"mae_pct":-0.010378980959373287,"mfe_pct":0.04635623037296219},{"id":52,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2025-01-02","entry_price":24.202095534324645,"target_price":29.028000640869138,"stop_loss_price":0.0001,"exit_date":"2025-01-06","exit_price":29.855065838813783,"exit_reason":"PROFIT_TARGET","shares":1261,"invested_capital":0,"gross_pnl":0,"net_pnl":7128.269453960804,"return_pct":0.23357358855442115,"hold_days":2,"commission_paid":0.25220000000000004,"mae_pct":-0.00008655330618874928,"mfe_pct":0.25319726470340154},{"id":53,"symbol":"NVDL","order_type":"market","entry_idx":0,"entry_date":"2025-01-14","entry_price":21.047185203552246,"target_price":25.244000244140626,"stop_loss_price":0.0001,"exit_date":"2025-01-21","exit_price":23.318334923744203,"exit_reason":"TIME_UP","shares":1517,"invested_capital":0,"gross_pnl":0,"net_pnl":3445.182425531196,"return_pct":0.10790752769204706,"hold_days":4,"commission_paid":0.3034,"mae_pct":-0.008735251453392935,"mfe_pct":0.14979749210621712},{"id":54,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2025-01-27","entry_price":25.832909694671628,"target_price":30.98399963378906,"stop_loss_price":0.0001,"exit_date":"2025-01-31","exit_price":26.30683969497681,"exit_reason":"TIME_UP","shares":1263,"invested_capital":0,"gross_pnl":0,"net_pnl":598.44729038544,"return_pct":0.01834597828532398,"hold_days":4,"commission_paid":0.2526,"mae_pct":-0.06514597449657311,"mfe_pct":0.11176014056513209},{"id":55,"symbol":"BITX","order_type":"market","entry_idx":0,"entry_date":"2025-02-07","entry_price":52.10604183197021,"target_price":62.496002197265625,"stop_loss_price":0.0001,"exit_date":"2025-02-13","exit_price":52.063955152511596,"exit_reason":"TIME_UP","shares":628,"invested_capital":0,"gross_pnl":0,"net_pnl":-26.49323470000857,"return_pct":-0.000807712080574704,"hold_days":4,"commission_paid":0.12560000000000002,"mae_pct":-0.03061142602617521,"mfe_pct":0.047863099066194875},{"id":56,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2025-02-11","entry_price":17.35867538166046,"target_price":20.820000457763673,"stop_loss_price":0.0001,"exit_date":"2025-02-14","exit_price":20.809590457534792,"exit_reason":"PROFIT_TARGET","shares":1881,"invested_capital":0,"gross_pnl":0,"net_pnl":6490.98315771962,"return_pct":0.19880059970015007,"hold_days":3,"commission_paid":0.37620000000000003,"mae_pct":0,"mfe_pct":0.20516108610430284},{"id":57,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2025-02-21","entry_price":28.97447908401489,"target_price":34.75199890136719,"stop_loss_price":0.0001,"exit_date":"2025-02-27","exit_price":24.647669847488405,"exit_reason":"TIME_UP","shares":1175,"invested_capital":0,"gross_pnl":0,"net_pnl":-5084.118352918623,"return_pct":-0.14933173514458695,"hold_days":4,"commission_paid":0.23500000000000001,"mae_pct":-0.2521004428255899,"mfe_pct":0.03884526428210337},{"id":58,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2025-03-07","entry_price":91.14554847335815,"target_price":109.3199981689453,"stop_loss_price":0.0001,"exit_date":"2025-03-13","exit_price":82.43876335525513,"exit_reason":"TIME_UP","shares":362,"invested_capital":0,"gross_pnl":0,"net_pnl":-3151.892412753291,"return_pct":-0.09552616955997591,"hold_days":4,"commission_paid":0.0724,"mae_pct":-0.160683091151062,"mfe_pct":0},{"id":59,"symbol":"TNA","order_type":"market","entry_idx":0,"entry_date":"2025-04-01","entry_price":29.25461977100372,"target_price":33.869998931884766,"stop_loss_price":0.0001,"exit_date":"2025-04-07","exit_price":18.900544847488405,"exit_reason":"TIME_UP","shares":1107,"invested_capital":0,"gross_pnl":0,"net_pnl":-11462.071640331456,"return_pct":-0.3539295675200659,"hold_days":4,"commission_paid":0.2214,"mae_pct":-0.38437072948277407,"mfe_pct":0.05624341934388777},{"id":60,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2025-04-07","entry_price":50.025,"target_price":60,"stop_loss_price":0.0001,"exit_date":"2025-04-10","exit_price":59.970000000000006,"exit_reason":"PROFIT_TARGET","shares":601,"invested_capital":0,"gross_pnl":0,"net_pnl":5976.8849,"return_pct":0.19880059970015007,"hold_days":3,"commission_paid":0.1202,"mae_pct":-0.015292387375648085,"mfe_pct":0.3055471775830835},{"id":61,"symbol":"SOXL","order_type":"market","entry_idx":0,"entry_date":"2025-05-23","entry_price":15.737864542007445,"target_price":18.600000381469727,"stop_loss_price":0.0001,"exit_date":"2025-05-30","exit_price":16.891549618721008,"exit_reason":"TIME_UP","shares":1989,"invested_capital":0,"gross_pnl":0,"net_pnl":2294.480717583275,"return_pct":0.07330632905335735,"hold_days":4,"commission_paid":0.39780000000000004,"mae_pct":-0.031634836451945716,"mfe_pct":0.1570819558057956},{"id":62,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2025-06-17","entry_price":55.78787832069397,"target_price":64.0999984741211,"stop_loss_price":0.0001,"exit_date":"2025-06-24","exit_price":57.181394084930425,"exit_reason":"TIME_UP","shares":569,"invested_capital":0,"gross_pnl":0,"net_pnl":792.8535698505439,"return_pct":0.024978827053179817,"hold_days":4,"commission_paid":0.11380000000000001,"mae_pct":-0.0474633381076858,"mfe_pct":0.06797396897874257},{"id":63,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2025-07-01","entry_price":10.545269961833954,"target_price":12.647999954223632,"stop_loss_price":0.0001,"exit_date":"2025-07-08","exit_price":10.174910305023193,"exit_reason":"TIME_UP","shares":3026,"invested_capital":0,"gross_pnl":0,"net_pnl":-1121.0109215093628,"return_pct":-0.03512092702711148,"hold_days":4,"commission_paid":0.6052000000000001,"mae_pct":-0.08963920163119592,"mfe_pct":0.11614026955804192},{"id":64,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2025-07-25","entry_price":56.148058931350704,"target_price":67.34399871826172,"stop_loss_price":0.0001,"exit_date":"2025-07-31","exit_price":53.57319847488404,"exit_reason":"TIME_UP","shares":564,"invested_capital":0,"gross_pnl":0,"net_pnl":-1452.2776974472015,"return_pct":-0.04585840553481668,"hold_days":4,"commission_paid":0.11280000000000001,"mae_pct":-0.12997885583458132,"mfe_pct":0.01713223390637554},{"id":65,"symbol":"DFEN","order_type":"market","entry_idx":0,"entry_date":"2025-08-11","entry_price":57.50873954200744,"target_price":60.683998107910156,"stop_loss_price":0.0001,"exit_date":"2025-08-15","exit_price":57.12142652511597,"exit_reason":"TIME_UP","shares":546,"invested_capital":0,"gross_pnl":0,"net_pnl":-211.52750722274232,"return_pct":-0.006734854910331576,"hold_days":4,"commission_paid":0.1092,"mae_pct":-0.04031980067316071,"mfe_pct":0.04679743013609562},{"id":66,"symbol":"TQQQ","order_type":"market","entry_idx":0,"entry_date":"2025-08-21","entry_price":43.26662143135071,"target_price":47.79499816894531,"stop_loss_price":0.0001,"exit_date":"2025-08-27","exit_price":45.04746469497681,"exit_reason":"TIME_UP","shares":724,"invested_capital":0,"gross_pnl":0,"net_pnl":1289.2581228652987,"return_pct":0.04115974866333603,"hold_days":4,"commission_paid":0.1448,"mae_pct":-0.0018864439921474883,"mfe_pct":0.05670375241212422},{"id":67,"symbol":"NVDL","order_type":"market","entry_idx":0,"entry_date":"2025-09-03","entry_price":26.536594262123106,"target_price":31.113332748413086,"stop_loss_price":0.0001,"exit_date":"2025-09-09","exit_price":25.97034192085266,"exit_reason":"TIME_UP","shares":1191,"invested_capital":0,"gross_pnl":0,"net_pnl":-674.5256384531001,"return_pct":-0.021338546147901243,"hold_days":4,"commission_paid":0.23820000000000002,"mae_pct":-0.0780278975666096,"mfe_pct":0.014322624537083571},{"id":68,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2025-09-25","entry_price":103.29161786270141,"target_price":113.49600219726562,"stop_loss_price":0.0001,"exit_date":"2025-10-01","exit_price":98.02096469497681,"exit_reason":"TIME_UP","shares":304,"invested_capital":0,"gross_pnl":0,"net_pnl":-1602.3089629882804,"return_pct":-0.05102692044896157,"hold_days":4,"commission_paid":0.0608,"mae_pct":-0.0734001358010143,"mfe_pct":0.03444984873941654},{"id":69,"symbol":"BITX","order_type":"market","entry_idx":0,"entry_date":"2025-10-17","entry_price":46.89343393135071,"target_price":56.243998718261714,"stop_loss_price":0.0001,"exit_date":"2025-10-23","exit_price":48.965506677627566,"exit_reason":"TIME_UP","shares":664,"invested_capital":0,"gross_pnl":0,"net_pnl":1375.7899035278365,"return_pct":0.044186841793464195,"hold_days":4,"commission_paid":0.1328,"mae_pct":0,"mfe_pct":0.14514967791766262},{"id":70,"symbol":"FNGU","order_type":"market","entry_idx":0,"entry_date":"2025-11-18","entry_price":27.143564160346983,"target_price":31.989999771118164,"stop_loss_price":0.0001,"exit_date":"2025-11-24","exit_price":26.86655916118622,"exit_reason":"TIME_UP","shares":1158,"invested_capital":0,"gross_pnl":0,"net_pnl":-320.88758902816375,"return_pct":-0.010205181512803283,"hold_days":4,"commission_paid":0.2316,"mae_pct":-0.0856027768422974,"mfe_pct":0.10191866000805114},{"id":71,"symbol":"SOXL","order_type":"market","entry_idx":0,"entry_date":"2025-12-17","entry_price":36.02800332069397,"target_price":43.211997985839844,"stop_loss_price":0.0001,"exit_date":"2025-12-22","exit_price":44.427775762557985,"exit_reason":"PROFIT_TARGET","shares":870,"invested_capital":0,"gross_pnl":0,"net_pnl":7307.715024421695,"return_pct":0.23314565525865008,"hold_days":3,"commission_paid":0.17400000000000002,"mae_pct":0,"mfe_pct":0.23681573404586617},{"id":72,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2026-01-02","entry_price":18.129060839653015,"target_price":21.744001007080076,"stop_loss_price":0.0001,"exit_date":"2026-01-08","exit_price":17.211389313697815,"exit_reason":"TIME_UP","shares":1811,"invested_capital":0,"gross_pnl":0,"net_pnl":-1662.084233504867,"return_pct":-0.05061881219726569,"hold_days":4,"commission_paid":0.3622,"mae_pct":-0.06669185867116381,"mfe_pct":0.08665313317556862},{"id":73,"symbol":"FNGU","order_type":"market","entry_idx":0,"entry_date":"2026-01-20","entry_price":21.590789923667906,"target_price":25.600000381469727,"stop_loss_price":0.0001,"exit_date":"2026-01-26","exit_price":23.04846946620941,"exit_reason":"TIME_UP","shares":1505,"invested_capital":0,"gross_pnl":0,"net_pnl":2193.657211524964,"return_pct":0.06751395144387894,"hold_days":4,"commission_paid":0.301,"mae_pct":-0.041257830949110674,"mfe_pct":0.10602711828478568},{"id":74,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2026-01-30","entry_price":10.50525,"target_price":12.6,"stop_loss_price":0.0001,"exit_date":"2026-02-05","exit_price":7.021487595319749,"exit_reason":"TIME_UP","shares":3135,"invested_capital":0,"gross_pnl":0,"net_pnl":-10921.908638672588,"return_pct":-0.3316210851412628,"hold_days":4,"commission_paid":0.627,"mae_pct":-0.46502940096055956,"mfe_pct":0},{"id":75,"symbol":"CONL","order_type":"market","entry_idx":0,"entry_date":"2026-02-05","entry_price":5.722859790086746,"target_price":6.86399974822998,"stop_loss_price":0.0001,"exit_date":"2026-02-06","exit_price":6.860567748355865,"exit_reason":"PROFIT_TARGET","shares":5374,"invested_capital":0,"gross_pnl":0,"net_pnl":6113.505167738242,"return_pct":0.19880059970014988,"hold_days":1,"commission_paid":1.0748,"mae_pct":0,"mfe_pct":0.2563648806624833},{"id":76,"symbol":"FAS","order_type":"market","entry_idx":0,"entry_date":"2026-02-13","entry_price":138.07899950408935,"target_price":161.66000366210938,"stop_loss_price":0.0001,"exit_date":"2026-02-20","exit_price":140.67962500000002,"exit_reason":"TIME_UP","shares":231,"invested_capital":0,"gross_pnl":0,"net_pnl":600.7213895553627,"return_pct":0.018834330385147688,"hold_days":4,"commission_paid":0.046200000000000005,"mae_pct":-0.00006512344312240367,"mfe_pct":0.06359403774505297},{"id":77,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2026-03-03","entry_price":156.93843061065672,"target_price":188.23200073242188,"stop_loss_price":0.0001,"exit_date":"2026-03-09","exit_price":156.9215,"exit_reason":"TIME_UP","shares":204,"invested_capital":0,"gross_pnl":0,"net_pnl":-3.4742445739721006,"return_pct":-0.00010788059107534626,"hold_days":4,"commission_paid":0.0408,"mae_pct":-0.06759611867102285,"mfe_pct":0.09246662070673257},{"id":78,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2026-03-13","entry_price":87.67381225204467,"target_price":100.87999725341797,"stop_loss_price":0.0001,"exit_date":"2026-03-19","exit_price":83.55819847488404,"exit_reason":"TIME_UP","shares":366,"invested_capital":0,"gross_pnl":0,"net_pnl":-1506.351242440792,"return_pct":-0.04694233855520125,"hold_days":4,"commission_paid":0.0732,"mae_pct":-0.06471501701937626,"mfe_pct":0.06075004167314644},{"id":79,"symbol":"DFEN","order_type":"market","entry_idx":0,"entry_date":"2026-04-24","entry_price":59.179576526641846,"target_price":70.98000183105468,"stop_loss_price":0.0001,"exit_date":"2026-04-30","exit_price":57.73111832237244,"exit_reason":"TIME_UP","shares":537,"invested_capital":0,"gross_pnl":0,"net_pnl":-777.8757556926706,"return_pct":-0.02447564327563802,"hold_days":4,"commission_paid":0.10740000000000001,"mae_pct":-0.05536667953744292,"mfe_pct":0.04182899571004243},{"id":80,"symbol":"LABU","order_type":"market","entry_idx":0,"entry_date":"2026-04-29","entry_price":168.39415255737305,"target_price":201.97199707031248,"stop_loss_price":0.0001,"exit_date":"2026-05-05","exit_price":192.71359255981446,"exit_reason":"TIME_UP","shares":187,"invested_capital":0,"gross_pnl":0,"net_pnl":4547.716580456544,"return_pct":0.14441974161873353,"hold_days":4,"commission_paid":0.0374,"mae_pct":-0.0026969470677556053,"mfe_pct":0.17581279986868925},{"id":81,"symbol":"DPST","order_type":"market","entry_idx":0,"entry_date":"2026-05-13","entry_price":103.46170866394043,"target_price":123.87000274658203,"stop_loss_price":0.0001,"exit_date":"2026-05-19","exit_price":105.88703244018555,"exit_reason":"TIME_UP","shares":314,"invested_capital":0,"gross_pnl":0,"net_pnl":761.5202657409659,"return_pct":0.02344175258232925,"hold_days":4,"commission_paid":0.06280000000000001,"mae_pct":-0.034715316069492054,"mfe_pct":0.05014698605829963},{"id":82,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2026-05-19","entry_price":151.17555610656737,"target_price":181.32000732421875,"stop_loss_price":0.0001,"exit_date":"2026-05-26","exit_price":161.59915267944336,"exit_reason":"TIME_UP","shares":216,"invested_capital":0,"gross_pnl":0,"net_pnl":2251.4752597412116,"return_pct":0.06895027768595172,"hold_days":4,"commission_paid":0.0432,"mae_pct":-0.006188504527437062,"mfe_pct":0.11129076900218356},{"id":83,"symbol":"BITX","order_type":"market","entry_idx":0,"entry_date":"2026-06-05","entry_price":11.145570343494414,"target_price":13.368000411987305,"stop_loss_price":0.0001,"exit_date":"2026-06-11","exit_price":11.994,"exit_reason":"TIME_UP","shares":2974,"invested_capital":0,"gross_pnl":0,"net_pnl":2522.932398447611,"return_pct":0.07612258775081952,"hold_days":4,"commission_paid":0.5948,"mae_pct":0,"mfe_pct":0.12780228444399286},{"id":84,"symbol":"NUGT","order_type":"market","entry_idx":0,"entry_date":"2026-06-24","entry_price":114.74734744262695,"target_price":137.62800292968748,"stop_loss_price":0.0001,"exit_date":"2026-06-30","exit_price":116.83155438995362,"exit_reason":"TIME_UP","shares":293,"invested_capital":0,"gross_pnl":0,"net_pnl":610.6433355667137,"return_pct":0.01816344337169772,"hold_days":4,"commission_paid":0.058600000000000006,"mae_pct":-0.020718079755469507,"mfe_pct":0.1041649307979995},{"id":85,"symbol":"DFEN","order_type":"market","entry_idx":0,"entry_date":"2026-07-13","entry_price":72.18607652664184,"target_price":86.58000183105469,"stop_loss_price":0.0001,"exit_date":"2026-07-17","exit_price":67.40628244018555,"exit_reason":"TIME_UP","shares":468,"invested_capital":0,"gross_pnl":0,"net_pnl":-2236.990432461543,"return_pct":-0.06621490343352024,"hold_days":4,"commission_paid":0.0936,"mae_pct":-0.075999137816763,"mfe_pct":0.04396864653723514},{"id":86,"symbol":"TSLL","order_type":"market","entry_idx":0,"entry_date":"2026-07-29","entry_price":6.743369771003723,"target_price":8.087999725341797,"stop_loss_price":0.0001,"exit_date":"2026-08-04","exit_price":8.083955725479127,"exit_reason":"PROFIT_TARGET","shares":4943,"invested_capital":0,"gross_pnl":0,"net_pnl":6626.022072971924,"return_pct":0.19880059970015018,"hold_days":4,"commission_paid":0.9886,"mae_pct":0,"mfe_pct":0.2123019303919987},{"id":87,"symbol":"NVDL","order_type":"market","entry_idx":0,"entry_date":"2026-08-21","entry_price":33.30664591598511,"target_price":37.57500076293945,"stop_loss_price":0.0001,"exit_date":"2026-08-21","exit_price":33.27335591506958,"exit_reason":"END_OF_DATA","shares":1040,"invested_capital":0,"gross_pnl":0,"net_pnl":-34.725600952146465,"return_pct":-0.0009995002498750863,"hold_days":0,"commission_paid":0.20800000000000002,"mae_pct":0,"mfe_pct":0}]}],"all_dates":["2022-08-22","2022-08-23","2022-08-24","2022-08-25","2022-08-26","2022-08-29","2022-08-30","2022-08-31","2022-09-01","2022-09-02","2022-09-06","2022-09-07","2022-09-08","2022-09-09","2022-09-12","2022-09-13","2022-09-14","2022-09-15","2022-09-16","2022-09-19","2022-09-20","2022-09-21","2022-09-22","2022-09-23","2022-09-26","2022-09-27","2022-09-28","2022-09-29","2022-09-30","2022-10-03","2022-10-04","2022-10-05","2022-10-06","2022-10-07","2022-10-10","2022-10-11","2022-10-12","2022-10-13","2022-10-14","2022-10-17","2022-10-18","2022-10-19","2022-10-20","2022-10-21","2022-10-24","2022-10-25","2022-10-26","2022-10-27","2022-10-28","2022-10-31","2022-11-01","2022-11-02","2022-11-03","2022-11-04","2022-11-07","2022-11-08","2022-11-09","2022-11-10","2022-11-11","2022-11-14","2022-11-15","2022-11-16","2022-11-17","2022-11-18","2022-11-21","2022-11-22","2022-11-23","2022-11-25","2022-11-28","2022-11-29","2022-11-30","2022-12-01","2022-12-02","2022-12-05","2022-12-06","2022-12-07","2022-12-08","2022-12-09","2022-12-12","2022-12-13","2022-12-14","2022-12-15","2022-12-16","2022-12-19","2022-12-20","2022-12-21","2022-12-22","2022-12-23","2022-12-27","2022-12-28","2022-12-29","2022-12-30","2023-01-03","2023-01-04","2023-01-05","2023-01-06","2023-01-09","2023-01-10","2023-01-11","2023-01-12","2023-01-13","2023-01-17","2023-01-18","2023-01-19","2023-01-20","2023-01-23","2023-01-24","2023-01-25","2023-01-26","2023-01-27","2023-01-30","2023-01-31","2023-02-01","2023-02-02","2023-02-03","2023-02-06","2023-02-07","2023-02-08","2023-02-09","2023-02-10","2023-02-13","2023-02-14","2023-02-15","2023-02-16","2023-02-17","2023-02-21","2023-02-22","2023-02-23","2023-02-24","2023-02-27","2023-02-28","2023-03-01","2023-03-02","2023-03-03","2023-03-06","2023-03-07","2023-03-08","2023-03-09","2023-03-10","2023-03-13","2023-03-14","2023-03-15","2023-03-16","2023-03-17","2023-03-20","2023-03-21","2023-03-22","2023-03-23","2023-03-24","2023-03-27","2023-03-28","2023-03-29","2023-03-30","2023-03-31","2023-04-03","2023-04-04","2023-04-05","2023-04-06","2023-04-10","2023-04-11","2023-04-12","2023-04-13","2023-04-14","2023-04-17","2023-04-18","2023-04-19","2023-04-20","2023-04-21","2023-04-24","2023-04-25","2023-04-26","2023-04-27","2023-04-28","2023-05-01","2023-05-02","2023-05-03","2023-05-04","2023-05-05","2023-05-08","2023-05-09","2023-05-10","2023-05-11","2023-05-12","2023-05-15","2023-05-16","2023-05-17","2023-05-18","2023-05-19","2023-05-22","2023-05-23","2023-05-24","2023-05-25","2023-05-26","2023-05-30","2023-05-31","2023-06-01","2023-06-02","2023-06-05","2023-06-06","2023-06-07","2023-06-08","2023-06-09","2023-06-12","2023-06-13","2023-06-14","2023-06-15","2023-06-16","2023-06-20","2023-06-21","2023-06-22","2023-06-23","2023-06-26","2023-06-27","2023-06-28","2023-06-29","2023-06-30","2023-07-03","2023-07-05","2023-07-06","2023-07-07","2023-07-10","2023-07-11","2023-07-12","2023-07-13","2023-07-14","2023-07-17","2023-07-18","2023-07-19","2023-07-20","2023-07-21","2023-07-24","2023-07-25","2023-07-26","2023-07-27","2023-07-28","2023-07-31","2023-08-01","2023-08-02","2023-08-03","2023-08-04","2023-08-07","2023-08-08","2023-08-09","2023-08-10","2023-08-11","2023-08-14","2023-08-15","2023-08-16","2023-08-17","2023-08-18","2023-08-21","2023-08-22","2023-08-23","2023-08-24","2023-08-25","2023-08-28","2023-08-29","2023-08-30","2023-08-31","2023-09-01","2023-09-05","2023-09-06","2023-09-07","2023-09-08","2023-09-11","2023-09-12","2023-09-13","2023-09-14","2023-09-15","2023-09-18","2023-09-19","2023-09-20","2023-09-21","2023-09-22","2023-09-25","2023-09-26","2023-09-27","2023-09-28","2023-09-29","2023-10-02","2023-10-03","2023-10-04","2023-10-05","2023-10-06","2023-10-09","2023-10-10","2023-10-11","2023-10-12","2023-10-13","2023-10-16","2023-10-17","2023-10-18","2023-10-19","2023-10-20","2023-10-23","2023-10-24","2023-10-25","2023-10-26","2023-10-27","2023-10-30","2023-10-31","2023-11-01","2023-11-02","2023-11-03","2023-11-06","2023-11-07","2023-11-08","2023-11-09","2023-11-10","2023-11-13","2023-11-14","2023-11-15","2023-11-16","2023-11-17","2023-11-20","2023-11-21","2023-11-22","2023-11-24","2023-11-27","2023-11-28","2023-11-29","2023-11-30","2023-12-01","2023-12-04","2023-12-05","2023-12-06","2023-12-07","2023-12-08","2023-12-11","2023-12-12","2023-12-13","2023-12-14","2023-12-15","2023-12-18","2023-12-19","2023-12-20","2023-12-21","2023-12-22","2023-12-26","2023-12-27","2023-12-28","2023-12-29","2024-01-02","2024-01-03","2024-01-04","2024-01-05","2024-01-08","2024-01-09","2024-01-10","2024-01-11","2024-01-12","2024-01-16","2024-01-17","2024-01-18","2024-01-19","2024-01-22","2024-01-23","2024-01-24","2024-01-25","2024-01-26","2024-01-29","2024-01-30","2024-01-31","2024-02-01","2024-02-02","2024-02-05","2024-02-06","2024-02-07","2024-02-08","2024-02-09","2024-02-12","2024-02-13","2024-02-14","2024-02-15","2024-02-16","2024-02-20","2024-02-21","2024-02-22","2024-02-23","2024-02-26","2024-02-27","2024-02-28","2024-02-29","2024-03-01","2024-03-04","2024-03-05","2024-03-06","2024-03-07","2024-03-08","2024-03-11","2024-03-12","2024-03-13","2024-03-14","2024-03-15","2024-03-18","2024-03-19","2024-03-20","2024-03-21","2024-03-22","2024-03-25","2024-03-26","2024-03-27","2024-03-28","2024-04-01","2024-04-02","2024-04-03","2024-04-04","2024-04-05","2024-04-08","2024-04-09","2024-04-10","2024-04-11","2024-04-12","2024-04-15","2024-04-16","2024-04-17","2024-04-18","2024-04-19","2024-04-22","2024-04-23","2024-04-24","2024-04-25","2024-04-26","2024-04-29","2024-04-30","2024-05-01","2024-05-02","2024-05-03","2024-05-06","2024-05-07","2024-05-08","2024-05-09","2024-05-10","2024-05-13","2024-05-14","2024-05-15","2024-05-16","2024-05-17","2024-05-20","2024-05-21","2024-05-22","2024-05-23","2024-05-24","2024-05-28","2024-05-29","2024-05-30","2024-05-31","2024-06-03","2024-06-04","2024-06-05","2024-06-06","2024-06-07","2024-06-10","2024-06-11","2024-06-12","2024-06-13","2024-06-14","2024-06-17","2024-06-18","2024-06-20","2024-06-21","2024-06-24","2024-06-25","2024-06-26","2024-06-27","2024-06-28","2024-07-01","2024-07-02","2024-07-03","2024-07-05","2024-07-08","2024-07-09","2024-07-10","2024-07-11","2024-07-12","2024-07-15","2024-07-16","2024-07-17","2024-07-18","2024-07-19","2024-07-22","2024-07-23","2024-07-24","2024-07-25","2024-07-26","2024-07-29","2024-07-30","2024-07-31","2024-08-01","2024-08-02","2024-08-05","2024-08-06","2024-08-07","2024-08-08","2024-08-09","2024-08-12","2024-08-13","2024-08-14","2024-08-15","2024-08-16","2024-08-19","2024-08-20","2024-08-21","2024-08-22","2024-08-23","2024-08-26","2024-08-27","2024-08-28","2024-08-29","2024-08-30","2024-09-03","2024-09-04","2024-09-05","2024-09-06","2024-09-09","2024-09-10","2024-09-11","2024-09-12","2024-09-13","2024-09-16","2024-09-17","2024-09-18","2024-09-19","2024-09-20","2024-09-23","2024-09-24","2024-09-25","2024-09-26","2024-09-27","2024-09-30","2024-10-01","2024-10-02","2024-10-03","2024-10-04","2024-10-07","2024-10-08","2024-10-09","2024-10-10","2024-10-11","2024-10-14","2024-10-15","2024-10-16","2024-10-17","2024-10-18","2024-10-21","2024-10-22","2024-10-23","2024-10-24","2024-10-25","2024-10-28","2024-10-29","2024-10-30","2024-10-31","2024-11-01","2024-11-04","2024-11-05","2024-11-06","2024-11-07","2024-11-08","2024-11-11","2024-11-12","2024-11-13","2024-11-14","2024-11-15","2024-11-18","2024-11-19","2024-11-20","2024-11-21","2024-11-22","2024-11-25","2024-11-26","2024-11-27","2024-11-29","2024-12-02","2024-12-03","2024-12-04","2024-12-05","2024-12-06","2024-12-09","2024-12-10","2024-12-11","2024-12-12","2024-12-13","2024-12-16","2024-12-17","2024-12-18","2024-12-19","2024-12-20","2024-12-23","2024-12-24","2024-12-26","2024-12-27","2024-12-30","2024-12-31","2025-01-02","2025-01-03","2025-01-06","2025-01-07","2025-01-08","2025-01-10","2025-01-13","2025-01-14","2025-01-15","2025-01-16","2025-01-17","2025-01-21","2025-01-22","2025-01-23","2025-01-24","2025-01-27","2025-01-28","2025-01-29","2025-01-30","2025-01-31","2025-02-03","2025-02-04","2025-02-05","2025-02-06","2025-02-07","2025-02-10","2025-02-11","2025-02-12","2025-02-13","2025-02-14","2025-02-18","2025-02-19","2025-02-20","2025-02-21","2025-02-24","2025-02-25","2025-02-26","2025-02-27","2025-02-28","2025-03-03","2025-03-04","2025-03-05","2025-03-06","2025-03-07","2025-03-10","2025-03-11","2025-03-12","2025-03-13","2025-03-14","2025-03-17","2025-03-18","2025-03-19","2025-03-20","2025-03-21","2025-03-24","2025-03-25","2025-03-26","2025-03-27","2025-03-28","2025-03-31","2025-04-01","2025-04-02","2025-04-03","2025-04-04","2025-04-07","2025-04-08","2025-04-09","2025-04-10","2025-04-11","2025-04-14","2025-04-15","2025-04-16","2025-04-17","2025-04-21","2025-04-22","2025-04-23","2025-04-24","2025-04-25","2025-04-28","2025-04-29","2025-04-30","2025-05-01","2025-05-02","2025-05-05","2025-05-06","2025-05-07","2025-05-08","2025-05-09","2025-05-12","2025-05-13","2025-05-14","2025-05-15","2025-05-16","2025-05-19","2025-05-20","2025-05-21","2025-05-22","2025-05-23","2025-05-27","2025-05-28","2025-05-29","2025-05-30","2025-06-02","2025-06-03","2025-06-04","2025-06-05","2025-06-06","2025-06-09","2025-06-10","2025-06-11","2025-06-12","2025-06-13","2025-06-16","2025-06-17","2025-06-18","2025-06-20","2025-06-23","2025-06-24","2025-06-25","2025-06-26","2025-06-27","2025-06-30","2025-07-01","2025-07-02","2025-07-03","2025-07-07","2025-07-08","2025-07-09","2025-07-10","2025-07-11","2025-07-14","2025-07-15","2025-07-16","2025-07-17","2025-07-18","2025-07-21","2025-07-22","2025-07-23","2025-07-24","2025-07-25","2025-07-28","2025-07-29","2025-07-30","2025-07-31","2025-08-01","2025-08-04","2025-08-05","2025-08-06","2025-08-07","2025-08-08","2025-08-11","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-08-18","2025-08-19","2025-08-20","2025-08-21","2025-08-22","2025-08-25","2025-08-26","2025-08-27","2025-08-28","2025-08-29","2025-09-02","2025-09-03","2025-09-04","2025-09-05","2025-09-08","2025-09-09","2025-09-10","2025-09-11","2025-09-12","2025-09-15","2025-09-16","2025-09-17","2025-09-18","2025-09-19","2025-09-22","2025-09-23","2025-09-24","2025-09-25","2025-09-26","2025-09-29","2025-09-30","2025-10-01","2025-10-02","2025-10-03","2025-10-06","2025-10-07","2025-10-08","2025-10-09","2025-10-10","2025-10-13","2025-10-14","2025-10-15","2025-10-16","2025-10-17","2025-10-20","2025-10-21","2025-10-22","2025-10-23","2025-10-24","2025-10-27","2025-10-28","2025-10-29","2025-10-30","2025-10-31","2025-11-03","2025-11-04","2025-11-05","2025-11-06","2025-11-07","2025-11-10","2025-11-11","2025-11-12","2025-11-13","2025-11-14","2025-11-17","2025-11-18","2025-11-19","2025-11-20","2025-11-21","2025-11-24","2025-11-25","2025-11-26","2025-11-28","2025-12-01","2025-12-02","2025-12-03","2025-12-04","2025-12-05","2025-12-08","2025-12-09","2025-12-10","2025-12-11","2025-12-12","2025-12-15","2025-12-16","2025-12-17","2025-12-18","2025-12-19","2025-12-22","2025-12-23","2025-12-24","2025-12-26","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-23","2026-02-24","2026-02-25","2026-02-26","2026-02-27","2026-03-02","2026-03-03","2026-03-04","2026-03-05","2026-03-06","2026-03-09","2026-03-10","2026-03-11","2026-03-12","2026-03-13","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-27","2026-04-28","2026-04-29","2026-04-30","2026-05-01","2026-05-04","2026-05-05","2026-05-06","2026-05-07","2026-05-08","2026-05-11","2026-05-12","2026-05-13","2026-05-14","2026-05-15","2026-05-18","2026-05-19","2026-05-20","2026-05-21","2026-05-22","2026-05-26","2026-05-27","2026-05-28","2026-05-29","2026-06-01","2026-06-02","2026-06-03","2026-06-04","2026-06-05","2026-06-08","2026-06-09","2026-06-10","2026-06-11","2026-06-12","2026-06-15","2026-06-16","2026-06-17","2026-06-18","2026-06-22","2026-06-23","2026-06-24","2026-06-25","2026-06-26","2026-06-29","2026-06-30","2026-07-01","2026-07-02","2026-07-06","2026-07-07","2026-07-08","2026-07-09","2026-07-10","2026-07-13","2026-07-14","2026-07-15","2026-07-16","2026-07-17","2026-07-20","2026-07-21","2026-07-22","2026-07-23","2026-07-24","2026-07-27","2026-07-28","2026-07-29","2026-07-30","2026-07-31","2026-08-03","2026-08-04","2026-08-05","2026-08-06","2026-08-07","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-17","2026-08-18","2026-08-19","2026-08-20","2026-08-21"],"equity_curves":{"millwharf":[100000,100000,100000,100000,100000,100000,100000,100000,100000,99989.85238026676,99306.09303235111,100191.87255810795,101217.51232098637,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102154.21784929486,102143.83764939327,102408.82978707104,104383.22973519115,108913.54507170086,107493.83085168057,107493.83085168057,107493.83085168057,107493.83085168057,107493.83085168057,107493.83085168057,107493.83085168057,107493.83085168057,107493.83085168057,107483.0506018343,110090.46109377766,108901.61078631306,110582.12158572102,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112325.99196967717,112314.53951967717,114294.25872934819,112959.09890497685,109045.69934404851,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107252.72311971027,107241.9495201009,108869.14922713215,109691.5491294759,109400.35039900715,108847.96721809894,108847.96721809894,108847.96721809894,108847.96721809894,108847.96721809894,108847.96721809894,108836.7439781976,105112.90424125912,105974.90424125912,108285.06450432065,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107791.63892428372,107780.61565957405,107501.54653058387,108983.15360150672,112075.2643657878,112075.2643657878,112075.2643657878,112075.2643657878,112075.2643657878,112075.2643657878,112063.98819078782,112402.83876528122,112839.57870783188,114066.96807588913,113648.2744674146,113648.2744674146,113648.2744674146,113648.2744674146,113648.2744674146,113648.2744674146,113636.9184679334,105510.91924613164,106003.91950553106,105221.91976493047,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104823.96624626135,104813.29404667257,105205.2955420339,104146.89561680196,105009.29479435323,104685.08169331335,104685.08169331335,104685.08169331335,104685.08169331335,104685.08169331335,104674.54945339254,105433.57520507659,104464.65244840468,102763.23390411223,103109.42052211684,102782.2375553234,102782.2375553234,102782.2375553234,102782.2375553234,102782.2375553234,102782.2375553234,102782.2375553234,102782.2375553234,102782.2375553234,102771.92885989952,102790.44751758385,103197.8880121212,102054.27744693565,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102021.18950528259,102010.96000512618,102726.35788813246,104118.12831202162,103730.57849970473,105529.01886527098,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105934.36710815961,105923.78310783002,106355.78310783002,106312.58211906049,106917.38277824018,106604.05284865033,106604.05284865033,106604.05284865033,106604.05284865033,106604.05284865033,106593.19085353,107434.39005129917,107213.34946467236,109322.19879652813,109648.93992262744,109119.43992262744,109549.43098760051,109549.43098760051,109549.43098760051,109549.43098760051,109549.43098760051,109549.43098760051,109549.43098760051,109538.41116232166,109538.41116232166,110167.0702142168,110276.71993536243,110188.43547318954,110519.18547318954,110281.04506944199,110439.80617974777,110362.42491866245,110362.42491866245,110362.42491866245,110351.16199884129,110679.32280358982,110140.20164117527,110621.1671307168,112809.20836920652,112809.20836920652,112809.20836920652,112809.20836920652,112797.92126920652,115048.52074888181,115116.72230985593,114571.1202285571,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113945.45498927106,113934.01927393943,113772.5579473403,114312.82965296775,114256.93955821067,114245.34238273688,114245.34238273688,114245.34238273688,114245.34238273688,114245.34238273688,114233.86014338142,114712.58035822517,115067.07793082115,117885.24007071373,117640.74740127403,118264.26680663902,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118519.73201437638,118507.82576466248,118290.32650852845,117150.3261652057,119955.32599354432,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120797.2680361812,120785.13819175943,122149.36050468667,121370.78976875528,121405.23924308999,121172.42979830355,121172.42979830355,121172.42979830355,121172.42979830355,121160.20258879618,122005.48402190165,120267.9645593162,119129.18312621073,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119998.03117643466,119986.0355269565,119189.17750998873,120115.99719687838,119267.83604880709,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120309.03344497562,120296.96364550662,121445.3655925281,123133.16550402713,123202.7648845203,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122070.40170751834,122058.1089526729,121683.30003467364,122027.72018924517,121916.28957095904,121812.94315631023,121800.33282093506,120139.3523207138,121013.55148701172,126877.39121140285,126877.39121140285,126877.39121140285,126877.39121140285,126877.39121140285,126864.71621100612,127020.7158142776,127262.5158936233,128143.9157349319,128494.41953130336,128494.41953130336,128494.41953130336,128494.41953130336,128481.52598169704,129365.17775324245,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133597.68646469875,133584.28079989314,134412.3803139007,137371.86446728665,137371.86446728665,137371.86446728665,137371.86446728665,137371.86446728665,137371.86446728665,137371.86446728665,137358.0571929054,138014.9683066444,138290.7084303932,137577.02756415174,137546.89854352415,137546.89854352415,137546.89854352415,137533.07967364043,133442.92459255847,137893.91358715686,131873.69436985644,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137592.43812918148,137578.59198895283,133402.77168408222,131744.43183651753,130795.38107434101,131640.31993271675,134377.59947373238,135746.2392442402,135206.2346191227,137057.5318829777,137573.5318829777,138172.09180424234,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138260.98351756477,138247.10671756478,139746.50626895638,139987.5861792347,140211.02680728646,140155.02880659525,140155.02880659525,140155.02880659525,140155.02880659525,140155.02880659525,140155.02880659525,140140.97624654544,140297.69734258426,139958.13704366458,141303.3154494263,140603.37504272538,140603.37504272538,140603.37504272538,140589.08884717905,139228.49729921305,141090.35666181528,148603.04097806494,148603.04097806494,148603.04097806494,148603.04097806494,148603.04097806494,148603.04097806494,148603.04097806494,148588.07995814993,149713.2202131243,149913.74055309012,149096.76942816185,151486.15335354407,153790.81491360266,155098.2805280924,155098.2805280924,155098.2805280924,155098.2805280924,155098.2805280924,155082.82811328376,155394.23926135505,154944.8873479029,155168.51887866462,155159.2902284739,155159.2902284739,155159.2902284739,155159.2902284739,155143.79026338144,156561.8303558497,156189.13933869882,151577.47896882577,151775.6574544459,152554.61732383067,152451.8982381373,152469.018629983,152598.87654286146,152598.87654286146,152598.87654286146,152598.87654286146,152583.49864752474,157602.27807028475,159727.01989682228,159727.01989682228,159727.01989682228,159727.01989682228,159727.01989682228,159710.9118850013,161789.20315811835,160464.35413811408,162476.90916893684,163172.05062235348,163172.05062235348,163172.05062235348,163172.05062235348,163155.6189925462,163307.18005249798,161778.9487998277,163610.29976342022,163770.3716127389,163770.3716127389,163770.3716127389,163770.3716127389,163770.3716127389,163753.95569216396,164865.51358400966,163316.68867107766,166071.1770915641,169219.82994618904,170234.61063575852,170234.61063575852,170234.61063575852,170234.61063575852,170217.4791362964,167785.22949487795,163743.2311084949,163813.7304809772,165150.3747828399,165150.3747828399,165150.3747828399,165150.3747828399,165150.3747828399,165150.3747828399,165133.8494831161,161227.8691516952,160684.8691516952,161705.70904122156,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161998.44617008662,161982.15113021331,163520.88045455414,156934.2317214151,153214.71104575592,150521.17872975516,150563.24854634452,155515.48955510306,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156513.08862975516,156497.2462452104,159600.08897668624,159102.83897668624,159421.07867318892,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158807.37044733844,158791.44982781596,159343.38052239604,159030.4309565086,158928.01078286357,159600.16711718898,159600.16711718898,159600.16711718898,159600.16711718898,159600.16711718898,159583.9174972467,162730.95738181396,162579.65680465027,157889.35622748657,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158478.8535956796,158462.97135598082,156522.81213051695,155236.8928189935,156139.2919583978,157026.5194982324,157026.5194982324,157026.5194982324,157026.5194982324,157026.5194982324,157026.5194982324,157026.5194982324,157010.77285835738,157867.9926917314,157185.4926917314,156819.67369148726,156814.93739100965,156814.93739100965,156814.93739100965,156814.93739100965,156799.21030139632,158207.39008044905,157921.40974902816,158297.89008044905,158104.12311387496,158104.12311387496,158104.12311387496,158104.12311387496,158088.20936931414,158425.66103519243,156734.44094432634,157214.8113380794,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157429.47837542187,157413.75549574656,157808.95642348094,156909.11670180125,156443.997072895,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155827.1390124336,155811.5117727882,158381.19359651866,158992.07238069834,156468.87288729014,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157202.86251596143,157187.03844644735,157812.359506628,155588.99941827962,155809.02003671834,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156881.85912693327,156866.1077776634,159102.01083094708,161833.81029994122,164189.48715135496,164189.48715135496,164189.48715135496,164189.48715135496,164189.48715135496,164189.48715135496,164189.48715135496,164172.89839059504,166164.99562722835,163321.72617990169,163068.18728524836,162527.2218178501,162527.2218178501,162527.2218178501,162527.2218178501,162527.2218178501,162527.2218178501,162527.2218178501,162510.8323679075,162525.88271237467,163413.83294201945,164407.13271237467,164720.72852937508,164720.72852937508,164720.72852937508,164720.72852937508,164703.95627937507,162352.70627937507,159656.6073556919,156208.1061597843,153782.59935126622,159911.47415844072,159911.47415844072,159911.47415844072,159911.47415844072,159911.47415844072,159895.51090407517,160872.64344191697,161609.53048110154,160743.28048110154,160512.17244799607,160512.17244799607,160512.17244799607,160512.17244799607,160512.17244799607,160512.17244799607,160512.17244799607,160496.1523279338,162793.19120732835,160728.7122034221,160824.59245244553,160508.6778034221,160508.6778034221,160508.6778034221,160508.6778034221,160492.6049139247,161012.3270361171,160979.38558409072,159705.70714781142,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,159002.2899609813,158986.3544855716,159142.08292871734,159174.30366617462,157751.60855498078,159938.3548205169,159199.7053911956,161533.4645922454,162772.05838574516,162772.05838574516,162772.05838574516,162772.05838574516,162772.05838574516,162772.05838574516,162755.7916151702,163647.55046526785,162410.3896986663,163804.55046526785,163517.20685082697,165420.16632348322,165212.8048732879,164359.6055324676,165785.00091122734,165785.00091122734,165785.00091122734,165785.00091122734,165785.00091122734,165785.00091122734,165785.00091122734,165785.00091122734,165768.1383307168,169039.53662898036,167552.53662898036,167374.09821726772,168307.63590967495,168307.63590967495,168307.63590967495,168307.63590967495,168307.63590967495,168307.63590967495,168307.63590967495,168307.63590967495,168290.8045243173,169304.58425606778,170508.8144349008,169263.5644349008,168918.24994524167,168918.24994524167,168918.24994524167,168918.24994524167,168918.24994524167,168918.24994524167,168918.24994524167,168918.24994524167,168901.3200448846,168920.0404733514,169491.00104464046,167127.5996164178,166681.2127127801,166681.2127127801,166681.2127127801,166681.2127127801,166681.2127127801,166681.2127127801,166681.2127127801,166681.2127127801,166664.0605033458,168987.2718232692,169481.57135186798,171953.07135186798,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173306.74048575203,173289.32568527595]},"drawdown_curves":{"millwharf":[0,0,0,0,0,0,0,0,0,0.00010147619733237661,0.006939069676488871,0,0,0,0,0,0,0,0,0,0,0,0,0.00010161303292340419,0,0,0,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.013035240190608581,0.01313422007267167,0,0.01079884937943814,0,0,0,0,0,0,0,0,0,0,0,0,0,0.00010195725672370359,0,0.011681775088397323,0.04592146135466357,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.06160883046901303,0.061703092418205784,0.04746615939006041,0.040270698205162096,0.04281849661346462,0.04765148811320619,0.04765148811320619,0.04765148811320619,0.04765148811320619,0.04765148811320619,0.04765148811320619,0.04774968412082825,0.08033084592491001,0.07278890978933177,0.05257651864436582,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05689366970271752,0.05699011605822322,0.05943178838798578,0.04646869568854113,0.01941474915914212,0.01941474915914212,0.01941474915914212,0.01941474915914212,0.01941474915914212,0.01941474915914212,0.01951340831425064,0.01654868744147421,0.012727498631064486,0.0019886445389815125,0.005651939730965012,0.005651939730965012,0.005651939730965012,0.005651939730965012,0.005651939730965012,0.005651939730965012,0.005751297298068065,0.07684847498784457,0.07253504520685398,0.07937703140366184,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.08285886437666781,0.0829522391420097,0.07952248247951979,0.08878278948880057,0.08123736081076474,0.08407401336570745,0.08407401336570745,0.08407401336570745,0.08407401336570745,0.08407401336570745,0.08416616357550714,0.07752518475362735,0.0860026250681609,0.10088892437319821,0.09786001791846208,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10072265485605501,0.10081284919773488,0.10065082305670028,0.0970859852506108,0.10709182962021861,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10738132746570024,0.10747082890059409,0.10121156539112626,0.0890344845879259,0.09242529193577897,0.07669011515997085,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.07314358318719248,0.0732361862667107,0.06945646885305665,0.06983444924550866,0.0645428390990019,0.06728427102282075,0.06728427102282075,0.06728427102282075,0.06728427102282075,0.06728427102282075,0.0673793063749118,0.06001936365231935,0.061953324194906546,0.043502272013452845,0.04064350089291002,0.045276279528395726,0.04151413898211244,0.04151413898211244,0.04151413898211244,0.04151413898211244,0.04151413898211244,0.04151413898211244,0.04151413898211244,0.041610555244848337,0.041610555244848337,0.03611019976869251,0.03515083643439517,0.03592326772844597,0.03302942158361708,0.035112994340420915,0.03372393847645371,0.03440097389315439,0.03440097389315439,0.03440097389315439,0.03449951707411886,0.031628324694056895,0.036345282207130264,0.03213714879003126,0.012993219227733123,0.012993219227733123,0.012993219227733123,0.012993219227733123,0.013091973969445298,0,0,0.004739555386490668,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010174606235158498,0.010273946410088572,0.011676534351782402,0.0069832830605129235,0.007468791105179471,0.0075695338577620895,0.0075695338577620895,0.0075695338577620895,0.0075695338577620895,0.0075695338577620895,0.007669278179221814,0.0035107145471267795,0.000431252541235128,0,0.0020739888156739595,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.00010045795338493148,0.0019355891373438242,0.011554243549964944,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.00010041489032794252,0,0.006373923962553402,0.0060918964988615635,0.007997837257163853,0.007997837257163853,0.007997837257163853,0.007997837257163853,0.008097937736256432,0.001177873401797337,0.01540242157304039,0.024725281949880232,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.0176122848237873,0.017710489590710258,0.02423412601152639,0.01664653256805447,0.023590172261024837,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015066202983849784,0.015165014794399826,0.005763394169644922,0,0,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009191053285722416,0.009290829900776095,0.01233304180527825,0.009537486406060032,0.010441935412464867,0.011280767355446662,0.011383121676690894,0.024864803697204906,0.017769190484974547,0,0,0,0,0,0.00009989959815309188,0,0,0,0,0,0,0,0.00010034326512661795,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.00010034354007437229,0,0,0,0,0,0,0,0,0.0001005102058911037,0,0,0.005160728976962881,0.0053785962579216235,0.0053785962579216235,0.0053785962579216235,0.005478522493317792,0.03505502208251967,0.0028692805737997587,0.0464023514910741,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.0050492929650669755,0.005149416396249033,0.035345373538029454,0.04733706745866188,0.05419979000125559,0.04808991560719225,0.028296253602825568,0.018399422600642226,0.022304273701967647,0.008917276955278594,0.00518600675024004,0.0008577338817419682,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00021494511934891277,0.00031529025574672715,0,0,0,0.0003993837144362044,0.0003993837144362044,0.0003993837144362044,0.0003993837144362044,0.0003993837144362044,0.0003993837144362044,0.0004996080717481456,0,0.0024202841910550142,0,0.004953460606884565,0.004953460606884565,0.004953460606884565,0.005054563652491755,0.014683435725581725,0.00150710396945524,0,0,0,0,0,0,0,0.00010067775071448974,0,0,0.005449608034021069,0,0,0,0,0,0,0,0.00009962982668818495,0,0.0028916896507108656,0.0014525659623121179,0.0015119545872353394,0.0015119545872353394,0.0015119545872353394,0.0015119545872353394,0.0016117006599735261,0,0.002380471768270649,0.03183631269317038,0.030570496592466356,0.02559508293248125,0.026251175707200917,0.026141823435278762,0.025312388108780004,0.025312388108780004,0.025312388108780004,0.025312388108780004,0.025410610614877194,0,0,0,0,0,0,0.0001008471317589161,0,0.00818873567669088,0,0,0,0,0,0.00010070125211155384,0,0.009358016298971124,0,0,0,0,0,0,0.00010023742642389361,0,0.009394474801079465,0,0,0,0,0,0,0.00010063464414281778,0.014388267648588698,0.03813196096270268,0.03771783029785719,0.029866052701803817,0.029866052701803817,0.029866052701803817,0.029866052701803817,0.029866052701803817,0.029866052701803817,0.029963126379489557,0.05290781616280457,0.05609753180272122,0.050100867048627235,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04838125710696023,0.04847697818161393,0.039438103427565506,0.07812969915266821,0.09997907902770214,0.11580155076797566,0.1155544223113578,0.0864637398099329,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.0806035973223009,0.08069665938814984,0.06246979753034109,0.065390766410541,0.06352134811003098,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06712642127087956,0.06721994290824242,0.06397776617039318,0.06581610894169397,0.06641775024872619,0.06246933851379654,0.06246933851379654,0.06246933851379654,0.06246933851379654,0.06246933851379654,0.06256479278059686,0.04407830596798972,0.044967082795443605,0.07251906273446593,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06905621011012891,0.06914950629496153,0.08054647908573624,0.08810028560440504,0.08279937096645805,0.07758757803832697,0.07758757803832697,0.07758757803832697,0.07758757803832697,0.07758757803832697,0.07758757803832697,0.07758757803832697,0.07768007767642182,0.07264455740135761,0.07665373037418102,0.07880264121480239,0.07883046340947787,0.07883046340947787,0.07883046340947787,0.07883046340947787,0.07892284820452392,0.07065085360957202,0.07233077246010938,0.07011923433625258,0.07125746918667727,0.07125746918667727,0.07125746918667727,0.07125746918667727,0.0713509504388233,0.06936867630186579,0.07930331934860026,0.07648150542980278,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07522049841988408,0.07531285848471805,0.07299135097071455,0.07827723095903857,0.08100945813169878,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.08463303419627044,0.0847248324480304,0.06962988898069594,0.06604143665658689,0.08086333147565486,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07655169575169643,0.07664465023054763,0.07297136042276214,0.08603192478182534,0.08473946951895588,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.0784373486622846,0.07852987596452388,0.06539563114243109,0.049348368727391304,0.03551054313707086,0.03551054313707086,0.03551054313707086,0.03551054313707086,0.03551054313707086,0.03551054313707086,0.03551054313707086,0.03560798960050131,0.02390592014944426,0.04060798465153453,0.042097334518206485,0.045275098812893495,0.045275098812893495,0.045275098812893495,0.045275098812893495,0.045275098812893495,0.045275098812893495,0.045275098812893495,0.04537137447552982,0.045282965048028825,0.04006692686208864,0.03423203954601557,0.03238990053662585,0.03238990053662585,0.03238990053662585,0.03238990053662585,0.03248842486101189,0.04630024603661782,0.06213779466209598,0.08239513941137354,0.09664316335585686,0.06064064433645426,0.06064064433645426,0.06064064433645426,0.06064064433645426,0.06064064433645426,0.06073441642137829,0.0549944994080718,0.050665843581664996,0.05575440927794086,0.05711199474333108,0.05711199474333108,0.05711199474333108,0.05711199474333108,0.05711199474333108,0.05711199474333108,0.05711199474333108,0.05720610087135303,0.04371272916030082,0.055839986926487395,0.05527676274624953,0.05713252314563967,0.05713252314563967,0.05713252314563967,0.05713252314563967,0.05722693925431088,0.05417396359764843,0.05436746979420472,0.06184937039903834,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06598141607531505,0.06607502497981564,0.06516023777782325,0.06497096523602376,0.07332822646439935,0.060482740711710815,0.06482174925152964,0.05111267333368812,0.04383686855536429,0.04383686855536429,0.04383686855536429,0.04383686855536429,0.04383686855536429,0.04383686855536429,0.04393242356920204,0.03869401260936671,0.045961399435002576,0.03777175596946448,0.039459683079984265,0.028281230792582462,0.029499322985591277,0.034511225897895376,0.026138102633263948,0.026138102633263948,0.026138102633263948,0.026138102633263948,0.026138102633263948,0.026138102633263948,0.026138102633263948,0.026138102633263948,0.026237157581300373,0.007020158840291249,0.015755162811849365,0.016803353958445524,0.011319523796524622,0.011319523796524622,0.011319523796524622,0.011319523796524622,0.011319523796524622,0.011319523796524622,0.011319523796524622,0.011319523796524622,0.011418395496555515,0.0054632038468408976,0,0.0073031415069478925,0.009328341733713675,0.009328341733713675,0.009328341733713675,0.009328341733713675,0.009328341733713675,0.009328341733713675,0.009328341733713675,0.009328341733713675,0.00942763220390533,0.00931784064545224,0.005969271404728019,0.019830146785601587,0.022448116449616393,0.022448116449616393,0.022448116449616393,0.022448116449616393,0.022448116449616393,0.022448116449616393,0.022448116449616393,0.022448116449616393,0.022548710717960555,0.008923542261872388,0.006024574661651897,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.00010048541924721515]}};
+
+        // Initialize KPIs based on best performer
+        let bestProfit = -Infinity;
+        let bestSharpe = -Infinity;
+        let lowestMDD = Infinity;
+        let bestStrat = reportData.strategies[0];
+
+        reportData.strategies.forEach(s => {
+            if (s.report.net_profit > bestProfit) {
+                bestProfit = s.report.net_profit;
+                bestStrat = s;
+            }
+            if (s.report.sharpe_ratio > bestSharpe) bestSharpe = s.report.sharpe_ratio;
+            if (s.report.max_drawdown_pct < lowestMDD) lowestMDD = s.report.max_drawdown_pct;
+        });
+
+        if (bestStrat) {
+            document.getElementById('kpi-mdd-val').innerText = (bestStrat.report.max_drawdown_pct * 100).toFixed(2) + '%';
+            document.getElementById('kpi-mdd-sub').innerText = '-$' + bestStrat.report.max_drawdown_dollars.toLocaleString('en-US', {minimumFractionDigits: 2}) + ' (' + bestStrat.report.max_drawdown_days + 'd recovery)';
+
+            document.getElementById('kpi-profit-val').innerText = '+$' + bestStrat.report.net_profit.toLocaleString('en-US', {minimumFractionDigits: 2});
+            document.getElementById('kpi-profit-sub').innerText = (bestStrat.report.total_return_pct * 100).toFixed(2) + '% Return (' + bestStrat.name + ')';
+
+            document.getElementById('kpi-sharpe-val').innerText = bestStrat.report.sharpe_ratio.toFixed(2);
+            document.getElementById('kpi-sharpe-sub').innerText = 'Sortino: ' + bestStrat.report.sortino_ratio.toFixed(2) + ' | PF: ' + bestStrat.report.profit_factor.toFixed(2);
+        }
+
+        // Populate Comparison Table
+        const compTbody = document.getElementById('comparison-tbody');
+        reportData.strategies.forEach(s => {
+            const tr = document.createElement('tr');
+            const pnlClass = s.report.net_profit >= 0 ? 'text-green font-bold' : 'text-red font-bold';
+            tr.innerHTML = 
+                '<td class="font-sans font-bold text-blue">' + s.name + '</td>' +
+                '<td><span class="badge ' + (s.type === 'Go' ? 'badge-blue' : 'badge-green') + '">' + s.type + '</span></td>' +
+                '<td>' + s.report.total_trades + '</td>' +
+                '<td>' + (s.report.win_rate * 100).toFixed(2) + '%</td>' +
+                '<td class="' + pnlClass + '">$' + s.report.net_profit.toLocaleString('en-US', {minimumFractionDigits: 2}) + '</td>' +
+                '<td class="' + pnlClass + '">' + (s.report.total_return_pct * 100).toFixed(2) + '%</td>' +
+                '<td>' + s.report.profit_factor.toFixed(2) + '</td>' +
+                '<td class="text-red font-bold">' + (s.report.max_drawdown_pct * 100).toFixed(2) + '%</td>' +
+                '<td class="text-red">-$' + s.report.max_drawdown_dollars.toLocaleString('en-US', {minimumFractionDigits: 2}) + '</td>' +
+                '<td>' + s.report.max_drawdown_days + 'd</td>' +
+                '<td>' + s.report.sharpe_ratio.toFixed(2) + '</td>' +
+                '<td>' + s.report.sortino_ratio.toFixed(2) + '</td>' +
+                '<td>' + s.report.avg_holding_days.toFixed(1) + 'd</td>';
+            compTbody.appendChild(tr);
+        });
+
+        // Charts Color Palette
+        const palette = [
+            { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },
+            { border: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
+            { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' },
+            { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
+            { border: '#06b6d4', bg: 'rgba(6, 182, 212, 0.1)' },
+            { border: '#ec4899', bg: 'rgba(236, 72, 153, 0.1)' }
+        ];
+
+        // 1. Equity Curve Chart
+        const equityDatasets = reportData.strategies.map((s, idx) => {
+            const color = palette[idx % palette.length];
+            return {
+                label: s.name,
+                data: reportData.equity_curves[s.id] || [],
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                tension: 0.1
+            };
+        });
+
+        new Chart(document.getElementById('equityChart'), {
+            type: 'line',
+            data: {
+                labels: reportData.all_dates,
+                datasets: equityDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#94a3b8', font: { family: 'Outfit' } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.dataset.label + ': $' + ctx.parsed.y.toLocaleString('en-US', {minimumFractionDigits: 2})
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                    y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', callback: v => '$' + v.toLocaleString() } }
+                }
+            }
+        });
+
+        // 2. Drawdown Chart
+        const ddDatasets = reportData.strategies.map((s, idx) => {
+            const color = palette[idx % palette.length];
+            return {
+                label: s.name,
+                data: (reportData.drawdown_curves[s.id] || []).map(v => -(v * 100)),
+                borderColor: color.border,
+                backgroundColor: color.bg,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: true,
+                tension: 0.1
+            };
+        });
+
+        new Chart(document.getElementById('drawdownChart'), {
+            type: 'line',
+            data: {
+                labels: reportData.all_dates,
+                datasets: ddDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#94a3b8', font: { family: 'Outfit' } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + '%'
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                    y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b', callback: v => v + '%' } }
+                }
+            }
+        });
+
+        // 3. Trade Log Tabs
+        const tabContainer = document.getElementById('strategy-tabs');
+        const tradesTbody = document.getElementById('trades-tbody');
+
+        function renderTrades(strat) {
+            tradesTbody.innerHTML = '';
+            strat.trades.forEach((t, i) => {
+                const tr = document.createElement('tr');
+                const pnlClass = t.net_pnl >= 0 ? 'text-green font-bold' : 'text-red font-bold';
+                let reasonBadge = 'badge-end';
+                if (t.exit_reason === 'PROFIT_TARGET') reasonBadge = 'badge-target';
+                else if (t.exit_reason === 'STOP_LOSS') reasonBadge = 'badge-stop';
+                else if (t.exit_reason === 'TIME_UP') reasonBadge = 'badge-timeup';
+
+                tr.innerHTML = 
+                    '<td>' + (i + 1) + '</td>' +
+                    '<td class="font-sans font-bold text-blue">' + t.symbol + '</td>' +
+                    '<td>' + t.entry_date + '</td>' +
+                    '<td>$' + t.entry_price.toFixed(2) + '</td>' +
+                    '<td>' + t.exit_date + '</td>' +
+                    '<td>$' + t.exit_price.toFixed(2) + '</td>' +
+                    '<td>' + t.hold_days + 'd</td>' +
+                    '<td><span class="trade-badge ' + reasonBadge + '">' + t.exit_reason + '</span></td>' +
+                    '<td class="' + pnlClass + '">$' + t.net_pnl.toFixed(2) + '</td>' +
+                    '<td class="' + pnlClass + '">' + (t.return_pct * 100).toFixed(2) + '%</td>';
+                tradesTbody.appendChild(tr);
+            });
+        }
+
+        reportData.strategies.forEach((s, idx) => {
+            const btn = document.createElement('button');
+            btn.className = 'tab-btn' + (idx === 0 ? ' active' : '');
+            btn.innerText = s.name + ' (' + s.trades.length + ' trades)';
+            btn.onclick = () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                renderTrades(s);
+            };
+            tabContainer.appendChild(btn);
+        });
+
+        if (reportData.strategies.length > 0) {
+            renderTrades(reportData.strategies[0]);
+        }
+    </script>
+</body>
+</html>

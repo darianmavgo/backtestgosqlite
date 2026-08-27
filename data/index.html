@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantitative Backtest Studies & SQLite Database Catalog</title>
+    <style>
+        :root {
+            --bg: #090d16;
+            --card: #111827;
+            --card-hover: #172033;
+            --border: #1e293b;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --accent: #38bdf8;
+            --pos: #10b981;
+            --neg: #f43f5e;
+            --amber: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 32px 20px; line-height: 1.6; }
+        .container { max-width: 1320px; margin: 0 auto; }
+        .header { margin-bottom: 28px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+        .title { font-size: 28px; font-weight: 800; color: #fff; }
+        .subtitle { color: var(--text-dim); font-size: 15px; margin-top: 6px; }
+        
+        .section-title { font-size: 20px; font-weight: 700; color: var(--accent); margin: 32px 0 16px 0; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 18px; }
+        
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px; transition: transform 0.2s, border-color 0.2s; display: flex; flex-direction: column; justify-content: space-between; }
+        .card:hover { transform: translateY(-2px); border-color: var(--accent); background: var(--card-hover); }
+        
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .card-title { font-size: 17px; font-weight: 700; color: #fff; }
+        .badge { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .badge-sql { background: rgba(56, 189, 248, 0.15); color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.3); }
+        .badge-win { background: rgba(16, 185, 129, 0.15); color: var(--pos); border: 1px solid rgba(16, 185, 129, 0.3); }
+        
+        .card-desc { font-size: 13.5px; color: var(--text-dim); margin-bottom: 16px; flex-grow: 1; }
+        .card-meta { background: #0c1220; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 12.5px; border: 1px solid rgba(255,255,255,0.05); }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-row:last-child { margin-bottom: 0; }
+        .meta-label { color: var(--text-dim); }
+        .meta-val { color: #fff; font-weight: 600; }
+        
+        .card-actions { display: flex; gap: 10px; }
+        .btn { display: inline-block; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: var(--accent); color: #090d16; }
+        .btn-primary:hover { background: #7dd3fc; }
+        .btn-secondary { background: #1e293b; color: var(--text); border: 1px solid var(--border); }
+        .btn-secondary:hover { background: #334155; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">🏛️ Quantitative Backtest Studies & SQLite Catalog</h1>
+            <p class="subtitle">Complete inventory of research studies, underlying SQLite calculations, relational schema tables, and interactive Chart.js reports.</p>
+        </div>
+
+        <h2 class="section-title">📊 Primary Leveraged ETF Mean-Reversion Studies</h2>
+        <div class="grid">
+            <!-- Study 1: Dual All-Weather Combo -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">👑 All-Weather Dual Combo (TECL + SPXU)</div>
+                        <span class="badge badge-win">40.7% CAGR</span>
+                    </div>
+                    <div class="card-desc">
+                        Combines Long TECL on 3-day dips (+5% TP / 8d hold) with Short SPXU on 3-day rallies during bear markets (+6% TP / -5% SL / 2d hold).
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/sp500_etfs_study.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">all_weather_combo_trades, summary</span></div>
+                        <div class="meta-row"><span class="meta-label">Key Metrics:</span><span class="meta-val" style="color: #10b981;">+$452k Net PnL | 13.36% Max DD | Calmar 3.05</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="tecl_spxu_optimized_combo.html" class="btn btn-primary" target="_blank">Open Interactive Report</a>
+                    <a href="lib_combo_tecl_spxu.html" class="btn btn-secondary" target="_blank">Modular Report</a>
+                </div>
+            </div>
+
+            <!-- Study 2: TECL Across Sizing Tiers -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">🚀 TECL Sizing Matrix (30% to 100%)</div>
+                        <span class="badge badge-sql">30% - 100%</span>
+                    </div>
+                    <div class="card-desc">
+                        Full allocation sensitivity study showing portfolio growth, mark-to-market drawdowns, and Calmar ratios from 30% up to 100% dynamic sizing.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/sp500_etfs_study.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">tecl_allocation_matrix</span></div>
+                        <div class="meta-row"><span class="meta-label">Key Metrics:</span><span class="meta-val" style="color: #10b981;">50% Alloc = 10.27% DD / 25.8% CAGR</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="tecl_allocations.html" class="btn btn-primary" target="_blank">Open Allocation Matrix</a>
+                    <a href="lib_tecl_dip.html" class="btn btn-secondary" target="_blank">Single Run Report</a>
+                </div>
+            </div>
+
+            <!-- Study 3: 6 3x Leveraged ETFs Comparison -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">⚔️ 6 3x Leveraged ETFs Head-to-Head</div>
+                        <span class="badge badge-sql">6 Assets</span>
+                    </div>
+                    <div class="card-desc">
+                        Head-to-head comparison of TECL, TQQQ, FAS, UPRO, SOXL, and UDOW trading the VOO 3-day dip strategy with 4.5% Treasury yield.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/sp500_etfs_study.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">compare_3x_etfs_matrix</span></div>
+                        <div class="meta-row"><span class="meta-label">Rank #1:</span><span class="meta-val" style="color: #10b981;">TECL (+315.9% Return / Calmar 2.47)</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="compare_3x_etfs.html" class="btn btn-primary" target="_blank">Open Head-to-Head Report</a>
+                </div>
+            </div>
+
+            <!-- Study 4: Bear Strategy Grid Search -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">🐻 Bear Market Grid Search Optimizer</div>
+                        <span class="badge badge-sql">23,760 Runs</span>
+                    </div>
+                    <div class="card-desc">
+                        Multi-dimensional parallel parameter search across SPXU, SQQQ, and SOXS testing streak lengths, holding periods, profit targets, and stop losses.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/sp500_etfs_study.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">bear_optimization_grid_results</span></div>
+                        <div class="meta-row"><span class="meta-label">Rank #1 Setup:</span><span class="meta-val" style="color: #10b981;">SPXU 3d/2d/+6%/-5% (Calmar 3.06 / 3.25% DD)</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="lib_gridsearch_bear.html" class="btn btn-primary" target="_blank">Open Grid Search Report</a>
+                    <a href="inverse_3x_study.html" class="btn btn-secondary" target="_blank">Inverse Study</a>
+                </div>
+            </div>
+
+            <!-- Study 5: Dividend & Parking Sweeps -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">💵 Idle Reserve Sweeps (AGNC / GOOGL)</div>
+                        <span class="badge badge-sql">Dividends</span>
+                    </div>
+                    <div class="card-desc">
+                        Backtests incorporating ex-dividend accounting: parking 100% idle capital into monthly dividend payer AGNC (+$85k cash collected) or GOOGL.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/sp500_etfs_study.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">corporate_dividends, backtest_start</span></div>
+                        <div class="meta-row"><span class="meta-label">AGNC Dividends:</span><span class="meta-val" style="color: #10b981;">+$85,675.40 Cash Collected</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="rank6_agnc_sweep_vs_voo.html" class="btn btn-primary" target="_blank">AGNC Dividend Sweep</a>
+                    <a href="rank6_googl_sweep_vs_voo.html" class="btn btn-secondary" target="_blank">GOOGL Sweep</a>
+                </div>
+            </div>
+
+            <!-- Study 6: VOO / QQQ Dip Baseline -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">📉 VOO & QQQ Streak Reversion Baseline</div>
+                        <span class="badge badge-sql">Streaks</span>
+                    </div>
+                    <div class="card-desc">
+                        Initial empirical frequency analysis of multi-day consecutive drops and mean-reversion snapbacks across S&P 500 and Nasdaq 100.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/sp500_etfs_study.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">study_trades, study_win_rates, voo_upro_trades</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="voo_streaks.html" class="btn btn-primary" target="_blank">VOO Streaks</a>
+                    <a href="qqq_streaks.html" class="btn btn-secondary" target="_blank">QQQ Streaks</a>
+                    <a href="rank6_vs_voo.html" class="btn btn-secondary" target="_blank">Rank 6 Baseline</a>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section-title">🏛️ Multi-Strategy Screening & Institutional Analytics</h2>
+        <div class="grid">
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">🔬 Whitings Creek Multi-Strategy Study</div>
+                        <span class="badge badge-sql">Equities</span>
+                    </div>
+                    <div class="card-desc">
+                        Multi-strategy screening engine across Donchian Breakouts, Bollinger Capitulation, RSI2 Mean-Reversion, and MACD Crossovers.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/wc_master_backtest.db, data/live_scan.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">wc_summary, wc_backtest_details, entry</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="comparison_report.html" class="btn btn-primary" target="_blank">Multi-Strategy Comparison</a>
+                    <a href="backtest_report.html" class="btn btn-secondary" target="_blank">Detail Report</a>
+                </div>
+            </div>
+
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <div class="card-title">💼 IBKR Portfolio Analytics</div>
+                        <span class="badge badge-sql">Live Ledger</span>
+                    </div>
+                    <div class="card-desc">
+                        Execution ledger tracking live trades, cash balances, equity progression, Sharpe, Sortino, and drawdown analytics.
+                    </div>
+                    <div class="card-meta">
+                        <div class="meta-row"><span class="meta-label">SQLite DB:</span><span class="meta-val">data/ibkr_history.db</span></div>
+                        <div class="meta-row"><span class="meta-label">SQL Tables:</span><span class="meta-val">backtest_start</span></div>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <a href="ibkr_portfolio_report.html" class="btn btn-primary" target="_blank">IBKR Portfolio Report</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

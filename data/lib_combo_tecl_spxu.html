@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👑 All-Weather Dual Combo: TECL (Long Dips) &#43; SPXU (Short Bear Rallies)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #090d16;
+            --card: #111827;
+            --card-hover: #172033;
+            --border: #1e293b;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --accent: #38bdf8;
+            --strategy: #10b981;
+            --benchmark: #a855f7;
+            --danger: #f43f5e;
+            --amber: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 32px 20px; line-height: 1.6; }
+        .container { max-width: 1320px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 12px; }
+        .title { font-size: 24px; font-weight: 800; color: #fff; }
+        .subtitle { color: var(--text-dim); font-size: 14px; margin-top: 4px; }
+        .controls { display: flex; gap: 8px; align-items: center; }
+        .btn { background: #1e293b; color: var(--text); border: 1px solid var(--border); padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+        .btn:hover, .btn.active { background: var(--accent); color: #090d16; border-color: var(--accent); }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .kpi-label { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-value { font-size: 26px; font-weight: 800; margin-top: 6px; color: #fff; }
+        .kpi-sub { font-size: 12px; color: var(--accent); margin-top: 4px; }
+        
+        .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+        .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+        .chart-title { font-size: 17px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+        .legend-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin-left: 12px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        
+        .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; overflow-x: auto; margin-top: 24px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+        th { color: var(--text-dim); font-weight: 600; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+        td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        tbody tr:hover { background: var(--card-hover); }
+        .pos { color: var(--strategy); font-weight: 700; }
+        .neg { color: var(--danger); font-weight: 700; }
+        .badge { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+        .badge-win { background: rgba(16, 185, 129, 0.15); color: var(--strategy); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-loss { background: rgba(244, 63, 94, 0.15); color: var(--danger); border: 1px solid rgba(244, 63, 94, 0.3); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1 class="title">👑 All-Weather Dual Combo: TECL (Long Dips) &#43; SPXU (Short Bear Rallies)</h1>
+                <p class="subtitle">Long TECL on 3-day drops &#43; Short SPXU on 3-day rallies in bear markets (65% Allocation &#43; 4.5% T-Bills)</p>
+            </div>
+            <div class="controls">
+                <button class="btn" onclick="setTimeframe('all')" id="btn-all">5 Years (All)</button>
+                <button class="btn" onclick="setTimeframe('2y')" id="btn-2y">2 Years</button>
+                <button class="btn" onclick="setTimeframe('1y')" id="btn-1y">1 Year</button>
+                <button class="btn" onclick="setTimeframe('6m')" id="btn-6m">6 Months</button>
+            </div>
+        </div>
+
+        
+        <div class="kpi-grid">
+            
+            <div class="kpi-card">
+                <div class="kpi-label">Combo Final Equity</div>
+                <div class="kpi-value" style="color: #10b981;">$552077.17</div>
+                <div class="kpi-sub">&#43;$452077.17 Net Profit</div>
+            </div>
+            
+            <div class="kpi-card">
+                <div class="kpi-label">Annualized CAGR</div>
+                <div class="kpi-value" style="color: #38bdf8;">40.73% / yr</div>
+                <div class="kpi-sub">&#43;452.08% Total Return</div>
+            </div>
+            
+            <div class="kpi-card">
+                <div class="kpi-label">Max MTM Drawdown</div>
+                <div class="kpi-value" style="color: #38bdf8;">13.36%</div>
+                <div class="kpi-sub">Calmar Ratio: 3.05</div>
+            </div>
+            
+            <div class="kpi-card">
+                <div class="kpi-label">Trades &amp; Win Rate</div>
+                <div class="kpi-value" style="color: #f59e0b;">79.8% WR</div>
+                <div class="kpi-sub">84 Trades (69 Long / 15 Short)</div>
+            </div>
+            
+        </div>
+        
+
+        
+        <div class="chart-card">
+            <div class="chart-header">
+                <div class="chart-title">
+                    <span>💰 Cumulative Portfolio Equity</span>
+                </div>
+            </div>
+            <div style="height: 440px; position: relative;">
+                <canvas id="equityChart"></canvas>
+            </div>
+        </div>
+
+        
+        <div class="chart-card">
+            <div class="chart-header">
+                <div class="chart-title">
+                    <span>📉 Mark-to-Market Drawdown (%)</span>
+                </div>
+            </div>
+            <div style="height: 220px; position: relative;">
+                <canvas id="drawdownChart"></canvas>
+            </div>
+        </div>
+
+        
+        
+        <div class="table-card">
+            <div class="chart-title" style="margin-bottom: 16px;">
+                <span>📜 Executed Trades Log (Click to inspect timeline)</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Direction</th>
+                        <th>Asset</th>
+                        <th>Trade Window</th>
+                        <th>Entry Price</th>
+                        <th>Exit Price</th>
+                        <th>Hold</th>
+                        <th>Exit Reason</th>
+                        <th>Return %</th>
+                        <th>Net PnL ($)</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                    <tr onclick="focusDate('2021-09-08')" style="cursor: pointer;">
+                        <td><strong>#1</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2021-09-08 ➔ 2021-09-20</td>
+                        <td>$68.31</td>
+                        <td>$60.52</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-11.40%</td>
+                        <td class="neg">$-7416.08</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2021-09-21')" style="cursor: pointer;">
+                        <td><strong>#2</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2021-09-21 ➔ 2021-09-22</td>
+                        <td>$60.52</td>
+                        <td>$63.55</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3010.87</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2021-09-24')" style="cursor: pointer;">
+                        <td><strong>#3</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2021-09-24 ➔ 2021-09-28</td>
+                        <td>$318.00</td>
+                        <td>$337.08</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;6%</td>
+                        <td class="pos">&#43;6.00%</td>
+                        <td class="pos">$&#43;3720.60</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2021-09-29')" style="cursor: pointer;">
+                        <td><strong>#4</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2021-09-29 ➔ 2021-10-07</td>
+                        <td>$57.88</td>
+                        <td>$60.77</td>
+                        <td>6d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3232.60</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2021-10-12')" style="cursor: pointer;">
+                        <td><strong>#5</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2021-10-12 ➔ 2021-10-14</td>
+                        <td>$57.59</td>
+                        <td>$60.47</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3337.34</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2021-12-20')" style="cursor: pointer;">
+                        <td><strong>#6</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2021-12-20 ➔ 2021-12-21</td>
+                        <td>$74.87</td>
+                        <td>$78.61</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3473.97</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-01-06')" style="cursor: pointer;">
+                        <td><strong>#7</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-01-06 ➔ 2022-01-12</td>
+                        <td>$76.74</td>
+                        <td>$80.58</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3595.27</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-01-20')" style="cursor: pointer;">
+                        <td><strong>#8</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-01-20 ➔ 2022-01-31</td>
+                        <td>$63.30</td>
+                        <td>$66.46</td>
+                        <td>7d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3715.71</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-02-01')" style="cursor: pointer;">
+                        <td><strong>#9</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-02-01 ➔ 2022-02-03</td>
+                        <td>$281.60</td>
+                        <td>$292.60</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="pos">&#43;3.91%</td>
+                        <td class="pos">$&#43;2992.00</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-02-14')" style="cursor: pointer;">
+                        <td><strong>#10</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-02-14 ➔ 2022-02-15</td>
+                        <td>$58.98</td>
+                        <td>$61.93</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;3936.91</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-02-22')" style="cursor: pointer;">
+                        <td><strong>#11</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-02-22 ➔ 2022-02-25</td>
+                        <td>$54.33</td>
+                        <td>$57.05</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;4069.32</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-03-07')" style="cursor: pointer;">
+                        <td><strong>#12</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-03-07 ➔ 2022-03-08</td>
+                        <td>$46.69</td>
+                        <td>$49.02</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;4206.77</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-03-14')" style="cursor: pointer;">
+                        <td><strong>#13</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-03-14 ➔ 2022-03-15</td>
+                        <td>$43.50</td>
+                        <td>$45.68</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;4345.65</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-03-17')" style="cursor: pointer;">
+                        <td><strong>#14</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-03-17 ➔ 2022-03-21</td>
+                        <td>$291.20</td>
+                        <td>$282.00</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="neg">-3.16%</td>
+                        <td class="neg">$-2833.60</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-04-12')" style="cursor: pointer;">
+                        <td><strong>#15</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-04-12 ➔ 2022-04-13</td>
+                        <td>$49.03</td>
+                        <td>$51.48</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;4407.80</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-04-22')" style="cursor: pointer;">
+                        <td><strong>#16</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-04-22 ➔ 2022-04-28</td>
+                        <td>$43.97</td>
+                        <td>$46.17</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;4557.49</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-05-04')" style="cursor: pointer;">
+                        <td><strong>#17</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-05-04 ➔ 2022-05-05</td>
+                        <td>$301.00</td>
+                        <td>$319.06</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;6%</td>
+                        <td class="pos">&#43;6.00%</td>
+                        <td class="pos">$&#43;5634.72</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-05-09')" style="cursor: pointer;">
+                        <td><strong>#18</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-05-09 ➔ 2022-05-10</td>
+                        <td>$35.87</td>
+                        <td>$38.31</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;6.80%</td>
+                        <td class="pos">$&#43;6656.33</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-05-27')" style="cursor: pointer;">
+                        <td><strong>#19</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-05-27 ➔ 2022-06-01</td>
+                        <td>$319.40</td>
+                        <td>$338.56</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;6%</td>
+                        <td class="pos">&#43;6.00%</td>
+                        <td class="pos">$&#43;6132.48</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-06-10')" style="cursor: pointer;">
+                        <td><strong>#20</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-06-10 ➔ 2022-06-23</td>
+                        <td>$31.38</td>
+                        <td>$29.45</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-6.15%</td>
+                        <td class="neg">$-6552.34</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-06-29')" style="cursor: pointer;">
+                        <td><strong>#21</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-06-29 ➔ 2022-07-06</td>
+                        <td>$29.25</td>
+                        <td>$30.71</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;5117.29</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-07-07')" style="cursor: pointer;">
+                        <td><strong>#22</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-07-07 ➔ 2022-07-11</td>
+                        <td>$368.80</td>
+                        <td>$382.80</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="pos">&#43;3.80%</td>
+                        <td class="pos">$&#43;4004.00</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-07-12')" style="cursor: pointer;">
+                        <td><strong>#23</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-07-12 ➔ 2022-07-15</td>
+                        <td>$29.38</td>
+                        <td>$30.85</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;5416.20</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-07-21')" style="cursor: pointer;">
+                        <td><strong>#24</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-07-21 ➔ 2022-07-25</td>
+                        <td>$340.00</td>
+                        <td>$348.20</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="pos">&#43;2.41%</td>
+                        <td class="pos">$&#43;2697.80</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-07-29')" style="cursor: pointer;">
+                        <td><strong>#25</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-07-29 ➔ 2022-08-02</td>
+                        <td>$306.20</td>
+                        <td>$315.00</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="pos">&#43;2.87%</td>
+                        <td class="pos">$&#43;3264.80</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-08-08')" style="cursor: pointer;">
+                        <td><strong>#26</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-08-08 ➔ 2022-08-10</td>
+                        <td>$41.31</td>
+                        <td>$43.38</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;5797.86</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-08-16')" style="cursor: pointer;">
+                        <td><strong>#27</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-08-16 ➔ 2022-08-18</td>
+                        <td>$268.80</td>
+                        <td>$272.60</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="pos">&#43;1.41%</td>
+                        <td class="pos">$&#43;1691.01</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-08-23')" style="cursor: pointer;">
+                        <td><strong>#28</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-08-23 ➔ 2022-08-25</td>
+                        <td>$39.07</td>
+                        <td>$41.02</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;6048.04</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-08-30')" style="cursor: pointer;">
+                        <td><strong>#29</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-08-30 ➔ 2022-09-12</td>
+                        <td>$33.30</td>
+                        <td>$34.96</td>
+                        <td>8d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;6248.74</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-09-22')" style="cursor: pointer;">
+                        <td><strong>#30</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-09-22 ➔ 2022-10-04</td>
+                        <td>$25.40</td>
+                        <td>$25.74</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="pos">&#43;1.34%</td>
+                        <td class="pos">$&#43;1729.58</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-10-07')" style="cursor: pointer;">
+                        <td><strong>#31</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-10-07 ➔ 2022-10-18</td>
+                        <td>$22.19</td>
+                        <td>$23.45</td>
+                        <td>7d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.68%</td>
+                        <td class="pos">$&#43;7405.02</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-10-25')" style="cursor: pointer;">
+                        <td><strong>#32</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2022-10-25 ➔ 2022-10-27</td>
+                        <td>$348.40</td>
+                        <td>$362.00</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="pos">&#43;3.90%</td>
+                        <td class="pos">$&#43;5276.80</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-11-02')" style="cursor: pointer;">
+                        <td><strong>#33</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-11-02 ➔ 2022-11-08</td>
+                        <td>$22.45</td>
+                        <td>$23.57</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;6943.79</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-11-29')" style="cursor: pointer;">
+                        <td><strong>#34</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-11-29 ➔ 2022-11-30</td>
+                        <td>$25.61</td>
+                        <td>$26.89</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;7186.17</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-12-06')" style="cursor: pointer;">
+                        <td><strong>#35</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-12-06 ➔ 2022-12-09</td>
+                        <td>$25.79</td>
+                        <td>$27.08</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;7424.94</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2022-12-16')" style="cursor: pointer;">
+                        <td><strong>#36</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2022-12-16 ➔ 2022-12-29</td>
+                        <td>$23.90</td>
+                        <td>$22.20</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-7.11%</td>
+                        <td class="neg">$-10915.69</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-01-12')" style="cursor: pointer;">
+                        <td><strong>#37</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2023-01-12 ➔ 2023-01-17</td>
+                        <td>$301.20</td>
+                        <td>$299.40</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="neg">-0.60%</td>
+                        <td class="neg">$-874.81</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-01-19')" style="cursor: pointer;">
+                        <td><strong>#38</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-01-19 ➔ 2023-01-20</td>
+                        <td>$23.75</td>
+                        <td>$24.94</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;7304.31</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-02-21')" style="cursor: pointer;">
+                        <td><strong>#39</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-02-21 ➔ 2023-02-23</td>
+                        <td>$28.09</td>
+                        <td>$29.58</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.30%</td>
+                        <td class="pos">$&#43;8029.61</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-03-13')" style="cursor: pointer;">
+                        <td><strong>#40</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-03-13 ➔ 2023-03-14</td>
+                        <td>$27.71</td>
+                        <td>$29.10</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;7846.09</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-05-03')" style="cursor: pointer;">
+                        <td><strong>#41</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-05-03 ➔ 2023-05-05</td>
+                        <td>$34.61</td>
+                        <td>$36.34</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;8150.66</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-06-21')" style="cursor: pointer;">
+                        <td><strong>#42</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-06-21 ➔ 2023-06-30</td>
+                        <td>$49.99</td>
+                        <td>$53.11</td>
+                        <td>7d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;6.24%</td>
+                        <td class="pos">$&#43;10561.20</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-07-07')" style="cursor: pointer;">
+                        <td><strong>#43</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-07-07 ➔ 2023-07-12</td>
+                        <td>$51.41</td>
+                        <td>$53.98</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;8811.67</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-08-03')" style="cursor: pointer;">
+                        <td><strong>#44</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-08-03 ➔ 2023-08-15</td>
+                        <td>$52.79</td>
+                        <td>$47.43</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-10.15%</td>
+                        <td class="neg">$-18524.16</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-08-17')" style="cursor: pointer;">
+                        <td><strong>#45</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-08-17 ➔ 2023-08-21</td>
+                        <td>$44.73</td>
+                        <td>$46.97</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;8523.30</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-09-07')" style="cursor: pointer;">
+                        <td><strong>#46</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-09-07 ➔ 2023-09-19</td>
+                        <td>$50.51</td>
+                        <td>$47.83</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-5.31%</td>
+                        <td class="neg">$-9358.55</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-09-21')" style="cursor: pointer;">
+                        <td><strong>#47</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-09-21 ➔ 2023-10-03</td>
+                        <td>$43.40</td>
+                        <td>$42.20</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-2.76%</td>
+                        <td class="neg">$-4710.00</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-10-20')" style="cursor: pointer;">
+                        <td><strong>#48</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-10-20 ➔ 2023-11-01</td>
+                        <td>$42.53</td>
+                        <td>$44.66</td>
+                        <td>8d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;8384.79</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2023-12-06')" style="cursor: pointer;">
+                        <td><strong>#49</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2023-12-06 ➔ 2023-12-08</td>
+                        <td>$57.54</td>
+                        <td>$60.42</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;8691.42</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-01-03')" style="cursor: pointer;">
+                        <td><strong>#50</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-01-03 ➔ 2024-01-08</td>
+                        <td>$59.47</td>
+                        <td>$62.44</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;9000.78</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-03-15')" style="cursor: pointer;">
+                        <td><strong>#51</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-03-15 ➔ 2024-03-20</td>
+                        <td>$77.23</td>
+                        <td>$81.09</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;9368.00</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-03-26')" style="cursor: pointer;">
+                        <td><strong>#52</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-03-26 ➔ 2024-04-08</td>
+                        <td>$79.58</td>
+                        <td>$77.41</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-2.73%</td>
+                        <td class="neg">$-5279.61</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-04-16')" style="cursor: pointer;">
+                        <td><strong>#53</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-04-16 ➔ 2024-04-26</td>
+                        <td>$72.03</td>
+                        <td>$69.37</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-3.69%</td>
+                        <td class="neg">$-7030.37</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-06-24')" style="cursor: pointer;">
+                        <td><strong>#54</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-06-24 ➔ 2024-06-25</td>
+                        <td>$92.90</td>
+                        <td>$97.55</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;9355.03</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-07-19')" style="cursor: pointer;">
+                        <td><strong>#55</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-07-19 ➔ 2024-07-22</td>
+                        <td>$89.06</td>
+                        <td>$93.51</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;9685.27</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-07-25')" style="cursor: pointer;">
+                        <td><strong>#56</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-07-25 ➔ 2024-07-26</td>
+                        <td>$79.60</td>
+                        <td>$83.58</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;10005.72</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-08-05')" style="cursor: pointer;">
+                        <td><strong>#57</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-08-05 ➔ 2024-08-06</td>
+                        <td>$62.30</td>
+                        <td>$65.41</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;10341.80</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-09-05')" style="cursor: pointer;">
+                        <td><strong>#58</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-09-05 ➔ 2024-09-11</td>
+                        <td>$70.86</td>
+                        <td>$74.40</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;10717.58</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-10-23')" style="cursor: pointer;">
+                        <td><strong>#59</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-10-23 ➔ 2024-10-25</td>
+                        <td>$89.56</td>
+                        <td>$94.04</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;11123.35</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-12-19')" style="cursor: pointer;">
+                        <td><strong>#60</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-12-19 ➔ 2024-12-20</td>
+                        <td>$90.93</td>
+                        <td>$95.48</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;11561.75</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2024-12-30')" style="cursor: pointer;">
+                        <td><strong>#61</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2024-12-30 ➔ 2025-01-06</td>
+                        <td>$93.02</td>
+                        <td>$97.67</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;11948.42</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-02-24')" style="cursor: pointer;">
+                        <td><strong>#62</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-02-24 ➔ 2025-03-06</td>
+                        <td>$85.60</td>
+                        <td>$68.00</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-20.56%</td>
+                        <td class="neg">$-51004.80</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-03-28')" style="cursor: pointer;">
+                        <td><strong>#63</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-03-28 ➔ 2025-04-02</td>
+                        <td>$58.43</td>
+                        <td>$61.35</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;10777.41</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-04-07')" style="cursor: pointer;">
+                        <td><strong>#64</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-04-07 ➔ 2025-04-08</td>
+                        <td>$39.56</td>
+                        <td>$44.08</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;11.43%</td>
+                        <td class="pos">$&#43;25443.08</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-04-24')" style="cursor: pointer;">
+                        <td><strong>#65</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2025-04-24 ➔ 2025-04-28</td>
+                        <td>$97.96</td>
+                        <td>$95.72</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="neg">-2.29%</td>
+                        <td class="neg">$-5481.27</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-04-29')" style="cursor: pointer;">
+                        <td><strong>#66</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2025-04-29 ➔ 2025-04-30</td>
+                        <td>$94.12</td>
+                        <td>$99.77</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;6%</td>
+                        <td class="pos">&#43;6.00%</td>
+                        <td class="pos">$&#43;14168.83</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-05-01')" style="cursor: pointer;">
+                        <td><strong>#67</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2025-05-01 ➔ 2025-05-02</td>
+                        <td>$92.04</td>
+                        <td>$87.44</td>
+                        <td>1d</td>
+                        <td>STOP_LOSS_-5%</td>
+                        <td class="neg">-5.00%</td>
+                        <td class="neg">$-12268.93</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-06-20')" style="cursor: pointer;">
+                        <td><strong>#68</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-06-20 ➔ 2025-06-24</td>
+                        <td>$80.24</td>
+                        <td>$85.25</td>
+                        <td>2d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;6.24%</td>
+                        <td class="pos">$&#43;14909.77</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-07-30')" style="cursor: pointer;">
+                        <td><strong>#69</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-07-30 ➔ 2025-08-11</td>
+                        <td>$105.55</td>
+                        <td>$104.31</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-1.17%</td>
+                        <td class="neg">$-2932.61</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-08-19')" style="cursor: pointer;">
+                        <td><strong>#70</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-08-19 ➔ 2025-08-28</td>
+                        <td>$100.79</td>
+                        <td>$105.83</td>
+                        <td>7d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;12397.17</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-09-25')" style="cursor: pointer;">
+                        <td><strong>#71</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-09-25 ➔ 2025-10-01</td>
+                        <td>$119.39</td>
+                        <td>$125.36</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;12840.39</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-11-17')" style="cursor: pointer;">
+                        <td><strong>#72</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-11-17 ➔ 2025-11-28</td>
+                        <td>$122.08</td>
+                        <td>$124.10</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="pos">&#43;1.65%</td>
+                        <td class="pos">$&#43;4413.69</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-12-16')" style="cursor: pointer;">
+                        <td><strong>#73</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-12-16 ➔ 2025-12-22</td>
+                        <td>$114.58</td>
+                        <td>$122.61</td>
+                        <td>4d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;7.01%</td>
+                        <td class="pos">$&#43;18934.74</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2025-12-31')" style="cursor: pointer;">
+                        <td><strong>#74</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2025-12-31 ➔ 2026-01-02</td>
+                        <td>$117.49</td>
+                        <td>$123.36</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;14139.92</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-01-30')" style="cursor: pointer;">
+                        <td><strong>#75</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-01-30 ➔ 2026-02-11</td>
+                        <td>$115.43</td>
+                        <td>$111.62</td>
+                        <td>8d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-3.30%</td>
+                        <td class="neg">$-9669.77</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-02-12')" style="cursor: pointer;">
+                        <td><strong>#76</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-02-12 ➔ 2026-02-18</td>
+                        <td>$102.79</td>
+                        <td>$107.93</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;14334.07</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-03-12')" style="cursor: pointer;">
+                        <td><strong>#77</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-03-12 ➔ 2026-03-17</td>
+                        <td>$98.08</td>
+                        <td>$102.98</td>
+                        <td>3d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;14839.50</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-03-20')" style="cursor: pointer;">
+                        <td><strong>#78</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-03-20 ➔ 2026-03-23</td>
+                        <td>$92.32</td>
+                        <td>$97.09</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.17%</td>
+                        <td class="pos">$&#43;15845.93</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-03-30')" style="cursor: pointer;">
+                        <td><strong>#79</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-03-30 ➔ 2026-03-31</td>
+                        <td>$76.70</td>
+                        <td>$80.53</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;15861.56</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-04-02')" style="cursor: pointer;">
+                        <td><strong>#80</strong></td>
+                        <td>
+                            
+                            <span style="color: #38bdf8; font-weight: 700;">🔴 SHORT</span>
+                            
+                        </td>
+                        <td><strong>SPXU</strong></td>
+                        <td>2026-04-02 ➔ 2026-04-07</td>
+                        <td>$55.33</td>
+                        <td>$54.54</td>
+                        <td>2d</td>
+                        <td>TIME_UP_2DAYS</td>
+                        <td class="neg">-1.43%</td>
+                        <td class="neg">$-4678.39</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-05-19')" style="cursor: pointer;">
+                        <td><strong>#81</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-05-19 ➔ 2026-05-20</td>
+                        <td>$184.44</td>
+                        <td>$193.66</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;5.00%</td>
+                        <td class="pos">$&#43;16313.72</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-06-24')" style="cursor: pointer;">
+                        <td><strong>#82</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-06-24 ➔ 2026-06-25</td>
+                        <td>$206.15</td>
+                        <td>$223.80</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;8.56%</td>
+                        <td class="pos">$&#43;28963.67</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-07-20')" style="cursor: pointer;">
+                        <td><strong>#83</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-07-20 ➔ 2026-07-21</td>
+                        <td>$177.86</td>
+                        <td>$189.05</td>
+                        <td>1d</td>
+                        <td>PROFIT_TARGET_&#43;5%</td>
+                        <td class="pos">&#43;6.29%</td>
+                        <td class="pos">$&#43;22525.47</td>
+                        <td>
+                            
+                            <span class="badge badge-win">🟢 WIN</span>
+                            
+                        </td>
+                    </tr>
+                    
+                    <tr onclick="focusDate('2026-08-18')" style="cursor: pointer;">
+                        <td><strong>#84</strong></td>
+                        <td>
+                            
+                            <span style="color: #10b981; font-weight: 700;">🟢 LONG</span>
+                            
+                        </td>
+                        <td><strong>TECL</strong></td>
+                        <td>2026-08-18 ➔ 2026-08-25</td>
+                        <td>$202.10</td>
+                        <td>$189.43</td>
+                        <td>5d</td>
+                        <td>TIME_UP_8DAYS</td>
+                        <td class="neg">-6.27%</td>
+                        <td class="neg">$-23439.52</td>
+                        <td>
+                            
+                            <span class="badge badge-loss">🔴 LOSS</span>
+                            
+                        </td>
+                    </tr>
+                    
+                </tbody>
+            </table>
+        </div>
+        
+
+        
+    </div>
+
+    <script>
+        const chartData = {"dates":["2021-08-31","2021-09-01","2021-09-02","2021-09-03","2021-09-07","2021-09-08","2021-09-09","2021-09-10","2021-09-13","2021-09-14","2021-09-15","2021-09-16","2021-09-17","2021-09-20","2021-09-21","2021-09-22","2021-09-23","2021-09-24","2021-09-27","2021-09-28","2021-09-29","2021-09-30","2021-10-01","2021-10-04","2021-10-05","2021-10-06","2021-10-07","2021-10-08","2021-10-11","2021-10-12","2021-10-13","2021-10-14","2021-10-15","2021-10-18","2021-10-19","2021-10-20","2021-10-21","2021-10-22","2021-10-25","2021-10-26","2021-10-27","2021-10-28","2021-10-29","2021-11-01","2021-11-02","2021-11-03","2021-11-04","2021-11-05","2021-11-08","2021-11-09","2021-11-10","2021-11-11","2021-11-12","2021-11-15","2021-11-16","2021-11-17","2021-11-18","2021-11-19","2021-11-22","2021-11-23","2021-11-24","2021-11-26","2021-11-29","2021-11-30","2021-12-01","2021-12-02","2021-12-03","2021-12-06","2021-12-07","2021-12-08","2021-12-09","2021-12-10","2021-12-13","2021-12-14","2021-12-15","2021-12-16","2021-12-17","2021-12-20","2021-12-21","2021-12-22","2021-12-23","2021-12-27","2021-12-28","2021-12-29","2021-12-30","2021-12-31","2022-01-03","2022-01-04","2022-01-05","2022-01-06","2022-01-07","2022-01-10","2022-01-11","2022-01-12","2022-01-13","2022-01-14","2022-01-18","2022-01-19","2022-01-20","2022-01-21","2022-01-24","2022-01-25","2022-01-26","2022-01-27","2022-01-28","2022-01-31","2022-02-01","2022-02-02","2022-02-03","2022-02-04","2022-02-07","2022-02-08","2022-02-09","2022-02-10","2022-02-11","2022-02-14","2022-02-15","2022-02-16","2022-02-17","2022-02-18","2022-02-22","2022-02-23","2022-02-24","2022-02-25","2022-02-28","2022-03-01","2022-03-02","2022-03-03","2022-03-04","2022-03-07","2022-03-08","2022-03-09","2022-03-10","2022-03-11","2022-03-14","2022-03-15","2022-03-16","2022-03-17","2022-03-18","2022-03-21","2022-03-22","2022-03-23","2022-03-24","2022-03-25","2022-03-28","2022-03-29","2022-03-30","2022-03-31","2022-04-01","2022-04-04","2022-04-05","2022-04-06","2022-04-07","2022-04-08","2022-04-11","2022-04-12","2022-04-13","2022-04-14","2022-04-18","2022-04-19","2022-04-20","2022-04-21","2022-04-22","2022-04-25","2022-04-26","2022-04-27","2022-04-28","2022-04-29","2022-05-02","2022-05-03","2022-05-04","2022-05-05","2022-05-06","2022-05-09","2022-05-10","2022-05-11","2022-05-12","2022-05-13","2022-05-16","2022-05-17","2022-05-18","2022-05-19","2022-05-20","2022-05-23","2022-05-24","2022-05-25","2022-05-26","2022-05-27","2022-05-31","2022-06-01","2022-06-02","2022-06-03","2022-06-06","2022-06-07","2022-06-08","2022-06-09","2022-06-10","2022-06-13","2022-06-14","2022-06-15","2022-06-16","2022-06-17","2022-06-21","2022-06-22","2022-06-23","2022-06-24","2022-06-27","2022-06-28","2022-06-29","2022-06-30","2022-07-01","2022-07-05","2022-07-06","2022-07-07","2022-07-08","2022-07-11","2022-07-12","2022-07-13","2022-07-14","2022-07-15","2022-07-18","2022-07-19","2022-07-20","2022-07-21","2022-07-22","2022-07-25","2022-07-26","2022-07-27","2022-07-28","2022-07-29","2022-08-01","2022-08-02","2022-08-03","2022-08-04","2022-08-05","2022-08-08","2022-08-09","2022-08-10","2022-08-11","2022-08-12","2022-08-15","2022-08-16","2022-08-17","2022-08-18","2022-08-19","2022-08-22","2022-08-23","2022-08-24","2022-08-25","2022-08-26","2022-08-29","2022-08-30","2022-08-31","2022-09-01","2022-09-02","2022-09-06","2022-09-07","2022-09-08","2022-09-09","2022-09-12","2022-09-13","2022-09-14","2022-09-15","2022-09-16","2022-09-19","2022-09-20","2022-09-21","2022-09-22","2022-09-23","2022-09-26","2022-09-27","2022-09-28","2022-09-29","2022-09-30","2022-10-03","2022-10-04","2022-10-05","2022-10-06","2022-10-07","2022-10-10","2022-10-11","2022-10-12","2022-10-13","2022-10-14","2022-10-17","2022-10-18","2022-10-19","2022-10-20","2022-10-21","2022-10-24","2022-10-25","2022-10-26","2022-10-27","2022-10-28","2022-10-31","2022-11-01","2022-11-02","2022-11-03","2022-11-04","2022-11-07","2022-11-08","2022-11-09","2022-11-10","2022-11-11","2022-11-14","2022-11-15","2022-11-16","2022-11-17","2022-11-18","2022-11-21","2022-11-22","2022-11-23","2022-11-25","2022-11-28","2022-11-29","2022-11-30","2022-12-01","2022-12-02","2022-12-05","2022-12-06","2022-12-07","2022-12-08","2022-12-09","2022-12-12","2022-12-13","2022-12-14","2022-12-15","2022-12-16","2022-12-19","2022-12-20","2022-12-21","2022-12-22","2022-12-23","2022-12-27","2022-12-28","2022-12-29","2022-12-30","2023-01-03","2023-01-04","2023-01-05","2023-01-06","2023-01-09","2023-01-10","2023-01-11","2023-01-12","2023-01-13","2023-01-17","2023-01-18","2023-01-19","2023-01-20","2023-01-23","2023-01-24","2023-01-25","2023-01-26","2023-01-27","2023-01-30","2023-01-31","2023-02-01","2023-02-02","2023-02-03","2023-02-06","2023-02-07","2023-02-08","2023-02-09","2023-02-10","2023-02-13","2023-02-14","2023-02-15","2023-02-16","2023-02-17","2023-02-21","2023-02-22","2023-02-23","2023-02-24","2023-02-27","2023-02-28","2023-03-01","2023-03-02","2023-03-03","2023-03-06","2023-03-07","2023-03-08","2023-03-09","2023-03-10","2023-03-13","2023-03-14","2023-03-15","2023-03-16","2023-03-17","2023-03-20","2023-03-21","2023-03-22","2023-03-23","2023-03-24","2023-03-27","2023-03-28","2023-03-29","2023-03-30","2023-03-31","2023-04-03","2023-04-04","2023-04-05","2023-04-06","2023-04-10","2023-04-11","2023-04-12","2023-04-13","2023-04-14","2023-04-17","2023-04-18","2023-04-19","2023-04-20","2023-04-21","2023-04-24","2023-04-25","2023-04-26","2023-04-27","2023-04-28","2023-05-01","2023-05-02","2023-05-03","2023-05-04","2023-05-05","2023-05-08","2023-05-09","2023-05-10","2023-05-11","2023-05-12","2023-05-15","2023-05-16","2023-05-17","2023-05-18","2023-05-19","2023-05-22","2023-05-23","2023-05-24","2023-05-25","2023-05-26","2023-05-30","2023-05-31","2023-06-01","2023-06-02","2023-06-05","2023-06-06","2023-06-07","2023-06-08","2023-06-09","2023-06-12","2023-06-13","2023-06-14","2023-06-15","2023-06-16","2023-06-20","2023-06-21","2023-06-22","2023-06-23","2023-06-26","2023-06-27","2023-06-28","2023-06-29","2023-06-30","2023-07-03","2023-07-05","2023-07-06","2023-07-07","2023-07-10","2023-07-11","2023-07-12","2023-07-13","2023-07-14","2023-07-17","2023-07-18","2023-07-19","2023-07-20","2023-07-21","2023-07-24","2023-07-25","2023-07-26","2023-07-27","2023-07-28","2023-07-31","2023-08-01","2023-08-02","2023-08-03","2023-08-04","2023-08-07","2023-08-08","2023-08-09","2023-08-10","2023-08-11","2023-08-14","2023-08-15","2023-08-16","2023-08-17","2023-08-18","2023-08-21","2023-08-22","2023-08-23","2023-08-24","2023-08-25","2023-08-28","2023-08-29","2023-08-30","2023-08-31","2023-09-01","2023-09-05","2023-09-06","2023-09-07","2023-09-08","2023-09-11","2023-09-12","2023-09-13","2023-09-14","2023-09-15","2023-09-18","2023-09-19","2023-09-20","2023-09-21","2023-09-22","2023-09-25","2023-09-26","2023-09-27","2023-09-28","2023-09-29","2023-10-02","2023-10-03","2023-10-04","2023-10-05","2023-10-06","2023-10-09","2023-10-10","2023-10-11","2023-10-12","2023-10-13","2023-10-16","2023-10-17","2023-10-18","2023-10-19","2023-10-20","2023-10-23","2023-10-24","2023-10-25","2023-10-26","2023-10-27","2023-10-30","2023-10-31","2023-11-01","2023-11-02","2023-11-03","2023-11-06","2023-11-07","2023-11-08","2023-11-09","2023-11-10","2023-11-13","2023-11-14","2023-11-15","2023-11-16","2023-11-17","2023-11-20","2023-11-21","2023-11-22","2023-11-24","2023-11-27","2023-11-28","2023-11-29","2023-11-30","2023-12-01","2023-12-04","2023-12-05","2023-12-06","2023-12-07","2023-12-08","2023-12-11","2023-12-12","2023-12-13","2023-12-14","2023-12-15","2023-12-18","2023-12-19","2023-12-20","2023-12-21","2023-12-22","2023-12-26","2023-12-27","2023-12-28","2023-12-29","2024-01-02","2024-01-03","2024-01-04","2024-01-05","2024-01-08","2024-01-09","2024-01-10","2024-01-11","2024-01-12","2024-01-16","2024-01-17","2024-01-18","2024-01-19","2024-01-22","2024-01-23","2024-01-24","2024-01-25","2024-01-26","2024-01-29","2024-01-30","2024-01-31","2024-02-01","2024-02-02","2024-02-05","2024-02-06","2024-02-07","2024-02-08","2024-02-09","2024-02-12","2024-02-13","2024-02-14","2024-02-15","2024-02-16","2024-02-20","2024-02-21","2024-02-22","2024-02-23","2024-02-26","2024-02-27","2024-02-28","2024-02-29","2024-03-01","2024-03-04","2024-03-05","2024-03-06","2024-03-07","2024-03-08","2024-03-11","2024-03-12","2024-03-13","2024-03-14","2024-03-15","2024-03-18","2024-03-19","2024-03-20","2024-03-21","2024-03-22","2024-03-25","2024-03-26","2024-03-27","2024-03-28","2024-04-01","2024-04-02","2024-04-03","2024-04-04","2024-04-05","2024-04-08","2024-04-09","2024-04-10","2024-04-11","2024-04-12","2024-04-15","2024-04-16","2024-04-17","2024-04-18","2024-04-19","2024-04-22","2024-04-23","2024-04-24","2024-04-25","2024-04-26","2024-04-29","2024-04-30","2024-05-01","2024-05-02","2024-05-03","2024-05-06","2024-05-07","2024-05-08","2024-05-09","2024-05-10","2024-05-13","2024-05-14","2024-05-15","2024-05-16","2024-05-17","2024-05-20","2024-05-21","2024-05-22","2024-05-23","2024-05-24","2024-05-28","2024-05-29","2024-05-30","2024-05-31","2024-06-03","2024-06-04","2024-06-05","2024-06-06","2024-06-07","2024-06-10","2024-06-11","2024-06-12","2024-06-13","2024-06-14","2024-06-17","2024-06-18","2024-06-20","2024-06-21","2024-06-24","2024-06-25","2024-06-26","2024-06-27","2024-06-28","2024-07-01","2024-07-02","2024-07-03","2024-07-05","2024-07-08","2024-07-09","2024-07-10","2024-07-11","2024-07-12","2024-07-15","2024-07-16","2024-07-17","2024-07-18","2024-07-19","2024-07-22","2024-07-23","2024-07-24","2024-07-25","2024-07-26","2024-07-29","2024-07-30","2024-07-31","2024-08-01","2024-08-02","2024-08-05","2024-08-06","2024-08-07","2024-08-08","2024-08-09","2024-08-12","2024-08-13","2024-08-14","2024-08-15","2024-08-16","2024-08-19","2024-08-20","2024-08-21","2024-08-22","2024-08-23","2024-08-26","2024-08-27","2024-08-28","2024-08-29","2024-08-30","2024-09-03","2024-09-04","2024-09-05","2024-09-06","2024-09-09","2024-09-10","2024-09-11","2024-09-12","2024-09-13","2024-09-16","2024-09-17","2024-09-18","2024-09-19","2024-09-20","2024-09-23","2024-09-24","2024-09-25","2024-09-26","2024-09-27","2024-09-30","2024-10-01","2024-10-02","2024-10-03","2024-10-04","2024-10-07","2024-10-08","2024-10-09","2024-10-10","2024-10-11","2024-10-14","2024-10-15","2024-10-16","2024-10-17","2024-10-18","2024-10-21","2024-10-22","2024-10-23","2024-10-24","2024-10-25","2024-10-28","2024-10-29","2024-10-30","2024-10-31","2024-11-01","2024-11-04","2024-11-05","2024-11-06","2024-11-07","2024-11-08","2024-11-11","2024-11-12","2024-11-13","2024-11-14","2024-11-15","2024-11-18","2024-11-19","2024-11-20","2024-11-21","2024-11-22","2024-11-25","2024-11-26","2024-11-27","2024-11-29","2024-12-02","2024-12-03","2024-12-04","2024-12-05","2024-12-06","2024-12-09","2024-12-10","2024-12-11","2024-12-12","2024-12-13","2024-12-16","2024-12-17","2024-12-18","2024-12-19","2024-12-20","2024-12-23","2024-12-24","2024-12-26","2024-12-27","2024-12-30","2024-12-31","2025-01-02","2025-01-03","2025-01-06","2025-01-07","2025-01-08","2025-01-10","2025-01-13","2025-01-14","2025-01-15","2025-01-16","2025-01-17","2025-01-21","2025-01-22","2025-01-23","2025-01-24","2025-01-27","2025-01-28","2025-01-29","2025-01-30","2025-01-31","2025-02-03","2025-02-04","2025-02-05","2025-02-06","2025-02-07","2025-02-10","2025-02-11","2025-02-12","2025-02-13","2025-02-14","2025-02-18","2025-02-19","2025-02-20","2025-02-21","2025-02-24","2025-02-25","2025-02-26","2025-02-27","2025-02-28","2025-03-03","2025-03-04","2025-03-05","2025-03-06","2025-03-07","2025-03-10","2025-03-11","2025-03-12","2025-03-13","2025-03-14","2025-03-17","2025-03-18","2025-03-19","2025-03-20","2025-03-21","2025-03-24","2025-03-25","2025-03-26","2025-03-27","2025-03-28","2025-03-31","2025-04-01","2025-04-02","2025-04-03","2025-04-04","2025-04-07","2025-04-08","2025-04-09","2025-04-10","2025-04-11","2025-04-14","2025-04-15","2025-04-16","2025-04-17","2025-04-21","2025-04-22","2025-04-23","2025-04-24","2025-04-25","2025-04-28","2025-04-29","2025-04-30","2025-05-01","2025-05-02","2025-05-05","2025-05-06","2025-05-07","2025-05-08","2025-05-09","2025-05-12","2025-05-13","2025-05-14","2025-05-15","2025-05-16","2025-05-19","2025-05-20","2025-05-21","2025-05-22","2025-05-23","2025-05-27","2025-05-28","2025-05-29","2025-05-30","2025-06-02","2025-06-03","2025-06-04","2025-06-05","2025-06-06","2025-06-09","2025-06-10","2025-06-11","2025-06-12","2025-06-13","2025-06-16","2025-06-17","2025-06-18","2025-06-20","2025-06-23","2025-06-24","2025-06-25","2025-06-26","2025-06-27","2025-06-30","2025-07-01","2025-07-02","2025-07-03","2025-07-07","2025-07-08","2025-07-09","2025-07-10","2025-07-11","2025-07-14","2025-07-15","2025-07-16","2025-07-17","2025-07-18","2025-07-21","2025-07-22","2025-07-23","2025-07-24","2025-07-25","2025-07-28","2025-07-29","2025-07-30","2025-07-31","2025-08-01","2025-08-04","2025-08-05","2025-08-06","2025-08-07","2025-08-08","2025-08-11","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-08-18","2025-08-19","2025-08-20","2025-08-21","2025-08-22","2025-08-25","2025-08-26","2025-08-27","2025-08-28","2025-08-29","2025-09-02","2025-09-03","2025-09-04","2025-09-05","2025-09-08","2025-09-09","2025-09-10","2025-09-11","2025-09-12","2025-09-15","2025-09-16","2025-09-17","2025-09-18","2025-09-19","2025-09-22","2025-09-23","2025-09-24","2025-09-25","2025-09-26","2025-09-29","2025-09-30","2025-10-01","2025-10-02","2025-10-03","2025-10-06","2025-10-07","2025-10-08","2025-10-09","2025-10-10","2025-10-13","2025-10-14","2025-10-15","2025-10-16","2025-10-17","2025-10-20","2025-10-21","2025-10-22","2025-10-23","2025-10-24","2025-10-27","2025-10-28","2025-10-29","2025-10-30","2025-10-31","2025-11-03","2025-11-04","2025-11-05","2025-11-06","2025-11-07","2025-11-10","2025-11-11","2025-11-12","2025-11-13","2025-11-14","2025-11-17","2025-11-18","2025-11-19","2025-11-20","2025-11-21","2025-11-24","2025-11-25","2025-11-26","2025-11-28","2025-12-01","2025-12-02","2025-12-03","2025-12-04","2025-12-05","2025-12-08","2025-12-09","2025-12-10","2025-12-11","2025-12-12","2025-12-15","2025-12-16","2025-12-17","2025-12-18","2025-12-19","2025-12-22","2025-12-23","2025-12-24","2025-12-26","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-23","2026-02-24","2026-02-25","2026-02-26","2026-02-27","2026-03-02","2026-03-03","2026-03-04","2026-03-05","2026-03-06","2026-03-09","2026-03-10","2026-03-11","2026-03-12","2026-03-13","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-27","2026-04-28","2026-04-29","2026-04-30","2026-05-01","2026-05-04","2026-05-05","2026-05-06","2026-05-07","2026-05-08","2026-05-11","2026-05-12","2026-05-13","2026-05-14","2026-05-15","2026-05-18","2026-05-19","2026-05-20","2026-05-21","2026-05-22","2026-05-26","2026-05-27","2026-05-28","2026-05-29","2026-06-01","2026-06-02","2026-06-03","2026-06-04","2026-06-05","2026-06-08","2026-06-09","2026-06-10","2026-06-11","2026-06-12","2026-06-15","2026-06-16","2026-06-17","2026-06-18","2026-06-22","2026-06-23","2026-06-24","2026-06-25","2026-06-26","2026-06-29","2026-06-30","2026-07-01","2026-07-02","2026-07-06","2026-07-07","2026-07-08","2026-07-09","2026-07-10","2026-07-13","2026-07-14","2026-07-15","2026-07-16","2026-07-17","2026-07-20","2026-07-21","2026-07-22","2026-07-23","2026-07-24","2026-07-27","2026-07-28","2026-07-29","2026-07-30","2026-07-31","2026-08-03","2026-08-04","2026-08-05","2026-08-06","2026-08-07","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-17","2026-08-18","2026-08-19","2026-08-20","2026-08-21","2026-08-24","2026-08-25"],"series":[{"label":"👑 Dual Combo (TECL + SPXU)","equity":[100017.46854359495,100034.94013869004,100052.41478581834,100069.892485513,100087.37323830725,100104.85704473442,99305.18053106255,97467.8202405352,97486.85704473442,97277.41588262505,98838.70256475396,99010.0628552813,96068.37907842583,92688.77980474419,92704.97118465201,95715.84120742575,95732.56137087433,95749.28445509197,96256.28564527752,99469.88445509197,99487.26039522185,98102.17852037444,100872.33800905242,96259.13107698454,98895.2474977304,100202.13971345915,102719.85845487608,102737.80211813095,102755.74891588243,102773.69884867812,103944.2869033351,106111.0393575206,106129.57541068981,106148.11470183755,106166.65723152945,106185.20300033124,106203.75200880873,106222.30425752785,106240.85974705464,106259.4184779552,106277.98045079576,106296.54566614263,106315.11412456224,106333.6858266211,106352.26077288584,106370.83896392316,106389.42040029989,106408.00508258292,106426.59301133928,106445.18418713608,106463.77861054052,106482.37628211993,106500.9772024417,106519.58137207336,106538.18879158249,106556.79946153681,106575.41338250412,106594.03055505233,106612.65097974945,106631.27465716358,106649.90158786291,106668.53177241575,106687.1652113905,106705.80190535566,106724.44185487984,106743.08506053172,106761.73152288012,106780.38124249391,106799.0342199421,106817.6904557938,106836.34995061818,106855.01270498456,106873.67871946232,106892.34799462096,106911.02053103005,106929.69632925931,106948.37538987854,106967.0577134576,110441.02584089902,110460.31827964474,110479.61408849854,110498.91326804912,110518.21581888529,110537.52174159596,110556.83103677016,110576.14370499701,110595.45974686573,110614.77916296564,110634.10195388617,110653.42812021686,108545.17812021686,108685.7295499654,111243.74269541218,114248.69702013447,114268.65460358009,114288.61567332486,114308.58022997782,114328.54827414805,114348.51980644479,109969.50034385934,111061.32070213571,106154.00034385934,107245.82070213571,105954.42249351754,114454.17998558297,118064.22976166024,118084.8538631062,115800.05552326245,121076.8538631062,121098.00422610666,121119.15828376751,121140.31603673413,121161.47748565207,121182.64263116693,121203.81147392446,121224.98401457052,125161.8989840148,125183.76294490308,125205.63072510691,125227.50232529345,125249.37774613,119167.49568894006,126702.43386032678,129318.69488327601,129341.28497586811,129363.87901462038,129386.47700022216,129409.0789333629,129431.6848147322,129454.29464501973,133661.0635212862,133684.4121624369,133707.76488225514,133731.12168145343,133754.48256074436,138100.13256074436,138124.2566426054,138148.3849385922,135376.3849385922,135314.78117882658,135338.4187003672,135362.06035103858,135385.706131562,135409.3560426589,135433.01008505086,135456.66825945952,135480.3305666067,135503.9970072143,135527.6675820044,135551.34229169917,135575.02113702093,135598.7041186921,135622.39123743528,135646.0824939731,135669.7778890284,135693.4774233241,140101.2743135829,140125.74796576344,140150.22589313457,140174.70809644312,140199.19457643604,140223.6853338604,140248.18036946337,144352.71942051928,133904.7975226311,137532.5475226311,144805.67099598923,144830.96643775512,144856.26629826627,144881.5705782946,144906.87927861212,150541.59927861212,150567.89670351063,150594.19872218627,157250.52538234252,157277.9947589222,157305.46893400192,157332.94790841988,157360.43168301447,157387.92025862422,157415.41363608776,157442.91181624396,157470.41479993172,157497.92258799018,157525.4351812586,157552.95258057636,157580.47478678302,157608.00180071828,159272.00570696828,163740.4816835308,163769.08476095623,163797.69283492275,163826.30590630314,163854.92397597036,163883.54704479757,163912.17511365804,163940.8081834252,149885.51025556875,151447.21362280202,157354.5128457482,145336.20973753286,147509.0141408379,154299.0141408379,153246.55947851492,157388.46362280202,157415.95709518337,157443.45537027394,157470.9584489127,157498.46633193872,153369.64526412866,153964.47553108117,157673.41366241357,162615.75383193872,162644.16043578912,162872.96567260553,166648.16043578912,166677.27144234502,165829.26313011968,168631.383974007,172093.47428763236,172123.53651121235,172153.60398622497,172183.67671358757,172213.75469421767,175306.35268616103,174911.55871033095,174942.11321221688,174972.67305152927,175003.2382292005,175033.80874616315,175924.20648175885,178298.60421735456,178329.75038676144,178360.9019969505,178392.05904887218,178423.22154347706,174886.39554707814,184221.08023621846,184253.2609759306,184285.4473371493,184317.6393208565,184349.83692803446,186930.84507622782,186040.84507622782,186073.34370235438,186105.8480055176,186138.35798670916,186386.04365565447,192186.39393946796,192219.96610347682,192253.5441320538,192287.12802622333,188646.72776148334,186882.81318018452,182191.56318018452,179827.16917154804,185156.42945787922,186357.3883125545,193450.56318018452,198535.87288305775,198570.55420856393,198605.2415923926,198639.93503560201,198674.6345392507,198709.34010439727,198744.05173210063,198778.7694234198,198813.49317941404,193777.36434373594,191030.38938913084,191640.82395562864,195252.59900102354,185485.55861291624,178872.45279130674,188690.36434373594,200543.07395562864,200578.10590992923,200613.14398380203,200648.18817831602,194359.7999718341,188600.33145262327,187483.70952345457,198121.07638479795,187483.70952345457,197944.7623493823,208053.20952345457,208089.55338906086,208125.90360341116,208162.2601676145,208198.6230827801,208234.9923500174,211261.39945450958,213511.79471818145,213549.09211912216,213586.3960353756,213623.7064680799,213661.02341837343,201350.87303537782,208031.76436228212,214774.49350733217,220604.8086543506,220643.34510152295,220681.88828045136,220720.43819231176,220758.99483828034,220797.55821953344,220836.1283372476,220874.70519259956,220913.28878676635,220951.8791209251,220990.47619625318,221029.0800139282,221067.69057512796,221106.3078810304,221144.93193281378,228331.09810407844,228370.98422149156,228410.8773064285,228450.77736010638,228490.6843837425,226245.05691563338,233212.24262654036,235915.62564732283,235956.83667123632,235998.05489411548,236039.2803172179,236080.5129418013,236121.7527691237,229893.3871780745,230086.00933993974,237470.1691376082,225848.1503197066,226104.99619830766,221931.34864772478,215125.07982982317,225206.06011737505,225245.4003361651,225284.74742711842,225324.10139143548,225363.46223031697,225402.82994496374,225442.20453657693,225481.5860063578,225520.9743555079,225560.36958522894,224102.36958522894,224685.56068630316,224724.8099814232,224764.06613282347,232068.37863282347,232108.91759871502,232149.4636461735,232190.01677643598,232230.57699073968,232271.1442903221,232311.71867642092,232352.30015027407,232392.88871311967,232433.48436619606,232474.08711074182,232514.69694799572,232555.31387919674,232595.93790558408,232636.56902839718,232677.2072488757,232717.85256825946,232758.50498778856,232799.16450870328,232839.83113224414,232880.50485965188,232921.1856921674,232112.83774790776,240950.7944587232,240992.88505329558,241034.98300048182,241077.08830156634,241119.20095783373,241161.32097056884,241203.44834105673,241245.5830705827,241287.72516043228,241329.8746118912,241372.0314262454,241414.1956047811,241456.36714878472,249302.45338955315,249346.00289730678,249389.56001252515,249433.12473653717,249476.697070672,249520.27701625903,249563.86457462783,249607.45974710828,249651.06253503045,249694.6729397246,249738.29096252134,249781.9166047514,249825.54986774578,249869.19075283574,249912.83926135272,249956.49539462847,250000.15915399487,250043.8305407841,250087.5095563286,250131.19620196093,250174.89047901402,250218.59238882095,250262.30193271505,250306.01911202987,250349.74392809923,250393.47638225713,250437.21647583786,250480.9642101759,250524.719586606,250568.4826064631,250612.25327108242,250656.03158179935,250699.81753994958,250743.611146869,250787.41240389372,250831.2213123601,248476.2213123601,258981.87645609793,259027.11681808968,259072.36508291378,259117.62125195074,259162.8853265813,259208.1573081865,259253.43719814753,259298.7249978459,259344.02070866327,259389.32433198165,259434.63586918323,259479.95532165043,259525.28269076595,259570.61797791268,259615.96118447382,259661.31231183276,259706.67136137316,259752.0383344789,259797.4132325341,259842.79605692317,259888.18680903068,259933.58549024153,259978.9921019408,260024.4066455138,260069.8291223462,260115.25953382373,260160.6978813325,260206.14416625883,260251.59838998923,260297.06055391053,260342.53065940976,260388.0087078742,264720.80457579414,258695.5087078742,254870.45509230412,264720.80457579414,264890.0519932441,265939.4066418342,270949.20509230415,270996.5359723159,271043.875120343,271091.22253782983,271138.5782262209,272578.34502614767,273743.85247243673,279950.25220006733,279999.15543191705,280048.06720644917,280096.98752515594,280145.9163895299,280194.85380106384,280243.79976125085,280292.7542715843,280341.71733355767,280390.6889486649,280439.6691184,280488.6578442575,280537.6551277319,280586.66097031813,280635.67537351133,280684.6983388069,280733.7298677006,272992.28406691935,274409.2435395756,270227.4867036381,263453.7298677006,263591.9730317631,259755.8109223881,267393.5677583256,262209.5677583256,262255.3719509796,262301.1841449589,262758.50007437175,270824.48555773206,270871.7946510575,270919.1120085925,270966.4376317808,271013.7715220662,271061.11368089286,271108.4641097051,271155.8228099477,271203.1897830655,271250.56503050367,271297.94855370757,271345.34035412286,271392.7404331955,272510.1926884445,275094.2652287277,265107.14309738006,266643.6316227707,270170.54576156463,260043.7404331955,262173.86256454315,262034.1926884445,262079.96624562796,262125.7477987852,263067.7394140806,264912.4942053404,255374.74300752542,256081.24420534036,259417.48821626566,260908.99240861795,266521.7436064329,257415.74480424784,257460.71158584923,257505.68622249246,257550.6687155497,257595.65906639333,257640.65727639603,257685.66334693067,257730.67727937034,257775.69907508843,257820.72873545854,257865.7662618545,257910.81165565038,257955.86491822053,258000.92605093948,258552.94364432327,262022.78785590164,256029.42605093948,246250.78785590164,248734.88206748,253821.35567740432,257330.6232707881,266385.7153102779,266432.24901508755,266478.7908486577,266525.3408124084,266571.8989077598,266618.4651361324,266665.03949894686,266711.6219976242,266758.2126335857,266804.8114082527,266851.41832304694,266898.0333793904,266944.65657870536,266991.2879224142,267037.9274119396,267084.5750487046,267131.23083413235,267177.89476964634,267224.56685667025,267271.247096628,267317.93549094384,267364.6320410422,267411.33674834773,267458.04961428547,267504.7706402805,273728.0232647922,276196.1877785709,276244.4352300406,276292.6911096373,276340.9554188335,276389.2281591015,276437.5093319142,276485.79893874464,276534.0969810661,276582.40346035216,276630.71837807656,276679.0417357134,276727.3735347371,276775.71377662214,276824.06246284343,276872.41959487606,276920.78517419536,276969.15920227696,273003.78504532506,272973.52012604405,285969.9438870304,286019.8986713468,286069.8621820364,286119.83442062367,286169.81538863323,286219.80508758995,286269.80351901904,286319.81068444595,286369.8265853963,286419.85122339614,286469.8845999717,286519.92671664944,286569.97757495614,286620.0371764188,286670.10552256485,286720.1826149217,286770.2684550173,286820.3630443797,286870.4663845373,286920.5784770187,286970.69932335283,287020.82892506884,287070.96728369617,287121.1144007646,287171.270277804,287221.43491634465,287271.60831791704,287321.790484052,287371.98141628044,287422.1811161338,287472.38958514365,287522.60682484176,287572.83283676027,287623.06762243155,287673.3111833883,287723.56352116336,287773.82463729,287824.0945333016,287874.3732107319,287924.66067111486,287974.9569159848,288025.2619468762,288075.5757653238,288125.8983728628,288176.2297710284,288226.56996135623,288276.9189453822,288327.2767246423,291141.4271000085,293421.8730228601,297695.2761318384,297747.27916092955,297799.29127419257,297851.31247321423,297903.34275958175,300482.31681964034,299265.81681964034,300725.61310717696,295129.7242445671,296394.87607714767,287295.4612745964,293304.9742445671,292623.7372145378,292674.8543196423,292725.9803541606,292777.1153196525,292828.2592176781,292879.4120497979,292930.57381757244,284922.2870438908,278473.3605912541,267346.33301099285,271575.1390603398,278816.9634965275,281380.6767228459,280138.4634965275,285900.2043031071,285950.14690493385,286000.0982310058,286050.0582828468,286100.0270619813,286150.0045699338,286199.990808229,286249.98577839206,286299.98948194826,286350.00192042324,286400.02309534285,286450.0530082332,286500.0916606207,286550.139054032,286600.195189994,286650.26007003395,286700.3336956793,286750.4160684578,286800.5071898974,286850.6070615264,286900.7156848733,286950.8330614669,287000.9591928363,287051.09408051084,287101.23772602004,287151.39013089385,287201.55129666236,287251.721224856,287301.8999170054,287352.0873746415,287402.28359929554,287452.48859249894,287502.7023557835,287552.92489068117,287603.15619872423,287653.3962814452,287703.645140377,287753.9027770526,287804.16919300536,287854.44438976893,297209.47454342496,297261.3927100539,297313.3199460304,297365.25625293877,297417.20163236355,297469.15608588955,297521.11961510195,297573.0922215861,297625.07390692766,297677.0646727126,297729.0645205271,297781.07345195767,297833.0914685911,297885.1185720145,297937.1547638151,297989.20004558057,298041.2544188988,298093.3178853579,307778.59261985496,307832.35705748264,307886.13088697457,307939.9141099714,317945.63391816843,318001.17438983766,318056.72456361837,318112.28444120544,318167.85402429395,318223.4333145793,318279.0223137572,328620.82218710927,328678.22745869507,328735.64275814575,328793.0680872131,328850.50344764907,328907.94884120603,328965.4042696366,329022.8697346937,329080.34523813066,329137.83078170096,329195.3263671585,329252.8319962575,329310.3476707523,329367.8733923978,329425.40916294913,329482.9549841616,329540.51085779094,329598.0767855931,329655.6527693245,329713.2388107417,329770.8349116017,329828.4410736616,313765.6984589155,322538.17999578075,331613.17999578075,340546.0161659773,340605.50459527207,340665.0034163291,340724.5126309636,340784.0322409912,340843.5622482278,340903.10265448975,340962.6534615935,341022.2146713559,341081.7862855942,341141.3683061259,341200.9607347689,341260.56357334123,341320.1768236614,341379.8004875482,341439.4345668207,341499.0790632983,341558.7339788008,341618.39931514824,341678.07507416094,341737.76125765964,341797.45786746533,341857.1649053993,341916.88237328327,341976.61027293914,342036.3486061892,342096.097374856,342155.85658076254,342215.62622573203,342275.406311588,342335.19684015436,344123.6798723809,353458.5485369317,353520.2925975729,353582.0474440023,353643.81307810394,353705.5895017623,353767.37671686214,353829.17472528864,353890.98352892714,353952.80312966346,354014.6335293837,354076.47472997423,354138.3267333219,354200.1895413137,354262.06315583707,354323.9475787798,354385.8428120299,354447.7488574758,354509.6657170063,354571.5933925104,354633.5318858774,354695.4811989972,354757.44133375975,354819.41229205544,354881.394075775,354943.3866868095,355005.3901270502,355067.404398389,355129.42950271774,355191.4654419289,355253.51221791515,355315.5698325695,355377.63828778535,355439.7175854563,355501.80772747647,355563.90871574014,355626.02055214206,355688.1432385772,355750.27677694085,355812.4211691288,367374.17070793186,367438.34562509856,367502.53175268864,367566.72909266036,367630.9376469724,367695.1574175838,361349.743881512,359911.09055357013,370649.5113375667,379643.5759863857,379709.8941899623,379776.2239783632,379842.5653536121,379908.9183177331,379975.28287275054,380041.6590206892,380108.0467635742,380174.446103431,380240.85704228544,380307.27958216367,380373.71372509224,380440.159473098,380506.61682820827,380573.0857924505,380639.5663678528,380706.0585564434,380772.5623602509,380839.0777813044,380905.60482163326,380972.1434832671,381038.6937682361,381105.2556785706,381171.82921630144,381238.4143834597,381305.011182077,381371.61961418507,381438.23968181614,381504.87138700276,381571.51473177783,381638.1697181747,381704.8363482268,381771.51462396834,372150.15550836775,379771.9096587584,353371.12788995955,360703.0643523619,341083.5919707701,339866.4372771666,348473.50081476424,330766.7190459654,330824.4991744795,330882.28939634055,330940.0897133117,330997.9001271564,331055.7206396385,331113.551252522,331171.3919675713,331229.2427865511,331287.1037112265,331344.9747433627,331402.8558847254,331460.7471370805,331518.6485021943,331576.5599818333,331634.4815777644,331692.41329175467,332171.98723203177,336525.0083578252,342469.82684804435,342529.65133904683,342589.4862805166,342649.33167427924,368092.41425103095,368156.7146348841,368221.0262510778,368285.3491015743,368349.68318833585,368414.02851332544,368478.3850785062,368542.7528858416,368607.1319372955,368671.52223483205,368735.9237804158,368800.3365760116,363710.5720954208,363319.0618033676,363382.52835206746,377551.3535655379,377617.3062883288,365348.374166289,365412.1952063037,365476.02739492455,365539.8707340991,365603.7252257752,365667.590871901,365731.46767442505,365795.3556352962,365859.25475646363,365923.1650398769,365987.08648748585,366051.0191012408,366114.96288309223,366178.91783499107,366242.8839588886,366306.86125673633,366370.8497304862,366434.84938209056,366498.86021350196,366562.88222667336,366626.91542355804,366690.9598061096,366755.01537628204,366819.08213602967,366883.16008730716,366947.24923206953,367011.3495722721,367075.4611098705,367139.58384682087,367203.71778507944,367267.862926603,367332.01927334856,367396.1868272735,367460.3655903356,375822.94102978875,382370.1319477575,382436.92644095083,382503.73260216933,382570.55043345125,382637.37993683515,382704.22111435997,382771.07396806503,382837.93849999,382904.8147121748,382971.70260665996,383038.6021854861,383105.5134506943,383172.4364043261,383239.3710484232,383306.3173850278,383373.2754161824,383440.24514392985,383507.2265703134,383574.2196973766,383641.22452716343,383708.24106171814,383775.2693030854,383842.3092533102,383909.360914438,383976.42428851436,384043.49937758554,378178.2914384376,362853.08349928964,376120.7349427711,371154.2385514747,378603.9921601783,378887.7986558448,385746.28422103036,381110.88638625253,381177.460907586,381244.04705851874,381310.6448410823,381377.2542573085,381443.87530922965,381510.5079988783,376418.30874961073,373687.7072481459,383355.5079988783,381559.69974082167,384929.90649741347,388546.10950034315,393907.6781114882,393976.48804596293,394045.3100005311,394114.14397729235,394182.98997834686,394251.8480057951,394320.7180617379,394389.6001482764,394458.49426751223,394527.4004215473,394596.3186124839,394665.2488424248,394734.1911134729,394803.14542773174,394872.111787305,394941.09019429685,395010.0806508118,395079.0831589547,395148.0977208308,395217.1243385458,397282.08236924646,401024.8177742147,405929.11155930994,408057.5187729025,408128.8004784618,408200.0946358969,408271.401247383,408342.72031509556,408414.0518412106,408485.39582790434,408556.75227735355,408628.1211917352,408699.5025732268,408770.89642400615,408842.3027462514,408913.7215421412,408985.1528138545,409056.59656357067,409128.0527934694,409199.52150573075,409271.0027025353,409342.49638606387,409414.0025584977,409485.52122201846,409557.0523788081,409628.59603104903,409700.1521809241,409771.72083061637,409843.30198230944,409914.8956381872,409986.5018004339,410058.1204712343,410129.75165277347,410201.3953472368,410273.0515568101,410344.7202836796,410416.40153003193,397371.9488627956,402615.952196841,378209.48952746845,380613.0028636501,398049.29352832295,399513.23952746845,408471.7528636501,414830.094195132,414902.55897098145,414975.03640537185,415047.5265005145,415120.029258621,415192.5446819034,415265.0727725741,415337.6135328459,415410.1669649321,415482.73307104624,415555.31185340224,415627.90331421443,415700.50745569763,397732.5409792572,409192.4224184662,425981.3888949066,434635.24457727966,434711.16902445763,434787.10673453077,434863.0577098159,434939.02195263025,435014.9994652915,435090.99025011767,449230.91149302234,449309.3855906385,449387.87339653657,449466.3749131112,449544.8901427575,449623.4190878709,449701.96175084735,449780.51813408313,449859.088239975,449937.67207092,450016.26962931576,450094.8809175603,450173.505938052,450252.1446931897,450330.7971853726,450409.4634170004,450488.1433904732,450566.83710819145,450645.54457255604,450724.2657859684,458592.06191328773,439227.1288841129,415674.49198225746,401690.10656050453,430572.53958967933,443516.33571699867,438871.8104331852,441054.49198225746,441131.5377784668,443306.9543739258,442247.1420341431,455465.60340613715,455545.1666136281,455624.74371965264,455704.3347266387,455783.93963701447,455863.5584532087,455943.1911776506,456022.83781276963,456102.49836099584,456182.1728247597,456261.86120649194,456341.5635086239,456421.2797335873,456501.00988381414,456580.75396173703,456660.511969789,456740.2839104033,449780.4746757842,462429.1555992461,471579.78818744194,471662.1663083264,471744.55881946883,471826.965723383,487672.8945716496,487758.08392383857,487843.2881573667,487928.50727483345,488013.7412788389,488098.9901719835,503960.54954087996,504048.5841091778,504136.63405583263,499931.99688694836,499458.2486340797,499545.4967159809,499632.7600388513,499720.03860535333,499807.3324181498,499894.641479904,499981.9657932797,500069.30536094116,500156.6601855531,500244.0302697806,500331.41561628936,500418.8162277455,500506.23210681556,500593.66325616656,500681.109678466,500768.57137638185,500856.0483525825,500943.54060973687,501031.04815051437,501118.57097758475,501206.10909361835,501293.6625012859,501381.2312032586,501468.81520220824,501556.4145008069,501644.0291017272,501731.65900764224,501819.3042212256,501906.96474515134,501994.6405820939,502082.3317347283,518396.0499506707,518486.6061906508,518577.17824948713,518667.7661299431,518758.36983478244,518848.98936676944,518939.6247286689,519030.27592324605,519120.94295326667,519211.62582149694,519302.3245307036,519393.0390836538,519483.7694831153,519574.5157318561,519665.27783264493,519756.05578825093,519846.8496014437,519937.65927499323,520028.4848116702,520119.32621424564,520210.1834854911,520301.0566281786,520391.94564508065,520482.85053897026,549446.5155627739,549542.4958668759,549638.4929373391,549734.5067770925,549830.5373890653,549926.5847761874,550022.6489413893,550118.7298876017,550214.8276177561,550310.9421347843,550407.0734416188,550503.2215411926,550599.3864364391,550695.5681302922,550791.7666256865,550887.9819255569,550984.2140328389,573509.6889473897,573609.8727374247,573710.0740281087,573810.292822499,573910.529123653,574010.7829346289,574111.0542584856,574211.3430982821,574311.6494570783,574411.9733379346,574512.3147439117,574612.6736780711,574713.0501434747,574813.4441431848,574913.8556802645,575014.2847577775,575114.7313787875,575215.1955463594,575315.6772635581,575416.1765334494,575516.6933590996,563103.1809384453,560772.1911007988,562030.1775509941,542420.19448825,552077.168517791],"drawdown":[0,0,0,0,0,0,0.7988388748355328,2.634274581722634,2.6152577180446697,2.824479496380341,1.2648282184895936,1.0936474230854634,4.032249868260428,7.408309105996895,7.392134686107776,4.3844184656767755,4.367715816132897,4.351010248879389,3.84454012829475,0.6343074735711335,0.6169497342537406,2.0005807744823407,0,4.573312191548367,1.9599927495926532,0.6644024603981293,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1.905273099817152,1.77825360106666,0,0,0,0,0,0,0,3.8295375139072356,2.874719419082338,7.166266320242825,6.211448225417928,7.340801024041019,0,0,0,1.9348784074310483,0,0,0,0,0,0,0,0,0,0,0,0,0,4.855818181801594,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2.0065381156878312,2.0511305731335034,2.034020332176914,2.0169071023104332,1.9997908830119342,1.9826716737592065,1.9655494740299335,1.9484242833017362,1.9312961010521303,1.914164926758546,1.89703075989831,1.8798935999486635,1.8627534463867632,1.8456102986896614,1.8284641563343262,1.81131501879764,1.7941628855564025,1.7770077560872861,0,0,0,0,0,0,0,0,7.2377728246684105,4.72465771706045,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8.57339797430465,7.620796005009753,4.017483755666206,11.348363261132992,10.023004171238783,5.881265408792884,6.523237760878314,3.9967745878695906,3.9800042225859285,3.9632309277636923,3.9464547028911277,3.929675547456409,6.4481583544891325,6.085326016681581,3.822961830223105,0.8082516892340387,0.7909243354377756,0.6513585742635307,0,0,0.5087726148184964,0,0,0,0,0,0,0,0.2252023214109364,0.2077731173816756,0.1903408687243187,0.1729055749070138,0.15546723539779267,0,0,0,0,0,0,1.9822677596576708,0,0,0,0,0,0,0.47611190097443273,0.45872652719446283,0.44133811644290727,0.4239466681892419,0.29144543820533547,0,0,0,0,1.8932105867448015,2.810544263421418,5.2502551521087915,6.479871524721122,3.7083598062641303,3.0837944143927043,0,0,0,0,0,0,0,0,0,0,2.5330920729476736,3.9147764398765146,3.6077376384673308,1.7910726890035915,6.703737434194347,10.030023651418885,5.091771526061739,0,0,0,0,3.1340368749771335,6.004468236207456,6.560975593341606,1.2594740159189588,6.560975593341606,1.3473462449265585,0,0,0,0,0,0,0,0,0,0,0,0,5.761533004965011,2.63466820762557,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.9828092003688317,0,0,0,0,0,0,0,2.6377771289624454,2.5561996547965737,0,4.894096323806858,4.785937105521113,6.543483144141382,9.409640540928994,5.1644840548904485,5.147917671444091,5.131348394091819,5.114776222328104,5.098201155647337,5.08162319354383,5.065042335511775,5.048458581045313,5.031871929638467,5.015282380785194,5.629254234721561,5.383669240533818,5.36714114554716,5.350610163343022,2.274723820849483,2.2576526383768494,2.2405784738172634,2.2235013266497914,2.2064211963534293,2.1893380824070596,2.172251984289482,2.1551629014794087,2.138070833455453,2.1209757796961446,2.1038777396799144,2.0867767128851065,2.06967269878998,2.0525656968726964,2.03545570661133,2.0183427274838466,2.0012267589681496,1.9841078005420316,1.966985851683201,1.9498609118692667,1.932732980577753,1.9156020572860972,2.2560018418970333,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.938878337265407,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2.2760945735169087,3.7210333729813416,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2.757575943734836,2.252841627226445,3.7424228178828756,6.155298833575653,6.106055315838169,7.472532408271217,4.751891450899656,6.598481100972352,6.582165215925137,6.565846480730429,6.402946237276122,3.5297662003915264,3.5129142555440898,3.496059366907335,3.479201533966995,3.462340756208758,3.445477033118212,3.4286103641808605,3.4117407488820826,3.3948681867071953,3.3779926771414317,3.3611142196699237,3.344232813777718,3.327348458949759,2.9293014356100135,2.0088304464271385,5.566337460655253,5.019025769212007,3.762705718017571,7.369969203292935,6.611199627456251,6.6609513534652525,6.644646381061324,6.6283385604161875,6.292792270435513,5.635673230222878,9.033110083396794,8.781447699205238,7.593046144287863,7.061758296171007,5.062443429211467,8.306086010555862,8.2900684192167,8.27404802983762,8.258024841929835,8.241998855004487,8.225970068572623,8.209938482145212,8.19390409523314,8.177866907347202,8.1618269179981,8.145784126696471,8.129738532952851,8.11369013627769,8.09763893618136,7.9010050676241566,6.665013862287491,8.799905814097702,12.283148885618232,11.398291119239738,9.586441288326517,8.336407102894798,5.110897990129083,5.094322245977642,5.077743606285111,5.061162070545661,5.044577638253423,5.027990308902399,5.011400081986512,4.994806956999601,4.97821093343542,4.961612010787624,4.945010188549801,4.928405466215416,4.911797843277873,4.895187319230473,4.878573893566451,4.861957565778922,4.845338335360915,4.828716201805398,4.812091164605237,4.79546322325321,4.778832377241997,4.762198626064192,4.745561969212328,4.728922406178791,4.71227993645595,2.495498708405972,1.6163152504930764,1.5991290536323044,1.58193985459324,1.5647476528514341,1.5475524478823763,1.5303542391614517,1.5131530261639217,1.495948808365005,1.4787415852397974,1.4615313562633312,1.4443181209105154,1.427101878656175,1.4098826289750532,1.3926603713417887,1.3754351052309373,1.3582068301169723,1.340975545474263,2.753479186850252,2.7642598362917243,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.404849114874931,0,1.860795562037983,1.4400958352974895,4.465915521400611,2.4675779312370003,2.6941090281364546,2.6771111061515795,2.660110214877289,2.6431063537949058,2.6260995223856396,2.6090897201306005,2.5920769465108426,5.255064874588499,7.399520209139054,11.099580029549369,9.693379205597669,7.285262264255929,6.432753161413177,6.845825135390878,4.929878985328117,4.913271619792897,4.896661353192785,4.880048185021027,4.8634321147707364,4.846813141934966,4.830191266006694,4.813566486478779,4.796938802844004,4.780308214595055,4.763674721224542,4.747038322224996,4.730399017088831,4.713756805308405,4.697111686375958,4.680463659783655,4.663812725023561,4.647158881587667,4.630502128967883,4.613842466656007,4.597179894143756,4.580514410922751,4.563846016484557,4.5471747103206,4.530500491922272,4.513823360780823,4.497143316387453,4.480460358233258,4.463774485809241,4.447085698606328,4.4303939961153445,4.413699377827042,4.397001843232056,4.380301391820963,4.363598023084239,4.346891736512271,4.3301825315953435,4.313470407823665,4.296755364687367,4.280037401676463,1.169218187776665,1.1519538895705728,1.1346865755430193,1.1174162451671803,1.1001428979161534,1.0828665332629404,1.0655871506804262,1.0483047496414382,1.0310193296186871,1.0137308900848068,0.9964394305123337,0.9791449503737082,0.9618474491412734,0.9445469262872951,0.9272433812839421,0.909936813603287,0.8926272227173052,0.8753146080978945,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4.870029571269978,2.2103191144309786,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1.7257267081343206,2.116989225173142,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2.520187794806349,0.5237700793836078,7.439105759889442,5.518601955506853,10.657663312904429,10.976480890167199,8.72197440974649,13.36003175308689,13.344897012463033,13.329759628020415,13.314619599297195,13.299476925831458,13.284331607161196,13.269183642824345,13.254033032358745,13.238879775302143,13.223723871192233,13.20856531956661,13.193404119962777,13.178240271918181,13.163073774970178,13.14790462865604,13.132732832512971,13.117558386078082,12.991940333943033,11.851724011077502,10.294557417316685,10.278887182972092,10.26321421126578,10.247538501719566,3.583059460685753,3.5662168253947266,3.5493712479406097,3.5325227278094506,3.5156712644872212,3.498816857459772,3.4819595062128754,3.4650992102322293,3.4482359690034254,3.4313697820119766,3.4145006487433074,3.3976285686827326,4.73082507120442,4.8333760151738385,4.816751791975206,1.1054153850601334,1.0881399414336375,4.301824475787714,4.285107398276695,4.268387400535705,4.251664482054618,4.2349386423232325,4.218209880831241,4.20147819706826,4.184743590523796,4.168006060687301,4.151265607048113,4.1345222290954835,4.11777592631857,4.101026698206456,4.084274544248132,4.067519463932481,4.050761456748326,4.0340005221843835,4.017236659729279,4.000469868871545,3.9837001490996387,3.966927499901926,3.9501519207666806,3.9333734111820853,3.9165919706362318,3.899807598617118,3.883020294612654,3.8662300581106708,3.8494368885989094,3.832640785565003,3.815841748496525,3.7990397768809245,3.782234870205594,3.765427027957814,3.7486162496247775,1.5581501935886244,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1.52722489734981,5.517712423889205,2.0629862105867636,3.356198151251174,1.4163778911042544,1.342478320840348,0,1.2016701195550017,1.1844114902287635,1.1671498460713274,1.1498851865560658,1.1326175111562298,1.1153468193449805,1.0980731105954034,2.4181634024696805,3.1260384004049095,0.6197794560691484,1.0853207539414185,0.21163592677645016,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3.178345850362369,1.9006183242460222,7.847374491491115,7.2617464982575735,3.0133074496059167,2.656609716842821,0.47382333140980426,0,0,0,0,0,0,0,0,0,0,0,0,0,4.3223345062563645,1.5655706260895124,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4.222692592711384,9.358550549692088,12.407967795034017,6.109901293691915,3.2873936224259452,4.300172880844875,3.824220126676842,3.8074196186418963,3.3330510509909548,3.564152377813116,0.681751553680785,0.66440210215321,0.6470496199291299,0.6296941064791196,0.6123355612736784,0.5949739837832038,0.5776093734779917,0.5602417298282623,0.5428710523041337,0.5254973403756228,0.5081205935126701,0.4907408111851149,0.47335799286270747,0.45597213801510905,0.4385832461118796,0.4211913166224774,0.4037963490162973,1.9214434721658311,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.8340273022925403,0.9279994957150453,0.9106930601165748,0.8933836013358513,0.8760711188447715,0.8587556121151405,0.8414370806186703,0.8241155238269811,0.8067909412115888,0.7894633322439291,0.7721326963953443,0.7547990331370853,0.7374623419402986,0.72012262227605,0.7027798736153128,0.6854340954289683,0.6680852871877934,0.650733448362496,0.6333785784236686,0.6160206768418112,0.5986597430873544,0.5812957766306137,0.5639287769418234,0.5465587434911258,0.529185675748559,0.5118095731840803,0.4944304352675547,0.47704826146874335,0.4596630512573265,0.44227480410288045,0.4248835194749008,0.40748919684277907,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2.1569335110334946,2.56195909318321,2.3433752597842403,5.7507452438392965,4.072779314966501],"color":"#10b981","border_width":2.8,"is_dash":false},{"label":"VOO Buy \u0026 Hold Benchmark","equity":[101177.41371895395,101284.6738330627,101586.95571796913,101547.9513638096,101172.54096442896,101075.03379869007,100621.61469099036,99843.98258336185,100078.00870831907,99558.77393759259,100390.03610227547,100216.95288582005,99234.5534983439,97613.47362006009,97518.40655124364,98459.36148763783,99648.96825188406,99814.73117757218,99531.95518940546,97542.78520250833,97377.01483750033,96143.53096456957,97294.13337465627,96097.2137589626,97030.86328322926,97462.33639726682,98300.91141339713,98115.6425909693,97401.39348876502,97206.37915728723,97518.40655124364,99156.55222934471,99929.30414312835,100234.01868563733,101014.09089018828,101406.5596500663,101655.21147791835,101552.82411833458,102079.37174050849,102176.87890624738,101733.21274691753,102727.80517968598,102910.63390519137,103127.58679101143,103527.37584165676,104151.43062956956,104638.97389758393,104994.87840022484,105121.64441107331,104753.5468631401,103910.0990924848,103944.22325279946,104716.982605903,104765.7324691125,105165.52151975782,104911.99693738078,105275.21429146914,105077.7598630689,104799.86406874705,104936.37558864549,105194.77292554751,102905.76115066638,104148.99053264712,102154.94035190513,100979.95929055373,102520.5978029159,101613.76702683637,102827.75244234732,104941.24834317047,105236.21737662947,104519.52817750277,105516.55326787377,104580.47108600456,103868.65464140283,105492.17461660907,104539.02663492259,103454.24732718256,102335.32898048808,103771.14747566394,104819.36252616688,105465.36330774182,106969.43012354702,106888.9887576254,107018.1874260764,106715.90554116998,106423.38404395328,107076.69023765577,107032.81312897125,104982.69279425243,104841.30108050913,104478.0837264208,104341.57220652237,105255.7158340493,105570.18332492813,104114.86637233246,104146.55787504457,102320.70327759323,101245.66947890316,100131.63876537344,98164.39989349869,98573.93445319399,97377.01483750033,97157.62185475785,96665.20583221849,99034.66641234112,100845.88786757772,101504.07425512507,102471.8405003865,100090.19431429148,100560.67178248857,100229.14593111235,101040.90219905552,102523.03789983834,100721.56195365169,98712.88607001487,98391.1057276886,99970.74859421032,100090.19431429148,97962.0652712536,97335.57782573825,96270.29697541804,94537.0767891806,95989.95364485386,98086.39118517963,97840.17945425,96372.67689568191,98142.46133915643,97650.03787729719,96860.22016369629,94000.77621863685,93291.40731027744,95777.87351355879,95351.27315404621,94134.85508093273,93447.4172875957,95497.5376223145,97632.97951679981,98827.45903557104,99919.55863407838,99924.43138860336,101084.78674705993,99783.03967486006,100926.32923349935,101438.25115277841,102137.87455208784,103429.86867591785,102786.30799126535,101206.67256406351,101487.0084553078,102347.52202578036,101082.3466501375,100058.50281157935,100563.11187941101,100319.34024540382,98581.24730464141,98220.47004747551,99329.62800648024,98122.95544241673,98140.021242234,99707.47106346342,99631.90245206679,98154.64694512884,95475.59906797225,95997.26649630128,93252.4029561179,93493.73449320266,95836.38376445803,92316.3207742487,92896.4910141571,93298.72016172486,96128.90526167472,92752.66664281125,92170.05630598041,89196.03939536482,89425.18532647715,87984.4940767763,87916.23831682709,89990.7373028106,89668.95696048434,91463.12005522355,87840.66970543045,87253.17917475475,87275.11772909702,88930.32920701537,88289.20861928529,89025.40371515171,90795.18071930636,93072.00688821507,92555.21221441102,91780.02020370495,93522.98589899234,92009.1661348173,92260.2506202719,93162.20864182642,92143.23755779328,89976.11159991576,87336.06063759881,83969.57496710519,83759.93493273255,84959.28720602876,82168.10646023843,82382.62668845594,84401.05552046263,84223.09954948223,85107.99177121949,87757.7882425864,87428.69504881272,85539.46488525704,85232.31768514552,84559.50559470333,85427.3320166233,85578.46923941658,85888.05653645055,87148.35915756844,87097.1691974365,86112.3297130379,85317.63180559211,84920.28285186923,84696.01711460175,86297.59853546573,85583.34199394156,87906.48536845724,88469.60468718813,89364.24241797536,88550.04605310975,88637.8002704788,87574.959517081,89868.851485807,91004.82819299887,92338.25932859097,92060.35609494922,91465.5527128261,92894.05835655455,92820.92240276047,92628.3481682051,92545.46670536105,92179.80925435027,94110.47642966804,94110.47642966804,95721.81079890186,96131.34535859716,96299.54838120771,95641.36199366036,95936.32358779949,94612.64540057724,92618.59521983525,92399.20223709276,92679.53812833705,94030.03506374641,90807.37376459864,90207.69018863064,89227.73089807693,88525.66740184506,88798.69044164191,87867.48845361758,87572.51942015858,89142.40933831043,89725.02711446115,91109.64821018519,92111.54605508117,88094.19428780749,88423.28748158117,87436.00790026014,86748.57010692311,87414.06934591789,86429.22986151928,84908.09724589682,84191.40804677011,82792.16124815124,81990.15048925803,81758.57190054313,82999.36862492132,81268.58853560634,80030.2244688307,82146.16790589617,84639.94696062495,84493.68249235666,83603.91751609441,81256.39549031404,80649.40650221851,80117.98612551963,79869.34173698745,81960.89908346835,80115.5460285972,82151.04066042116,83118.81434500248,82543.50942029917,81865.82457533201,83833.06344720675,84854.46718884245,86234.2155300415,85590.65484538898,85132.37042248418,87119.10775177876,86526.74446657808,86178.14537606468,83979.32791547503,83084.68274536793,84301.1082578013,85110.43186814192,85573.59648489159,83825.75059575934,88413.53453321132,89259.42240078904,88542.73320166233,89274.04810368389,88596.36325871671,88340.40601873712,88730.4346816927,88418.4072877363,89595.82844601014,90156.50022849871,90146.74728012885,88720.68917264273,88564.6717560046,91290.03683876814,91302.22988406043,91170.59111868698,89547.07114348075,88252.64436204819,88082.00124251521,88776.75188729966,88128.31844812217,89386.18097231763,90046.80745678741,89503.19403479622,87301.93647728415,86261.02683890874,85517.52633091478,85239.63053659293,86514.55142128578,85298.1333481723,85775.92366781681,85434.64486807073,84386.42981756778,85883.18378192556,85646.72499936579,85317.63180559211,85931.94108445496,84993.41880566331,86926.52607790352,86863.14307247929,87482.3251058671,88598.80335563915,88930.32920701537,89276.48820060631,89139.97668070788,87691.97257955962,87060.6049401994,88662.17892174349,89742.09291427843,89647.01840614207,89678.7099088542,90636.73064506566,90895.12798196769,89759.15127477581,91034.07959878855,92031.10468915955,93349.9101218568,92352.8850314858,91819.02455786448,93003.75112826585,91984.78748355259,91197.40242755423,91419.23550721916,92474.7708484894,92440.63924885484,92750.2339852087,91460.67995830112,91224.22117574136,89412.99972050475,89300.85941255113,89749.40576572585,88788.94493259196,89096.09213270347,88759.68608748239,88435.47308755358,89096.09213270347,90507.53197661464,90617.23218764583,89215.54529210452,89354.4894696055,87718.78388842687,86460.92136423141,86314.65689596313,87748.03529421655,87206.8619691478,88698.74317898059,87728.53683679672,88520.79464732007,89678.7099088542,88191.7014535464,88401.34892723891,88625.61466450639,88771.87913277467,88615.86171613653,89876.16433725442,90412.46490779819,91675.20018651863,92038.41754060697,91519.18276988048,91297.34969021556,91645.94878072894,91745.8886040704,91758.08164936268,91392.4241983519,92577.15076875327,92387.00919180048,92701.4766826793,92764.85968810353,92759.97949425866,92235.8719690072,92289.50202606157,92411.38784306517,90951.19813594449,90546.53633077418,92343.13208311595,93132.94979671686,93069.57423061252,92026.23193463456,91385.11134690448,90717.17945030716,92382.13643727549,92433.32639740742,92033.54478608198,92435.76649432986,92306.56782587885,92182.24191195282,92501.58215735664,91889.72041473613,92986.69276776846,93895.95620145054,93747.2590755797,93798.44903571163,92750.2339852087,92055.48334042424,92857.49409931745,94064.15922406108,94093.41062985075,93581.49614989158,94478.57397760125,95865.63517024771,95680.3663478199,95877.82077622012,95563.35328534129,96136.21811312214,96297.10828428528,97182.00050602254,97823.12109375262,97898.68970514926,99154.11213242228,98788.4546814115,98332.60291610924,97793.86968796293,98149.77419060386,97413.57909473743,97011.35738648956,98086.39118517963,98130.26829386414,98120.52278481418,99283.31080087328,99473.45237782609,99251.61929816117,98442.29568782054,98213.15719602809,98476.4272874551,99107.79492681532,99887.86713136626,100702.06349623187,100621.61469099036,100972.6464391063,101738.0929407624,101957.4859235049,101291.98668451012,101304.17972980242,101733.21274691753,102033.05453490153,102057.43318616622,101365.12263830421,102352.39478030535,102549.84920870558,102232.9490602242,100816.63646178805,100531.4203766989,100039.00435415954,100940.95493639419,100504.60906783164,99836.66973191443,99895.17998281369,99802.54557159977,100365.65745101077,99215.05504092407,98481.30004198008,97684.16947693174,97774.36379122322,98420.35713347829,98144.89399675898,99202.86943495166,97884.06400225441,98532.4974414319,99180.92344128952,100589.93062759814,101009.2106963434,100880.01202789239,101094.53225610989,100653.30619370248,99958.55554891803,99661.15385785647,99797.67281707478,100453.41166837982,99914.6784402335,100031.69150271211,100897.07782770967,99639.21530351421,99748.9155145454,99549.02098922273,98617.81156187851,97001.61187743959,96767.58575248237,97169.80746073024,95743.74935324413,95765.68790758638,95958.26958146163,95729.12365034928,95721.81079890186,94434.69686891673,95129.44007438129,95048.99870845968,96182.5353187291,96823.65590645919,97323.38478044595,97735.35943706369,97147.86890638799,96635.95442642881,97647.60521969464,97650.03787729719,96343.42548989224,95526.78902810419,94337.18226385795,94171.41933816983,94875.92293132414,93537.61160188717,92389.4492887229,91979.9147290276,93086.63259110991,93649.7519098408,94680.90116052647,96479.93700979066,97372.14208297535,97559.84356300572,97835.30669972501,97915.75550496652,97177.12775149755,98693.38017327515,98593.4403499337,100487.54326801437,100706.93625075686,100848.32796450016,100997.025090371,101757.59139818224,101491.88120983279,101930.67461463765,101986.73732929457,101808.78879763406,101908.7286209755,101842.91295794872,102237.82181474919,102837.49795139728,102320.70327759323,102289.01177488112,101862.41141536855,102659.54941973677,103095.90272761919,103495.68433894464,104010.04635514614,105426.35895358228,105735.94625061625,105575.05607945312,106172.29955849868,106818.29290075375,104843.74117743157,105865.14491906727,106111.35664999689,106552.5827124043,106747.5970438821,106764.66284369936,106479.44675861021,105799.32925604048,105014.38429696455,104682.85100626845,104816.92986856433,106316.12392984453,106057.7265929425,106757.34999225194,106720.78573501484,106769.53559822435,106406.31824413601,105813.95495893533,106754.90989532952,108061.52972205436,108307.7340136641,108629.51435599035,108719.70867028183,109331.57785222222,109265.76218919545,110060.45265732134,109982.45138832215,108190.72839050538,109614.35384038894,110740.57759921096,110335.91579404064,110679.63469070916,111588.90556371112,111664.47417510775,112298.28191139041,112247.08451193858,110665.00898781432,111718.10423216212,112473.79778544838,111898.49286074509,111284.19102120213,111396.32388983587,113736.53306416882,113787.72302430077,113370.87561315804,113580.51564753067,113404.99977347271,113824.28728153787,114921.25963457019,114784.74811467176,113634.14570458505,114236.2619381556,115367.36589082248,114667.74249151304,114572.66798337668,115798.83900486003,115623.32313080206,115369.79854842502,114575.10808029912,115291.79727942584,115937.7906216809,116949.44141494673,117339.47751722221,116810.48979812587,116508.21535253932,116181.56225568808,117195.65314587636,117181.02744298152,117027.45012326581,116262.0036216097,116366.82363879602,114933.45267986249,116154.74350750096,116201.06071310792,116344.88508445377,115218.66132563175,116049.92349031464,114467.84796619037,113014.96367119724,112812.63648827202,112132.5115463824,111876.55430640282,110940.47212453361,111903.36561527007,113314.80545918123,113231.92399633718,112763.87918574263,113892.54304148708,114289.89199520997,112483.54329449835,112117.88584348757,113163.66823638795,114567.79522885171,115723.27039346339,115889.03331915151,115893.91351299638,116559.40531267127,116703.22968401712,116710.54253546454,117263.90890582558,118692.40711023413,118465.70127604422,118641.2171501022,118758.23021258079,119077.57045798462,118731.41146439366,117848.95933957884,118650.97009847204,118746.03716728851,117909.90224808063,117117.64443755729,118136.60808227054,118265.80675072156,118409.63112206741,119825.94372050356,119799.13241163631,119643.11499499818,120035.59119419608,120308.61423399295,121310.5195182088,121539.65801000127,121637.17261506006,122602.50620271894,122929.15929957018,122587.8804998241,122319.73021455221,121990.63702077854,122497.68618553261,122634.19770543106,122824.33928238387,121917.50850630434,122197.84439754863,122990.10220807197,123545.90123603556,124284.52898950453,124403.97470958569,124540.493668804,125739.84594210022,124662.3794858076,125432.6913026688,125812.97445657442,126527.2235587787,124759.88665154649,123821.36437275486,122994.97496259696,124272.34338353212,124065.13600676204,121225.19795844232,120613.32877650192,121966.25836951385,122056.4601231252,121417.77219299768,123331.38100781805,121649.35822103245,119426.16210917811,115840.283455942,116995.7586205537,116183.99491329063,118894.74173247923,119404.22355483586,119465.16646333765,121449.4636957098,121837.05970106283,123928.62448686361,124189.46192068807,125383.93400013942,125176.73406268921,125615.52002817419,124598.99648038337,125947.04587955042,125637.46602183634,125805.66904444688,125086.53974839774,125106.04564513745,126283.4519247715,123728.72996154094,123421.57532210954,123116.86077960055,121066.74788420163,122429.4304255834,122934.03205409517,124191.89457829062,125259.62296485316,125925.11476452804,126115.24890216097,126173.7665923801,125764.21715404502,127958.16186010969,127707.08481397497,128021.54486553391,128389.64241346713,128128.80497964268,128638.29424131919,128072.74226498575,128630.97395055188,127429.18158033323,127451.12757399539,127209.79603691063,128382.33700133959,127226.84695808814,128431.07942522921,129308.66623483894,129091.705909699,129859.59250827755,130922.43326167532,129925.40073198444,130471.44681157816,130490.95270831788,130993.12167922709,130790.80193562176,130700.59274269051,129508.5607601616,129801.0748180584,129749.89229724636,130154.54666309679,130361.76147918675,129969.27784066896,127412.11578051596,127965.482150877,127687.57891723525,129223.33723575257,132441.12578037535,133472.28990970078,134062.21309797905,134171.91330901024,133769.68416144248,133837.94736071158,132987.1718599691,131271.02491286883,131814.63089554012,132294.86875142695,132343.62605395634,133011.55795055366,133457.64932816618,133886.68978460119,134637.51058336245,134208.47012692745,134915.41381700418,135295.6969709098,135327.38847362192,136180.58919264705,135953.88335845715,136224.4663013316,135515.0825143324,135129.9340452217,136153.7778837798,135451.71438754795,135441.9539998582,135973.3743765571,135402.95708501854,131427.04232950698,131378.28502697757,132865.28604296548,133389.40100753686,134761.8364972885,134759.39640036604,133362.5896986696,131878.01390096435,131346.59352426545,131017.50776981167,132709.2835049671,133482.03541875075,131980.39382122824,132158.35723152853,130147.24125096925,130315.4442735798,130481.20719926791,132867.72613988793,132670.2717114877,133942.7673778979,135161.6255479338,135929.49726787256,136682.75816355628,136270.78350693855,134374.23305261554,135500.45681143756,134905.65342931444,135610.15702246875,134886.1624112145,134001.27018947725,134891.0277264196,135444.39409678063,135931.937364795,134610.69927449521,135573.60020455153,135695.48602155512,135246.93966838042,136675.43787278896,136680.31806663383,137075.2269234343,137406.75277481053,136829.01519250468,134500.99906346403,133864.75866957882,133199.25199126414,133282.1408934281,131141.81880509792,133179.7609731642,130885.86156511834,129308.66623483894,130759.11043290964,128387.2023165447,129079.5203037266,125666.71742762602,124635.56073762047,125240.11706811344,123604.40404761492,126142.07508966798,127104.96114108454,125764.21715404502,127085.4701229846,126792.94118644802,126824.63268916015,129050.26889793691,129357.42353736833,127848.47652771827,127056.21871719492,124518.54767514186,125276.67388603067,125737.40584517778,126495.53205606659,120462.19155370865,113480.56838486934,113002.77806522483,111340.25373585906,121666.42402084974,117512.55329435774,119582.17208649637,120783.97189603491,120445.12575389138,117797.7693794469,117961.09220821258,115150.40556568254,118056.16671634892,119952.70973135202,122473.30753426792,123375.25811650258,123450.8341672191,124199.20742973805,124260.15033823984,125140.16236613222,126934.33290019134,126271.26631879911,125196.23995942892,125761.79193576236,126600.36695189268,126432.16392928212,130642.08993111116,131500.17084398118,131663.49367274684,132309.4944543218,133162.69517334693,133299.20669324536,132826.28912812585,130605.53311319393,130666.47602169574,129784.02389688091,132450.8861680651,131695.18517545896,132202.23434021304,132065.7228203146,132833.59454025337,133586.8554359371,133501.54131549047,132877.48652757768,134235.2814357947,134379.11324646042,135144.55974811653,134771.58200633846,135281.07126801496,133774.56435528732,135066.55103979746,133915.94119039088,133889.1298815236,133518.592236668,134893.46782334204,136375.60352412486,136443.8518447542,137523.77327660902,138206.3308761012,138469.60840684807,138406.22540142384,139020.5198016469,140222.31217186555,139098.52850996598,139005.89409875206,139829.84341198753,140239.3779716828,139734.7689038512,140010.23204057047,139403.24305247495,139861.53491469965,140700.10993082996,140636.7269254057,140887.8188501802,140887.8188501802,142084.73102655399,142182.24563161275,142747.7976079462,142713.66600831164,142343.128363456,142170.06002564036,141636.19955201904,139303.3032291335,141421.67932380154,140741.54694259205,141787.3367748123,141702.00777572594,142786.79452278584,142494.26558624927,144015.41308051153,144517.58205142073,144520.0072697034,144207.9873150669,144156.78991561505,143369.41229893657,142991.5692419534,142428.4573625424,144607.7763657122,143995.9071837718,144571.2046691552,144902.73052053145,145414.6598791304,144576.08486300008,143510.80401267987,144244.5441329841,145431.72567894767,145034.37672522478,145409.77968528552,145763.2515303239,146184.97169599158,147377.01855716028,147345.32705444816,148113.2136530267,147918.18444290914,147747.55620201593,148442.2994074805,149134.6173946624,149861.05210283908,149076.09970444324,148578.81092737892,147869.4420190195,148739.69365922216,148732.38824709464,149280.8744236108,149814.73489723212,149980.49782292024,149992.68342889263,150504.61278749158,149968.31221694782,150838.57873579024,150431.4693943776,146387.3063182367,148605.62223624616,148395.98220187353,149049.288395576,148064.45635049732,148885.96556681034,150448.53519419488,150429.04417609496,149668.46298964394,150514.35829654156,151760.02777544473,153576.1294245262,153988.10408114395,154051.48708656817,152415.77406606963,152854.5600315546,153154.4092588585,151379.7446215391,151835.59638684135,150221.82936000498,150380.28687356555,152715.60841473375,153066.64016284968,153142.20877424633,150648.42971951756,150609.4328046779,149197.98552144686,147969.38184236095,148505.68241290472,146253.23489526068,147708.5444085365,149904.9292115236,151299.29581629758,152345.08564851788,153188.52597985326,152484.03726533873,152742.43460224077,153276.2950758621,153405.48630499322,153693.13504768492,153237.28328238268,153112.95736845664,154102.66960738023,154480.52754300318,152813.12301979252,152591.2973794475,152164.69701993492,150492.4123028794,151628.39644939115,152981.3260424031,153510.30632217953,154226.99552130623,154741.36497682764,154755.99067972248,154209.92972148897,153995.40949327147,152876.50602521678,153161.71467098602,154175.81300049418,155089.95662802114,154592.652972317,154565.84166344977,155601.87110798032,155852.9630327548,155533.622787351,154780.36189166727,155189.89645136258,155060.70522223145,151906.2996830329,153646.81784207796,154446.3959433686,154509.77894879284,155304.47685623865,155940.71725012385,155916.33115953926,155592.12559893035,155092.3818463038,155935.83705627898,154587.7876571119,153797.95506487123,151894.0991984207,154853.49040614147,155582.3652112406,155146.01934267805,155124.0733490159,152720.48860857863,152818.0032136374,153086.1460595894,153856.47275509036,153461.56389828993,154556.0961543998,152998.39184222036,154114.8700919924,155411.73697034738,154539.03035458253,153829.64656758335,153888.16425780248,152532.77968922837,153620.00653321072,152798.4973168977,150755.6898336263,152064.7423179537,151801.46478720682,151633.27664323602,149310.12582940047,148478.87110403748,149965.8721200254,150380.28687356555,148305.78788758206,147908.43893385917,145760.81143340145,147342.8869575257,146843.15808353896,147642.72130618984,145024.61633753503,142109.11711713855,141614.2535583569,145665.7369252651,146823.65218679924,146991.85520940978,147645.16140311226,147735.35571740376,151465.07362062548,152362.15144833515,152259.7566494315,153751.63785926427,155611.6166170303,156854.8608776508,157198.57233499942,159129.25438895696,158826.96506473064,157781.19011115012,159402.27742875382,158758.71674410132,160016.57182897688,160279.84935972377,159490.03164612286,159485.151452278,161030.67015848504,161503.58772360458,160918.52985053143,162181.26512925187,164462.96405268557,163946.16937888152,165286.91336592103,165647.7055017267,165440.49068563673,166352.19421624125,167649.06109459623,165628.199604987,165498.99349721608,164445.91313150804,166147.43437571346,166457.02911206734,167117.64071789733,168204.8675618797,168192.6819559073,169155.56800732386,169540.73135507436,169981.95741748175,170215.98354243897,169021.49658434786,169679.6829718952,165277.16785687106,165686.70241656635,165204.03934239686,162607.86548876442,165333.23057152797,166240.06878692738,169136.07698922392,168141.48455645549,166108.42258223405,167741.69550581014,167251.71214087334,164872.51349102063,164714.05597746006,164718.93617130493,163390.3777902378,166010.92285581504,167424.79535732875,167095.70960287497,166944.5723800817,168353.56468775054,167490.61845967543,167046.95230034558,168370.6304875678,169143.38240135147,167836.7700139465,168470.57031090927,169128.75669845662,168236.55906459183,166537.46303866906,166303.4517923516,167683.1926942308,167478.432853703,165425.86498274188,165555.0710905128,165596.50810227488,165998.73724984264,163480.57210452927,166201.05699344797,167385.79844248912,169762.57187405915,172829.2083172489,172492.8022720278,172200.288214131,173250.94336155636,173236.31765866154,172692.69679735048,173119.29715686303,174284.5327091645,173957.87217299335,173143.68324744763,171956.5165801238,172324.59924941725,170886.35553595872,171544.5419235061,171086.2500612814,171620.11053490272],"drawdown":[-2.9823090015980203e-15,-4.2437791090286604e-15,1.9571081363405235e-17,0.03839504184751993,0.4079409119126349,0.5039248549787122,0.9502608087388669,1.7157450208924538,1.4853747698073343,1.996498237438366,1.1782217581326198,1.3486011294132603,2.3156538189372426,3.911409757115294,4.00499172159545,3.0787360525049086,1.9077129070246084,1.7445394715017322,2.022898032567168,3.9809939050525696,4.14417466368089,5.358389485075109,4.225761381442329,5.403983139574948,4.484918760031281,4.060185967333531,3.2347108753754648,3.4170854933748234,4.120176847138009,4.312144733270164,4.00499172159545,2.392436579526838,1.6317563245450941,1.3318019255226996,0.563915734783191,0.17757798393296023,-2.342038202229081e-15,0.10072022682871049,3.215838208288047e-15,-2.5822617959800026e-15,0.43421384962926146,-3.433480005169674e-15,-4.324960442069321e-15,6.334164751599388e-15,4.7613191763226026e-15,2.4150616745120654e-15,4.685390819622605e-15,-1.5095721772936642e-15,6.1022316798188825e-15,0.3501634225714638,1.1525174719021867,1.1200558789487656,0.384946228188657,0.33857151298835864,-5.840256226026927e-15,0.2410719584834684,5.815285481617174e-15,0.18756022462566974,0.4515309951362445,0.3218599032109588,0.07641054588491668,2.2507226955079727,1.0697900416558725,2.963920767641563,4.080024942075541,2.616585971439294,3.477976548682703,2.3248224813351417,0.31723131655095543,0.03704282636907108,0.7178195922490805,9.92127536198517e-16,0.8871424936453156,1.5617441770367806,0.023104101214154293,0.926420170747558,1.9544856961501187,3.0149054237106747,1.6541535315115767,0.6607406327393373,0.04851367728245106,3.3363011440525773e-15,0.07520033137384864,-4.880455328228968e-15,0.28245842335465554,0.5557965392882219,2.1367373273019953e-15,0.0409772739399566,1.9556053131225122,2.0876524593589947,2.4268648063994043,2.554354290427578,1.700626345066166,1.406941986518215,2.7660771534398143,2.7364801397090233,4.441664146983497,5.4456490444472125,6.4860535536425745,8.323277759497726,7.940809307413206,9.058624597591779,9.263517914947355,9.72339020035928,7.510527088076269,5.819009119770918,5.204322220048381,4.300515571642006,6.524758944134179,6.085375295692233,6.394990629001852,5.636883270489473,4.252701804389587,5.935118343589927,7.811040992280879,8.111554896485488,6.636310505744879,6.524758944134179,8.512240102091637,9.097323040427579,10.09219956113048,11.710871358316734,10.354015022499292,8.396130878272626,8.62607049480649,9.996585921937253,8.343766396467704,8.803645629535431,9.541264351077833,12.21172786532442,12.874214636987766,10.552078794198207,10.950485168700201,12.086510264744595,12.728515347093769,10.813887307911214,8.819576604297099,7.704040145222684,6.684117325341493,6.6795666107889895,5.595899048893712,6.811613757025471,5.743884117547668,5.265795078614117,4.6124097360557785,3.4058034046848347,4.0068312130940535,5.482068656178858,5.220260142465852,4.41661784780521,5.598177879997868,6.5543559578649715,6.083096464588078,6.3107572500177875,7.9339797617565475,8.270913277692802,7.2350594830499455,8.361983149989332,8.346045227571858,6.882188044696218,6.952762332366963,8.332386136258538,10.834375944881192,10.34718547684263,12.910641196375217,12.685259242049659,10.497435481289132,13.784857778706606,13.243030945414771,12.867385091331107,10.224246707366962,13.377349975099603,13.921455639495592,16.69892000080037,16.48491830668398,17.830394382292262,17.894139124306346,15.956743617049659,16.25725752125427,14.581670527710589,17.964713411977094,18.51337673858139,18.492888101611417,16.94706942320006,17.545818400505123,16.858278382007686,15.20546580419394,13.079114901999148,13.561754655485203,14.285714285714288,12.657941059423022,14.071712591597896,13.837222260511528,12.994874575359278,13.946501938673878,15.970402708362979,18.435972905253987,21.579967796225812,21.77575273682058,20.655665563193658,23.26237738777035,23.062034784967274,21.17700375951551,21.34319863403529,20.516788871300516,18.0421172453045,18.349460695165764,20.113831782246017,20.400679647481503,21.02902563851736,20.218553798200055,20.07740522285857,19.788278526518926,18.611269208878774,18.659076028475386,19.57882754695504,20.32100393070575,20.692092122581105,20.90153615448919,19.405803126778604,20.07285450830606,17.903247501067163,17.377344694881188,16.54183350304141,17.302219692657943,17.220265144778033,18.21286283437678,16.070574009764517,15.009673915943372,13.764369141736626,14.023905772001283,14.57939864426224,13.245302828863121,13.313605233085516,13.493452251262807,13.570856084590213,13.912347262734775,12.109277732818727,12.109277732818727,10.604436328347326,10.221967876262807,10.064881378503845,10.679568278226382,10.404100673200059,11.64029707064599,13.502560628023621,13.7074539453792,13.445645431666195,12.184402735041978,15.194078596328971,15.754129130798237,16.66932298706958,17.324987160732075,17.070008192675726,17.939667112798805,18.215141665480935,16.74900565150114,16.20489303944935,14.911781445645989,13.97609895240467,17.72794424978657,17.4206007999253,18.34263114950911,18.984636231858286,18.363119786479086,19.28287130495874,20.70347238279027,21.37279564776608,22.679566332882757,23.428572262290125,23.64484583985487,22.48605327573634,24.10244624181844,25.258966922488618,23.282866024740326,20.953900636294108,21.090498497083097,21.921458974370374,24.113833449683412,24.68070658215353,25.177005426952903,25.40921692693512,23.455890444916765,25.17928425805706,23.27831531018782,22.374501714125643,22.911784780520776,23.544681486109134,21.707457280253987,20.753558033491036,19.464997154240184,20.066024962649408,20.49402140322638,18.638587391505407,19.19180143266221,19.517361636045106,21.570859419465,22.40637755896059,21.270345515260388,20.51451004019636,20.08195593741107,21.714286825910644,17.429709176686114,16.639725973338788,17.3090492383146,16.626066882025473,17.25896358761383,17.4980046332527,17.133752934689813,17.42515846213361,16.325552977820863,15.801935950394853,15.811044327155665,17.14285436379482,17.28856060134462,14.743314687677861,14.731927479812892,14.854866249288563,16.371087913969124,17.57996612878842,17.739331457651538,17.090496829645705,17.69607535260743,16.52134486607143,15.904379135244739,16.412065187909082,18.467841802433128,19.439957802717704,20.134320419215996,20.39385010182485,19.20318864052718,20.339213736571573,19.893000542472965,20.211724252543398,21.19066285082883,19.792829241071434,20.013660480844482,20.32100393070575,19.747294304923166,20.62378971835871,18.818441357338504,18.877635384800087,18.299375044465,17.256684756509678,16.94706942320006,16.623788050921316,16.75127753494949,18.103583156214427,18.69322375675868,17.1974976767039,16.188955117031874,16.277746158224247,16.248149144493457,15.353443925192089,15.112124048449063,16.173024142270208,14.982355733316735,14.051223954627917,12.81957827173449,13.75071005042331,14.249287726326838,13.142859644013235,14.094480059672026,14.829826897766079,14.62265474930635,13.636879657708453,13.6687555025434,13.379621858547953,14.583949358814744,14.804780598587794,16.496298566893145,16.60102753050299,16.182125571375217,17.079109621780734,16.792261756545248,17.106434752063176,17.409220539716134,16.792261756545248,15.474103863563604,15.371653731057913,16.680703247278743,16.55094187980222,18.07854380469195,19.25327429122795,19.389872152016935,18.05122562206531,18.556632843625497,17.163349948420603,18.069435427931136,17.32953787528458,16.248149144493457,17.636881325145847,17.441089436895275,17.231645404987198,17.09504754419821,17.240753781748012,16.063744464107856,15.562887957100171,14.38360675601167,14.044394408971261,14.529312993561469,14.736485142021202,14.410924938638306,14.317590130549235,14.306202922684266,14.647694100828831,13.541266018515227,13.718841153244169,13.425156794696216,13.365962767234635,13.370520429442944,13.859989728585658,13.809904077884891,13.696073685170035,15.059759566644141,15.437677304176153,13.759818427184122,13.022199705641722,13.081386785447496,14.055774669180424,14.654523646485487,15.278311975313036,13.723391867796671,13.675585048200059,14.048945123523762,13.673306217095904,13.79396615546742,13.910075379286427,13.611840306185972,14.183264153208594,13.158790618774901,12.309620335621801,12.448490079859136,12.400683260262523,13.379621858547953,14.028456486553786,13.279450557146417,12.152533837862837,12.125215655236198,12.603297746513947,11.765507723570007,10.470117298662494,10.643141718838933,10.45873703845333,10.752421397001283,10.217417161710305,10.067160209608,9.240750446873223,8.642001469568159,8.571427181897413,7.398975526465569,7.7404667046101325,8.166191261738762,8.669319652194794,8.336936850811043,9.024476869308481,9.400115775736342,8.396130878272626,8.35515360433267,8.36425503343768,7.278315588094054,7.1007404533651135,7.307912601824845,8.063748076888874,8.27774282334946,8.03187223205393,7.442231631509679,6.7137143390722835,5.95332814945575,6.028460099334806,5.700628012503559,4.985769811379484,4.780876494023906,5.402392939403104,5.391005731538135,4.990327473587794,4.710302206353161,4.687534738279029,5.3340905351807075,4.412067133252705,4.227662452867105,4.523618694863405,5.846327302397555,6.112693478318869,6.572565763730793,5.73022502623435,6.13773282984135,6.761528106324703,6.706884793415625,6.793397003503844,6.267501144973678,7.342060330108141,8.027321517501425,8.771769784700485,8.687536405716422,8.084236713858854,8.341494513019352,7.3534405903173035,8.585086273210731,7.979507750249006,7.373936174943087,6.058050165409791,5.666480284220264,5.787140222591778,5.586797619788704,5.998863085604015,6.6476977136098485,6.925444149740327,6.7979477180563475,6.1855465970937695,6.688674987549803,6.579395309387452,5.771202300174305,6.945932786710303,6.843482654204612,7.030166165694367,7.899832033473252,9.409217204841351,9.627776561166051,9.252137654738194,10.58394769137735,10.563459054407371,10.383605088574276,10.597606782690669,10.604436328347326,11.806484997509962,11.157657317159932,11.232782319383183,10.174161056666195,9.57541207936113,9.108710248292546,8.723962965103873,9.27262629170817,9.750708382985916,8.80591751298378,8.803645629535431,10.02390410456389,10.786569125284577,11.89755486980649,12.0523625364613,11.39441953169465,12.644281968109706,13.716562322140014,14.099030774224532,13.06545581068583,12.53955300449986,11.576552328631902,9.896414620535717,9.063175312144283,8.887879008519494,8.630621209358996,8.55548925947994,9.24530116142573,7.829257745802506,7.922592553891578,6.153670752258824,5.9487774349032465,5.816730288666763,5.677860544429427,4.967560005513662,5.215709427913348,4.805915845546388,4.75355831139727,4.919746238261243,4.826411430172171,4.887877341082102,4.519067980310901,3.9590243934974416,4.441664146983497,4.471261160714288,4.869667535216279,4.125212320361413,3.7176975690986076,3.344337493774902,2.863969623737196,1.5412610162030471,1.2521343198634056,1.4023912719657108,0.8446195686005997,0.24131987674303,2.08537362825484,1.1314743814918917,0.9015347649580272,0.48946929914271703,0.3073434498612713,0.2914055274437984,0.5577717033651132,1.1929402924018233,1.9260082993917211,2.235630580357145,2.1104129797773217,0.7103005389157676,0.9516204156587955,0.29823507310045744,0.3323828013837528,0.2868548128912941,0.6260671599317038,1.1792812010885052,0.30051390420461227,-2.636288054182986e-15,4.259904343079475e-15,7.099191542540656e-16,6.111182952191208e-15,5.459135501046395e-16,0.06019821932483332,-4.525166610582467e-15,0.07087129583415569,1.6988157159751494,0.4053216265803882,1.0146293622459158e-15,0.36541420854318973,0.05503213891691988,7.063575990270909e-16,1.0257388287048738e-15,3.0024908072267917e-15,0.04559054562582466,1.454405976455487,0.516639853569689,-2.754549770841267e-16,0.5115012883273754,1.057674576362665,0.9579776950964715,3.3234678838771637e-16,4.5093330893294e-15,0.366337773587138,0.18209994124395767,0.3363484571585302,3.837867878944078e-15,-1.0214015950104588e-15,0.1187870027987114,1.1199963645351068,0.5960582912097996,9.542174334609259e-16,0.6064309381662792,0.688841165185175,-4.343475045746405e-15,0.15156963192920864,0.37050497234864016,1.056773051506624,0.437864256491301,5.695557021100665e-15,-3.3659047093215635e-15,3.72611066291283e-15,0.4508181988612514,0.7084249753548486,0.98680792350058,0.12257117075090733,0.13503560574269735,0.26591851315394516,0.9182535310457349,0.8289229669387557,2.0504819761163455,1.0096636143171633,0.9701907901773441,0.8476196194264407,1.8074191537789879,1.0989941784241426,2.447283396681535,3.685472219177265,3.8579011298953296,4.437522717003376,4.655656669357153,5.453412208818978,4.632807318538023,3.429938621850665,3.50057253346996,3.899453473199598,2.9375744196826017,2.598942475744917,4.138363597205511,4.449987151995166,3.558742010097464,2.3621055309060015,1.3773771265698742,1.2361093033312855,1.231950265002387,0.6647994528835836,0.5422282821326798,0.535996064636785,0.06440169412340303,-3.049077503591776e-15,0.19100281113968404,0.043128251737615475,-4.2208937283195014e-15,3.203105219603806e-15,0.2907004167616052,1.0317737535964298,0.35825416816267547,0.27841791650686515,0.980594586716048,1.6459237561610107,0.7902095853106826,0.6817100014225491,0.5609279172796755,3.862282721218693e-15,0.02237521194056924,0.15257858175675598,9.920933474858168e-16,5.1035731479431916e-15,-5.07002689155938e-15,-5.007434561948414e-15,4.467562995275768e-15,4.542123512278551e-15,2.1162882113946274e-15,0.27762233280584797,0.49575632705079,0.7634659540008107,0.35099330093528835,0.23994436781294995,0.08526863584162322,0.8229542925617147,0.5949075924609475,-2.0790331165585312e-15,-2.0804145586815754e-15,-2.8219396749912392e-15,-9.283081655449929e-16,-2.4624284024601723e-15,7.135221359771449e-16,0.8569013650523831,0.24427788751455365,-4.992344708490887e-16,2.2373282534247595e-15,1.396803673962846,2.1385588886859788,2.791690591820204,1.7821304473649977,1.9458955019849031,4.190422781128445,4.674009763226531,3.6047303188835422,3.533439926923382,4.0382229389609625,2.525814177433527,3.8551903697469587,5.612279515721577,8.446356287800814,7.5331337163161,8.174706086617858,6.032284287621133,5.629618514970279,5.581452668295009,4.01317575795063,3.706841678650314,2.053786528167909,1.8476352932889688,0.9035917539976441,1.067350928997594,0.7205591847836398,1.523962214739951,0.4585398010877555,0.7032143059149821,0.5702760987216435,1.138635441337799,1.1232190778145381,0.19266338670107802,2.2117719163715805,2.4545296650933217,2.6953588984696664,4.315652806560153,3.2386651804555333,2.8398564384954734,1.8457126575635276,1.0018402034536675,0.4758729207165021,0.32560159389441673,0.27935250332463335,0.6030373411135622,-2.282598641054288e-15,0.19621807822560489,-4.840481346068e-15,-4.799310495862231e-15,0.20316080715019874,4.720800222444389e-15,0.4396451147529199,0.005690599996280385,0.939932131498667,0.9228718977699949,1.1104766374846116,0.19897437344701743,1.097221703346945,0.1610833051791331,-5.425344268316371e-15,0.167784829476091,5.1192296584955975e-15,6.577702183841512e-16,0.7615444541105576,0.3444684297883204,0.32956961049986117,-1.944046443962167e-15,0.15445066199793403,0.2233162572099862,1.1333121159604376,0.9100072170871163,0.9490798952216141,0.6401672128890751,0.48197965812769433,0.7816012210666232,2.733735827351463,2.311296570032208,2.5234475822985303,1.351051429866926,-6.795515811695816e-16,-1.0355342961152884e-14,9.416494486164267e-15,9.857158919155793e-15,0.299786399141082,0.2489089855411989,0.8830025746987652,2.1620682932801323,1.7569119760862946,1.398984713932104,1.3626452883944369,0.8648273173120589,0.5323498511935554,0.21258064923927716,3.3050932790277183e-15,0.3186633907415919,-1.028749648035588e-15,1.6854611863280116e-15,4.746360653580338e-16,-9.81754465628944e-15,0.16647441131950724,2.3325751827342876e-15,0.5207462405688628,0.8034770007384489,0.05189113194644841,0.5672636749952812,0.5744286050219848,0.18432219379672388,0.6030555586805062,3.521705096067406,3.5574969797526306,2.4659155213245705,2.0811718854699066,1.0736909776601653,1.0754822101668413,2.1008535987444796,3.190654746815295,3.580761158040555,3.8223372591543203,2.5804342581080872,2.0131705831128084,3.1154994365809237,2.984859607237324,4.4611847015200485,4.337709802203152,4.216026135392933,2.464124288817895,2.60907213391604,1.6749553038339935,0.7802128224505241,0.21653161246859703,6.6471135075017424e-15,0.3014093819534778,1.688965851990137,0.8649967033178829,1.3001674520756537,0.7847377061297236,1.3144274936213594,1.9618333797964012,1.3108679259988816,0.9060133724356075,0.5493163942908085,1.5159621571154027,0.8114834481738449,0.7223092036376453,1.0504752131631352,0.005355679725569426,0.0017852265751942403,1.338752513441982e-15,1.0403559659534902e-14,0.42045792556693823,2.1147095413197197,2.5777438398799304,3.062077153108957,3.0017534059203568,4.559407629681719,3.076262058658601,4.745684675613418,5.893514238883998,4.8379298743748045,6.564124598044724,6.060278918555805,8.544001739437586,9.294442797960718,8.85446709204781,10.04488385648385,8.198052466608905,7.497296476112142,8.473044727172843,7.511481381661785,7.724374074800373,7.701310068066983,6.081567105052446,5.858030318665537,6.956191056168012,7.532769568158426,9.379600958033372,8.827862273013096,8.492557093432733,7.940818408412459,12.331680124099524,17.412669979293295,17.76038965827264,18.97031878896857,11.45528035274721,14.478327359250285,12.972128609665951,12.097499244464295,12.344100037584592,14.270756712735858,14.15189586676758,16.197418801973203,14.08270384656741,12.702463809812258,10.868057747508473,10.211648536155655,10.156646835591216,9.612006017431849,9.567653824201818,8.927210752721482,7.621473954618491,8.104031447610769,8.886399371792772,8.474809719237417,7.864523107265291,7.986935593707065,4.923093448533545,4.298611102839601,4.1797502568713245,3.7096126773641167,3.0886819721436707,2.989333492435287,3.3335069450272203,4.949698267568259,4.905346074338227,5.547564966055314,3.6067125571822336,4.156686250137934,3.7876729705758603,3.887021450284244,3.328190312489148,2.779992439770197,2.842081179023372,3.2962472045720106,2.3080898681984157,2.2034139277797835,1.6463477820492611,1.9177884021397,1.546999302340877,2.643384219606603,1.7031198887643633,2.5404949275968955,2.5600072938567875,2.829672093710477,1.8290840156796366,0.7504356444370531,0.7007668186689486,4.357220229589539e-15,8.023647342971847e-15,-1.909140807088349e-16,0.045773947188469416,5.481124204433647e-15,-7.742514020610795e-16,0.8014299896311737,0.867492522604081,0.2798903782138364,-5.875258876184978e-15,0.3598198131865124,0.16339628314566912,0.5962197859838586,0.26942721969250866,1.0023347705173576e-14,0.04504829843800786,-8.630816928070964e-15,-8.630816928070964e-15,3.148540362604957e-15,-9.220559950441695e-15,4.251527104043805e-15,0.02391042118092682,0.2834854556576904,0.4047260917416012,0.7787146804044969,2.412993010423134,0.9289938663620126,1.4054512216463775,0.6728375843470376,0.7326136372993439,-7.180388066495085e-15,0.20487114198076886,7.305940748859387e-15,2.679880520196795e-15,1.0052767650319707e-14,0.21590087111899858,0.2513266923731324,0.7961492616171776,1.0575961464613297,1.4472389994125652,-3.3235682389672107e-15,0.42312329068180815,0.025290269635632624,3.814349199647599e-15,4.406793673166124e-15,0.5766784565100525,1.309259924709808,0.804675228150254,-5.127005468058904e-16,0.2732202701080998,0.015090238089172259,8.036638919371963e-15,-9.30896336116916e-15,3.419230563070533e-15,0.021503693738945548,3.4495523821710085e-15,0.13167576700783035,0.24687699496371676,7.64587044436639e-16,9.227740590593328e-15,4.205247631181834e-15,0.5237867927533056,0.8556200276641912,1.3289711074848625,0.7482654284632995,0.7531402188274572,0.3871437382076778,0.03090676660616125,5.770357244563993e-15,-1.5095721772936642e-15,-9.190548394949513e-16,0.35633497247091045,-1.0558221819623194e-15,0.2698973596971679,2.9510172098282794,1.4803616675912463,1.6193447023888894,1.1862285863541338,1.8391332035500738,1.2945051493756898,0.25858341073244845,0.2715051833076728,0.7757403682488168,0.21494530243260646,5.409297974188574e-15,6.440294412186842e-15,7.741513144606283e-15,5.611709271775139e-15,1.0617963198105034,0.7769655961457554,0.582323380757479,1.7343178670697936,1.4384091589337336,2.4859595963595886,2.3830994964297947,0.8671637626475723,0.639297252070705,0.5902431255408058,2.209038959252822,2.2343531678834316,3.1505710570608976,3.948099014967261,3.5999682823879713,5.062107700995643,4.117417363499582,2.6916701379938317,1.7865398915130237,1.1076825484270718,0.5601770700402002,1.0174843819252548,0.8497499823495988,0.5032031987269742,0.4193408280518189,0.23261835744686918,0.5285270655829293,0.6092311965700994,6.819146267162211e-15,2.2795253180117233e-15,1.0793622663843405,1.2229568306139895,1.4991083730106964,2.5816297390708898,1.8462722383039896,0.9704792729832952,0.6280540572037849,0.1641190807212594,3.1260800003482254e-15,6.6899176143777584e-15,0.3528528723412197,0.4914712400536965,1.214482648620327,1.0301869425112642,0.3748983652781534,6.540514456622291e-15,0.32065497116417957,0.33794255667273154,3.3712339961207724e-15,3.0867651453297765e-15,0.204898411419173,0.6882135059967398,0.4254436800491718,0.5083367008921412,2.532299208769269,1.4155298351390255,0.9024962131073342,0.8618277495819341,0.3519254083099449,5.6439659514293134e-15,0.015638052084546536,0.22354113623472716,0.5440114799904071,0.0031295186599991846,0.8675922599752272,1.3740876809074134,2.5949720657065396,0.6972052348832617,0.22980017355471424,0.5096153983767586,0.5236886911313028,2.065033878470682,2.0025007525633725,1.83054896814141,1.3365620806337712,1.589805020492151,0.8879150488343315,1.8868230567287332,1.1708597923163695,0.3392188320693664,0.8988588229288821,1.3537648920483087,1.3162392917746668,2.185405852295312,1.488200617412056,2.0150092859879196,3.324999081658021,2.4855438659764606,2.654375672953856,2.7622295721385117,4.251994948880559,4.785053113560983,3.83148496137478,3.565733488091853,4.896046072621059,5.150853771809435,6.528061430161408,5.513524911397894,5.833985713938147,5.321250338116826,7.000160769479946,8.869781014794137,9.187121839889823,6.589029796738723,5.846494247362694,5.738630806962612,5.31968557878683,5.261846730869511,2.870093012538594,2.294824510809964,2.3604871553772675,1.4037894845310714,0.21104214402560664,2.666613696360726e-15,3.641350067867675e-15,7.397908077323332e-15,0.18996464565053972,0.8471505022651467,1.361018039584532e-15,0.40373368250033886,4.235593400950389e-15,-2.8549410525244156e-15,0.492774180133077,0.4958189757604535,6.271457642954486e-16,7.698606951031827e-15,0.3622568893481332,8.487784511212508e-15,4.056570248172845e-15,0.3142316428387496,6.492991080816881e-15,6.579477867443072e-15,0.12509368328547132,4.10446949801943e-15,-4.0512109428920205e-15,1.2054117550166061,1.2824811444467046,1.9106268428671902,0.8956964680138919,0.711028129084656,0.3169838072633333,6.323443064358704e-15,0.007244502581313702,1.3985154128747392e-15,5.7796554081054304e-15,-3.6729116619957215e-15,2.7939674082805537e-16,0.7017478225206143,0.3150706293161052,2.9014993673238414,2.6609023615830787,2.944461557449758,4.46968486468702,2.8685631450665774,2.3358057643983217,0.6344331071269862,1.2187451159463416,2.4131464476606017,1.4536167433488587,1.741476528745945,3.139229313377666,3.2323213428468436,3.229454283159906,4.009967577750638,2.4704264541499468,1.6397920612515837,1.8331262873360228,1.9219177272747936,1.0941503940633686,1.6011217196204437,1.8617706610985107,1.0841244261947163,0.6301412586322099,1.397761525667352,1.0254108898619023,0.6387336966573932,1.1628898982648348,2.161089944207718,2.2985689526106508,1.487986495449592,1.608280627802158,2.8141414572285397,2.738234303809728,2.7138905195776477,2.477585362331661,3.9569794197560695,2.358724759822564,1.6627023156401954,0.26637431981631265,3.380003177687158e-15,0.1946465232911257,0.36389688365837314,-7.908836114957884e-15,0.008441918185867672,0.32221848457176405,0.07598585158557412,7.536843040494063e-15,0.18742944717661827,0.6545901945416146,1.3357560150937338,1.1245596090950012,1.9497870065592269,1.5721365189822862,1.8350926488813515,1.528777185700118],"color":"#a855f7","border_width":1.8,"is_dash":true}]};
+        let currentFilter = 'all';
+
+        function getFilteredIndices() {
+            const total = chartData.dates.length;
+            if (currentFilter === '6m') return Math.max(0, total - 126);
+            if (currentFilter === '1y') return Math.max(0, total - 252);
+            if (currentFilter === '2y') return Math.max(0, total - 504);
+            return 0;
+        }
+
+        const equityCtx = document.getElementById('equityChart').getContext('2d');
+        const ddCtx = document.getElementById('drawdownChart').getContext('2d');
+
+        function buildDatasets(startIdx) {
+            const eqDatasets = [];
+            const ddDatasets = [];
+
+            for (const s of chartData.series) {
+                eqDatasets.push({
+                    label: s.label,
+                    data: s.equity.slice(startIdx),
+                    borderColor: s.color,
+                    borderWidth: s.border_width || 2,
+                    borderDash: s.is_dash ? [4, 4] : [],
+                    pointRadius: 0,
+                    tension: 0.1
+                });
+
+                ddDatasets.push({
+                    label: s.label + ' DD',
+                    data: s.drawdown.slice(startIdx),
+                    borderColor: s.color,
+                    borderWidth: s.border_width ? s.border_width * 0.8 : 1.5,
+                    borderDash: s.is_dash ? [4, 4] : [],
+                    pointRadius: 0,
+                    tension: 0.1
+                });
+            }
+
+            return { eq: eqDatasets, dd: ddDatasets, labels: chartData.dates.slice(startIdx) };
+        }
+
+        const initial = buildDatasets(0);
+
+        let equityChart = new Chart(equityCtx, {
+            type: 'line',
+            data: { labels: initial.labels, datasets: initial.eq },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#f8fafc', font: { weight: 'bold' } } },
+                    tooltip: {
+                        backgroundColor: '#111827',
+                        borderColor: '#1e293b',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(c) {
+                                return c.dataset.label + ': $' + c.parsed.y.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#94a3b8', maxTicksLimit: 12 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => '$' + (v/1000) + 'k' } }
+                }
+            }
+        });
+
+        let ddChart = new Chart(ddCtx, {
+            type: 'line',
+            data: { labels: initial.labels, datasets: initial.dd },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#f8fafc' } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(c) { return c.dataset.label + ': -' + c.parsed.y.toFixed(2) + '%'; }
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#94a3b8', maxTicksLimit: 12 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => '-' + v + '%' } }
+                }
+            }
+        });
+
+        function setTimeframe(tf) {
+            currentFilter = tf;
+            document.querySelectorAll('.controls .btn').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById('btn-' + tf);
+            if (btn) btn.classList.add('active');
+
+            const startIdx = getFilteredIndices();
+            const update = buildDatasets(startIdx);
+
+            equityChart.data.labels = update.labels;
+            equityChart.data.datasets = update.eq;
+            equityChart.update();
+
+            ddChart.data.labels = update.labels;
+            ddChart.data.datasets = update.dd;
+            ddChart.update();
+        }
+
+        function focusDate(dateStr) {
+            const idx = chartData.dates.findIndex(d => d === dateStr);
+            if (idx === -1) return;
+            const start = Math.max(0, idx - 20);
+            const end = Math.min(chartData.dates.length, idx + 30);
+
+            const sliceLabels = chartData.dates.slice(start, end);
+            const sliceEq = chartData.series.map(s => ({
+                label: s.label,
+                data: s.equity.slice(start, end),
+                borderColor: s.color,
+                borderWidth: 2,
+                pointRadius: 0
+            }));
+            const sliceDD = chartData.series.map(s => ({
+                label: s.label + ' DD',
+                data: s.drawdown.slice(start, end),
+                borderColor: s.color,
+                borderWidth: 1.5,
+                pointRadius: 0
+            }));
+
+            document.querySelectorAll('.controls .btn').forEach(b => b.classList.remove('active'));
+            equityChart.data.labels = sliceLabels;
+            equityChart.data.datasets = sliceEq;
+            equityChart.update();
+
+            ddChart.data.labels = sliceLabels;
+            ddChart.data.datasets = sliceDD;
+            ddChart.update();
+
+            window.scrollTo({ top: 120, behavior: 'smooth' });
+        }
+
+        document.getElementById('btn-all').classList.add('active');
+    </script>
+</body>
+</html>
