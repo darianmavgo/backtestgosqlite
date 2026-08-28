@@ -1,0 +1,13 @@
+{
+  "account_id": "YOUR_IBKR_ACCOUNT_ID",
+  "is_paper_trading": true,
+  "api_mode": "client_portal_rest",
+  "client_portal_url": "https://localhost:5001",
+  "tws_host": "127.0.0.1",
+  "tws_port": 7497,
+  "test_trade_dollar_amount": 10.00,
+  "live_strategy_alloc_ratio": 0.65,
+  "extended_hours_enabled": true,
+  "use_adaptive_algo": true,
+  "algo_priority": "Normal"
+}
