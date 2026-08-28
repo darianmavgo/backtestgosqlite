@@ -27,16 +27,6 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/compare ./cmd/compare
 	@echo "Building cmd/millwharf..."
 	$(GOBUILD) -o $(BIN_DIR)/millwharf ./cmd/millwharf
-	@echo "Building cmd/ibkr_analytics..."
-	$(GOBUILD) -o $(BIN_DIR)/ibkr_analytics ./cmd/ibkr_analytics
-	@echo "Building cmd/ibkr_preflight..."
-	$(GOBUILD) -o $(BIN_DIR)/ibkr_preflight ./cmd/ibkr_preflight
-	@echo "Building cmd/ibkr_test_harness..."
-	$(GOBUILD) -o $(BIN_DIR)/ibkr_test_harness ./cmd/ibkr_test_harness
-	@echo "Building cmd/ibkr_live..."
-	$(GOBUILD) -o $(BIN_DIR)/ibkr_live ./cmd/ibkr_live
-	@echo "Building cmd/ibkr_bot..."
-	$(GOBUILD) -o $(BIN_DIR)/ibkr_bot ./cmd/ibkr_bot
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
 
 tidy:
@@ -77,38 +67,6 @@ compare: build
 millwharf: build
 	@echo "Scanning stock universe for longest consistent declines since Jan 1 2026..."
 	./$(BIN_DIR)/millwharf -db data/live_scan.db -start 2026-01-01 -top 25
-
-ibkr: build
-	@echo "Analyzing Interactive Brokers live account portfolio performance..."
-	./$(BIN_DIR)/ibkr_analytics -db /Users/darianhickman/Documents/Income/transactions.db -prices data/ibkr_history.db
-
-ibkr-preflight: build
-	@echo "Running Interactive Brokers pre-flight diagnostics..."
-	./$(BIN_DIR)/ibkr_preflight
-
-ibkr-test: build
-	@echo "Executing $10 complex bracket test order on TECL..."
-	./$(BIN_DIR)/ibkr_test_harness -symbol TECL -amount 10
-
-ibkr-watch:
-	@echo "Watching for Trader Workstation login to automatically submit $10 trade..."
-	.venv/bin/python scripts/ibkr_watch_and_submit.py
-
-ibkr-scan: build
-	@echo "Running 3:50 PM EOD market scan..."
-	./$(BIN_DIR)/ibkr_bot -scan -capital 180000
-
-ibkr-status: build
-	@echo "Checking active live position status..."
-	./$(BIN_DIR)/ibkr_bot -status
-
-ibkr-history: build
-	@echo "Viewing live trade performance history..."
-	./$(BIN_DIR)/ibkr_bot -history
-
-ibkr-gateway:
-	@echo "Launching Interactive Brokers Client Portal Web API Gateway on port 5001..."
-	./scripts/start_ibkr_gateway.sh
 
 clean:
 	@echo "Cleaning binaries..."
