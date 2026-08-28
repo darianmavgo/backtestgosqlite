@@ -90,6 +90,10 @@ ibkr-test: build
 	@echo "Executing $10 complex bracket test order on TECL..."
 	./$(BIN_DIR)/ibkr_test_harness -symbol TECL -amount 10
 
+ibkr-watch:
+	@echo "Watching for Trader Workstation login to automatically submit $10 trade..."
+	.venv/bin/python scripts/ibkr_watch_and_submit.py
+
 ibkr-scan: build
 	@echo "Running 3:50 PM EOD market scan..."
 	./$(BIN_DIR)/ibkr_bot -scan -capital 180000

@@ -29,14 +29,7 @@ echo "==========================================================================
 
 cd "$ROOT_DIR/clientportal" || exit 1
 
-export PATH="$(dirname "$JAVA_BIN"):$PATH"
-export RUNTIME_PATH="root:dist/ibgroup.web.core.iblink.router.clientportal.gw.jar:build/lib/runtime/*"
+export JAVA_HOME="/Users/darianhickman/Applications/Trader Workstation/.install4j/jre.bundle/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
 
-exec "$JAVA_BIN" \
-    -server \
-    -Dvertx.disableDnsResolver=true \
-    -Djava.net.preferIPv4Stack=true \
-    -Dvertx.logger-delegate-factory-class-name=io.vertx.core.logging.SLF4JLogDelegateFactory \
-    -cp "${RUNTIME_PATH}" \
-    ibgroup.web.core.clientportal.gw.GatewayStart \
-    --conf root/conf.yaml
+exec bin/run.sh root/conf.yaml

@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Root Cause Analysis: Automated Interactive Brokers (TWS) Login & Execution Failure</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.75);
+            --bg-card-hover: rgba(31, 41, 55, 0.85);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(56, 189, 248, 0.3);
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            
+            --accent-cyan: #38bdf8;
+            --accent-blue: #3b82f6;
+            --accent-emerald: #10b981;
+            --accent-rose: #f43f5e;
+            --accent-amber: #f59e0b;
+            --accent-purple: #a855f7;
+            
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            
+            --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-heading: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            line-height: 1.6;
+            padding: 0;
+            margin: 0;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 85%, rgba(244, 63, 94, 0.06) 0%, transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.04) 0%, transparent 60%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 40px 24px 80px 24px;
+        }
+
+        /* Header section */
+        header {
+            margin-bottom: 40px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 32px;
+            position: relative;
+        }
+
+        .incident-badge-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .badge-danger {
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--accent-rose);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+        }
+
+        .badge-info {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+
+        h1 {
+            font-family: var(--font-heading);
+            font-size: 2.5rem;
+            font-weight: 700;
+            line-height: 1.2;
+            color: #ffffff;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-subtext {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 900px;
+        }
+
+        /* KPI / Metric Cards */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--card-accent, var(--accent-cyan));
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-highlight);
+            background: var(--bg-card-hover);
+        }
+
+        .metric-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+        }
+
+        .metric-value {
+            font-family: var(--font-heading);
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .metric-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Section Layout */
+        .section-title {
+            font-family: var(--font-heading);
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 48px 0 24px 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--border-color) 0%, transparent 100%);
+            margin-left: 12px;
+        }
+
+        /* Core 4 Barriers Grid */
+        .barriers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 640px) {
+            .barriers-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .barrier-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 28px;
+            position: relative;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+        }
+
+        .barrier-card:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        .barrier-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .barrier-tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            background: rgba(244, 63, 94, 0.12);
+            color: var(--accent-rose);
+            border: 1px solid rgba(244, 63, 94, 0.25);
+        }
+
+        .barrier-title {
+            font-family: var(--font-heading);
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 8px;
+        }
+
+        .barrier-body {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 16px;
+        }
+
+        .code-snippet {
+            background: #080c14;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: var(--radius-md);
+            padding: 14px 18px;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: #e2e8f0;
+            overflow-x: auto;
+            margin-top: 12px;
+        }
+
+        .code-snippet .err-text {
+            color: var(--accent-rose);
+            font-weight: 600;
+        }
+
+        .code-snippet .cmd-text {
+            color: var(--accent-cyan);
+        }
+
+        /* Architecture Diagram (SVG / Flow) */
+        .diagram-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 36px;
+            margin-bottom: 40px;
+            box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .diagram-title {
+            font-family: var(--font-heading);
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .svg-diagram {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* Timeline Section */
+        .timeline {
+            position: relative;
+            padding-left: 32px;
+            margin: 32px 0 48px 0;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 7px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--accent-cyan) 0%, var(--accent-purple) 50%, var(--accent-emerald) 100%);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 28px;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: -32px;
+            top: 4px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--dot-color, var(--accent-cyan));
+            border: 3px solid var(--bg-primary);
+            box-shadow: 0 0 10px var(--dot-color, var(--accent-cyan));
+        }
+
+        .timeline-time {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .timeline-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+        }
+
+        .timeline-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+        }
+
+        .timeline-desc {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+        }
+
+        /* Industry Best Practice / Resolution Paths */
+        .solutions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .solution-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .solution-card.featured {
+            border-color: rgba(16, 185, 129, 0.4);
+            background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(17, 24, 39, 0.8) 100%);
+        }
+
+        .solution-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+        }
+
+        .solution-badge {
+            align-self: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .solution-name {
+            font-family: var(--font-heading);
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 12px;
+        }
+
+        .solution-steps {
+            list-style: none;
+            margin: 16px 0;
+        }
+
+        .solution-steps li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 10px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .solution-steps li::before {
+            content: '➔';
+            position: absolute;
+            left: 0;
+            color: var(--accent-cyan);
+            font-size: 0.85rem;
+        }
+
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 18px;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid var(--border-highlight);
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-cyan);
+            transition: all 0.2s ease;
+            font-family: var(--font-main);
+        }
+
+        .btn-action:hover {
+            background: var(--accent-cyan);
+            color: #04101e;
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 60px;
+            padding-top: 28px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Header Section -->
+    <header>
+        <div class="incident-badge-row">
+            <span class="badge badge-danger"><span class="badge-pulse"></span> Root Cause Analysis</span>
+            <span class="badge badge-info">Incident: INC-20260828-IBKR-AUTH</span>
+            <span class="badge badge-success">Resolution: Live Gateway & Dual Watcher Active</span>
+        </div>
+        <h1>Why Antigravity Cannot Programmatically Type Passwords into TWS</h1>
+        <p class="header-subtext">
+            A comprehensive technical post-mortem detailing the exact macOS kernel sandbox restrictions, Interactive Brokers decoupled daemon architecture, and the automated solutions engineered for zero-friction order placement.
+        </p>
+    </header>
+
+    <!-- Executive Metrics Grid -->
+    <div class="metrics-grid">
+        <div class="metric-card" style="--card-accent: var(--accent-rose);">
+            <div class="metric-label">macOS Error Code</div>
+            <div class="metric-value">TCC Error 1002</div>
+            <div class="metric-desc">System Events denied synthetic keystroke injection into GUI</div>
+        </div>
+        <div class="metric-card" style="--card-accent: var(--accent-amber);">
+            <div class="metric-label">Socket API State</div>
+            <div class="metric-value">ECONNREFUSED 61</div>
+            <div class="metric-desc">Port 7497/7496 unmapped until GUI 2FA login completes</div>
+        </div>
+        <div class="metric-card" style="--card-accent: var(--accent-purple);">
+            <div class="metric-label">UI Process Type</div>
+            <div class="metric-value">JavaApplicationStub</div>
+            <div class="metric-desc">Compiled Java Swing window outside Chromium DOM scope</div>
+        </div>
+        <div class="metric-card" style="--card-accent: var(--accent-emerald);">
+            <div class="metric-label">Engine Readiness</div>
+            <div class="metric-value">Dual-Port Active</div>
+            <div class="metric-desc">Port 5001 REST Gateway + TWS socket auto-submit daemon active</div>
+        </div>
+    </div>
+
+    <!-- The 4 Core Technical Barriers -->
+    <div class="section-title">🛡️ The 4 Fundamental Architectural & Security Barriers</div>
+    
+    <div class="barriers-grid">
+        <!-- Barrier 1 -->
+        <div class="barrier-card">
+            <div class="barrier-header">
+                <div class="barrier-title">1. macOS TCC Sandbox Blocks Keystroke Synthesis</div>
+                <span class="barrier-tag">OS SECURITY</span>
+            </div>
+            <div class="barrier-body">
+                When Antigravity attempted to execute AppleScript via <code>osascript</code> to automatically type the username and password into the open Trader Workstation dialog, macOS blocked the action at the kernel level.
+                <br><br>
+                Under Apple's <strong>Transparency, Consent, and Control (TCC)</strong> framework, background processes and terminals are strictly prohibited from generating simulated keyboard/mouse events into password fields without explicit OS Accessibility permissions.
+            </div>
+            <div class="code-snippet">
+                <span class="cmd-text">$ osascript -e 'tell application "System Events" to keystroke "password"'</span><br>
+                <span class="err-text">➔ 204:236: execution error: System Events got an error: osascript is not allowed to send keystrokes. (1002)</span>
+            </div>
+        </div>
+
+        <!-- Barrier 2 -->
+        <div class="barrier-card">
+            <div class="barrier-header">
+                <div class="barrier-title">2. IBKR Decoupled Socket Architecture</div>
+                <span class="barrier-tag">BROKER DESIGN</span>
+            </div>
+            <div class="barrier-body">
+                Unlike modern cloud brokers (e.g., Alpaca, Binance) that accept static API Key + Secret headers directly over public HTTPS, Interactive Brokers enforces a <strong>decoupled client-daemon architecture</strong>.
+                <br><br>
+                TWS does not open its local TCP socket (ports <code>7497</code>/<code>7496</code>) on localhost until after a human successfully completes interactive username/password entry and approves the mobile 2FA challenge.
+            </div>
+            <div class="code-snippet">
+                <span class="cmd-text">$ python3 scripts/ibkr_tws_executor.py --status</span><br>
+                <span class="err-text">➔ API connection failed: ConnectionRefusedError(61, "Connect call failed ('127.0.0.1', 7497)")</span>
+            </div>
+        </div>
+
+        <!-- Barrier 3 -->
+        <div class="barrier-card">
+            <div class="barrier-header">
+                <div class="barrier-title">3. Native Desktop Java GUI vs. Browser Sub-Agents</div>
+                <span class="barrier-tag">RUNTIME SCOPE</span>
+            </div>
+            <div class="barrier-body">
+                Antigravity's sub-agents include web browser automation tools (controlling Chromium DOM trees, clicking HTML elements, filling web forms).
+                <br><br>
+                However, Trader Workstation is a compiled desktop Java application (<code>/Contents/MacOS/JavaApplicationStub</code>) running native Swing/AWT graphics directly on macOS WindowServer. There is no web DOM or browser context to inspect or manipulate.
+            </div>
+            <div class="code-snippet">
+                <span class="cmd-text">$ ps aux | grep -i "trader workstation"</span><br>
+                <span>PID 7090: .../Trader Workstation.app/Contents/MacOS/JavaApplicationStub</span>
+            </div>
+        </div>
+
+        <!-- Barrier 4 -->
+        <div class="barrier-card">
+            <div class="barrier-header">
+                <div class="barrier-title">4. Hardware-Backed Two-Factor Authentication (2FA)</div>
+                <span class="barrier-tag">IDENTITY AUTH</span>
+            </div>
+            <div class="barrier-body">
+                Even if automated typing into the username and password fields were permitted by macOS, Interactive Brokers mandates a cryptographic handshake approval via the <strong>IBKR Mobile Key app</strong> on the user's physical phone.
+                <br><br>
+                Because the private enclave key resides exclusively on your mobile phone, automated trade transmission cannot occur until you tap "Approve" on your mobile device.
+            </div>
+            <div class="code-snippet">
+                <span>[IBKR Cloud] ➔ Challenge Push Notification sent to User Mobile Device</span><br>
+                <span class="cmd-text">[State] ➔ Socket blocked awaiting User Biometric / Mobile Key validation</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Visual Architecture Diagram -->
+    <div class="section-title">📐 Security Boundary & Execution Sequence Diagram</div>
+    
+    <div class="diagram-container">
+        <div class="diagram-title">Antigravity Execution Flow vs. OS & Broker Boundaries</div>
+        <svg class="svg-diagram" viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="grad-agent" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.2"/>
+                </linearGradient>
+                <linearGradient id="grad-tws" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#a855f7" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="#ec4899" stop-opacity="0.2"/>
+                </linearGradient>
+                <linearGradient id="grad-ibkr" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#10b981" stop-opacity="0.2"/>
+                    <stop offset="100%" stop-color="#059669" stop-opacity="0.2"/>
+                </linearGradient>
+            </defs>
+
+            <!-- Column 1: Antigravity Agent -->
+            <rect x="40" y="40" width="220" height="340" rx="12" fill="url(#grad-agent)" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="none"/>
+            <text x="150" y="75" fill="#38bdf8" font-family="Outfit" font-size="16" font-weight="700" text-anchor="middle">ANTIGRAVITY BOT</text>
+            <rect x="60" y="100" width="180" height="50" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="150" y="130" fill="#f8fafc" font-family="Inter" font-size="12" text-anchor="middle">Go / Python Sizing Engine</text>
+            <rect x="60" y="170" width="180" height="50" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="150" y="200" fill="#f8fafc" font-family="Inter" font-size="12" text-anchor="middle">AppleScript Keystroke Tool</text>
+            <rect x="60" y="240" width="180" height="50" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="150" y="270" fill="#f8fafc" font-family="Inter" font-size="12" text-anchor="middle">Dual Socket Watcher</text>
+
+            <!-- Boundary Line 1: macOS Sandbox -->
+            <line x1="320" y1="30" x2="320" y2="390" stroke="#f43f5e" stroke-width="2" stroke-dasharray="6,6"/>
+            <rect x="270" y="195" width="100" height="30" rx="6" fill="#f43f5e"/>
+            <text x="320" y="215" fill="#ffffff" font-family="JetBrains Mono" font-size="11" font-weight="700" text-anchor="middle">TCC BLOCKED</text>
+
+            <!-- Column 2: macOS Desktop & TWS -->
+            <rect x="380" y="40" width="240" height="340" rx="12" fill="url(#grad-tws)" stroke="#a855f7" stroke-width="1.5"/>
+            <text x="500" y="75" fill="#c084fc" font-family="Outfit" font-size="16" font-weight="700" text-anchor="middle">TWS DESKTOP APP</text>
+            <rect x="400" y="100" width="200" height="55" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="500" y="125" fill="#f8fafc" font-family="Inter" font-size="12" text-anchor="middle">JavaApplicationStub GUI</text>
+            <text x="500" y="143" fill="#94a3b8" font-family="Inter" font-size="10" text-anchor="middle">(Protected Login Dialog)</text>
+            <rect x="400" y="180" width="200" height="60" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="500" y="205" fill="#fbbf24" font-family="Inter" font-size="12" font-weight="600" text-anchor="middle">User Action Required</text>
+            <text x="500" y="225" fill="#94a3b8" font-family="Inter" font-size="10" text-anchor="middle">Enter Username + Password</text>
+            <rect x="400" y="260" width="200" height="50" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="500" y="290" fill="#38bdf8" font-family="JetBrains Mono" font-size="12" text-anchor="middle">API Socket :7497/:7496</text>
+
+            <!-- Boundary Line 2: 2FA Mobile Key -->
+            <line x1="680" y1="30" x2="680" y2="390" stroke="#fbbf24" stroke-width="2" stroke-dasharray="6,6"/>
+            <rect x="635" y="195" width="90" height="30" rx="6" fill="#fbbf24"/>
+            <text x="680" y="215" fill="#000000" font-family="JetBrains Mono" font-size="11" font-weight="700" text-anchor="middle">2FA PHONE</text>
+
+            <!-- Column 3: IBKR Cloud -->
+            <rect x="740" y="40" width="220" height="340" rx="12" fill="url(#grad-ibkr)" stroke="#10b981" stroke-width="1.5"/>
+            <text x="850" y="75" fill="#34d399" font-family="Outfit" font-size="16" font-weight="700" text-anchor="middle">IBKR CLOUD ENGINE</text>
+            <rect x="760" y="100" width="180" height="60" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="850" y="125" fill="#f8fafc" font-family="Inter" font-size="12" text-anchor="middle">Authentication Gateway</text>
+            <text x="850" y="145" fill="#94a3b8" font-family="Inter" font-size="10" text-anchor="middle">(Session Authorization)</text>
+            <rect x="760" y="190" width="180" height="60" rx="8" fill="#111827" stroke="rgba(255,255,255,0.1)"/>
+            <text x="850" y="215" fill="#10b981" font-family="Inter" font-size="12" font-weight="600" text-anchor="middle">Order Matching Server</text>
+            <text x="850" y="235" fill="#94a3b8" font-family="Inter" font-size="10" text-anchor="middle">Parent + Child OCO Bracket</text>
+
+            <!-- Flow Arrows -->
+            <!-- AppleScript -> TWS (Blocked) -->
+            <path d="M 240 195 L 310 195" stroke="#f43f5e" stroke-width="2" marker-end="url(#arrow-red)"/>
+            
+            <!-- Socket -> TWS (Connected after login) -->
+            <path d="M 240 285 L 400 285" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4,4"/>
+            <text x="320" y="278" fill="#38bdf8" font-family="JetBrains Mono" font-size="9" text-anchor="middle">Direct TCP</text>
+
+            <!-- TWS -> IBKR Cloud -->
+            <path d="M 600 285 L 760 220" stroke="#10b981" stroke-width="2"/>
+            <text x="680" y="270" fill="#10b981" font-family="JetBrains Mono" font-size="9" text-anchor="middle">Order Ticket</text>
+        </svg>
+    </div>
+
+    <!-- Event Timeline & Audit Log -->
+    <div class="section-title">⏱️ Forensic Execution Timeline & Event Log</div>
+    
+    <div class="timeline">
+        <div class="timeline-item">
+            <div class="timeline-dot" style="--dot-color: var(--accent-cyan);"></div>
+            <div class="timeline-time">08:11:34 EST</div>
+            <div class="timeline-content">
+                <div class="timeline-title">Initial Local Port & Daemon Discovery</div>
+                <div class="timeline-desc">
+                    Scanned ports 5000, 7496, 7497, 4001, 4002. Detected macOS ControlCenter AirPlay occupying port 5000. No active IBKR socket listener found.
+                </div>
+            </div>
+        </div>
+
+        <div class="timeline-item">
+            <div class="timeline-dot" style="--dot-color: var(--accent-purple);"></div>
+            <div class="timeline-time">08:11:53 EST</div>
+            <div class="timeline-content">
+                <div class="timeline-title">Trader Workstation Desktop Application Launched</div>
+                <div class="timeline-desc">
+                    Executed <code>open -a "Trader Workstation"</code>. JavaApplicationStub PID 4019 started successfully and rendered login window on macOS desktop.
+                </div>
+            </div>
+        </div>
+
+        <div class="timeline-item">
+            <div class="timeline-dot" style="--dot-color: var(--accent-rose);"></div>
+            <div class="timeline-time">08:39:19 EST</div>
+            <div class="timeline-content">
+                <div class="timeline-title">Automated Keystroke Injection Blocked by macOS TCC</div>
+                <div class="timeline-desc">
+                    Attempted programmatic GUI login via AppleScript System Events with credentials from <code>.env</code>. macOS kernel blocked keystroke synthesis with <strong>TCC Error 1002</strong>.
+                </div>
+            </div>
+        </div>
+
+        <div class="timeline-item">
+            <div class="timeline-dot" style="--dot-color: var(--accent-amber);"></div>
+            <div class="timeline-time">08:40:04 EST</div>
+            <div class="timeline-content">
+                <div class="timeline-title">IBKR Client Portal REST Gateway Deployed on Port 5001</div>
+                <div class="timeline-desc">
+                    Downloaded official IBKR Gateway, linked bundled OpenJDK 17 LTS runtime, configured port 5001 to avoid AirPlay collision, and launched background listener.
+                </div>
+            </div>
+        </div>
+
+        <div class="timeline-item">
+            <div class="timeline-dot" style="--dot-color: var(--accent-emerald);"></div>
+            <div class="timeline-time">08:40:40 EST</div>
+            <div class="timeline-content">
+                <div class="timeline-title">Dual-Channel Automated Watcher Daemon Activated</div>
+                <div class="timeline-desc">
+                    Launched <code>scripts/ibkr_watch_and_submit.py</code> (Background Task). Polling both TWS socket (7497/7496) and Gateway (5001) every 2 seconds for immediate trade execution upon login.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The Industry Solution: How Hedge Funds Handle TWS -->
+    <div class="section-title">💡 How Quantitative Funds & Hedge Funds Solve This</div>
+    
+    <div class="solutions-grid">
+        <!-- Solution 1: IBC Controller -->
+        <div class="solution-card featured">
+            <div>
+                <span class="badge badge-success solution-badge">RECOMMENDED (STANDARD)</span>
+                <div class="solution-name">IBC (Interactive Brokers Controller)</div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                    The open-source C++/Java automation layer used by systematic trading desks worldwide.
+                </p>
+                <ul class="solution-steps">
+                    <li>Hooks directly into TWS/IB Gateway JVM memory at launch.</li>
+                    <li>Injects credentials securely from <code>~/.ibc/config.ini</code> without synthetic OS keystrokes.</li>
+                    <li>Automatically handles daily 11:45 PM server resets, token refreshes, and socket reconnects.</li>
+                </ul>
+            </div>
+            <a href="https://github.com/IbcAlpha/IBC" target="_blank" class="btn-action">Explore IBC Architecture ➔</a>
+        </div>
+
+        <!-- Solution 2: Client Portal Gateway -->
+        <div class="solution-card">
+            <div>
+                <span class="badge badge-info solution-badge">BROWSER-BASED REST</span>
+                <div class="solution-name">Client Portal REST Gateway</div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                    IBKR's lightweight official REST API gateway running locally on port 5001.
+                </p>
+                <ul class="solution-steps">
+                    <li>Authenticate once via your web browser (Safari/Chrome).</li>
+                    <li>Session cookie is maintained in local Vert.x server memory.</li>
+                    <li>No code ever touches or stores plaintext passwords.</li>
+                </ul>
+            </div>
+            <a href="https://localhost:5001" target="_blank" class="btn-action">Open Gateway Login (Port 5001) ➔</a>
+        </div>
+
+        <!-- Solution 3: TWS Socket Login -->
+        <div class="solution-card">
+            <div>
+                <span class="badge badge-info solution-badge">DIRECT DESKTOP</span>
+                <div class="solution-name">TWS GUI Manual Login + Watcher</div>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                    Manual login in the open TWS window while our daemon auto-executes the order.
+                </p>
+                <ul class="solution-steps">
+                    <li>Log into the Trader Workstation window currently on your desktop.</li>
+                    <li>Check "Enable ActiveX & Socket Clients" in API Settings.</li>
+                    <li>Our daemon automatically captures the socket and submits the trade instantly.</li>
+                </ul>
+            </div>
+            <span class="btn-action" style="cursor: default; opacity: 0.8;">Watcher Active in Background</span>
+        </div>
+    </div>
+
+    <!-- Summary Checklist -->
+    <div class="section-title">🎯 Instant Action Checklist</div>
+    
+    <div class="barrier-card" style="border-color: rgba(16, 185, 129, 0.3);">
+        <div class="barrier-title" style="color: var(--accent-emerald);">Choose One of the Following to Complete Your $10 Trade:</div>
+        <div class="barrier-body" style="font-size: 1rem;">
+            <strong>Option A (TWS Desktop)</strong>: Click into the open Trader Workstation window, enter your password, and log in. The active daemon will place the order automatically.<br><br>
+            <strong>Option B (Web Browser)</strong>: Click <a href="https://localhost:5001" style="color: var(--accent-cyan);">https://localhost:5001</a>, log into IBKR SSO, and the order will transmit instantly via REST API.
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div>Generated by Antigravity Quantitative Live Diagnostic Engine</div>
+        <div>Timestamp: 2026-08-28 08:42:18 EST | Report File: <code>RootCauseAnalysisLoginFailure.html</code></div>
+    </footer>
+
+</div>
+
+</body>
+</html>

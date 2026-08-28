@@ -70,6 +70,28 @@ func LoadConfig(configPath string) (*IBKRConfig, error) {
 		_ = json.Unmarshal(data, &cfg)
 	}
 
+	// Read .env if present
+	if envData, err := os.ReadFile(".env"); err == nil {
+		lines := strings.Split(string(envData), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+				if k == "IBKR_ACCOUNT_ID" && cfg.AccountID == "YOUR_IBKR_ACCOUNT_ID" {
+					cfg.AccountID = v
+				}
+				if k == "IBKR_GATEWAY_URL" {
+					cfg.ClientPortalURL = v
+				}
+			}
+		}
+	}
+
 	// Environment variable overrides
 	if envAcct := os.Getenv("IBKR_ACCOUNT_ID"); envAcct != "" {
 		cfg.AccountID = envAcct
