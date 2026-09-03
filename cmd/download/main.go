@@ -140,19 +140,36 @@ func main() {
 	}
 
 	now := time.Now().UTC()
-	start := now.AddDate(-*years, 0, 0)
+	defaultStart := now.AddDate(-*years, 0, 0)
 	end := now
 
-	fmt.Printf("Downloading %s bars from %s to %s for %d symbols using %s...\n\n",
-		*timeframe, start.Format("2006-01-02"), end.Format("2006-01-02"), len(symbols), primarySource.Name())
+	fmt.Printf("Downloading %s bars ending %s for %d symbols using %s...\n\n",
+		*timeframe, end.Format("2006-01-02"), len(symbols), primarySource.Name())
 
 	totalBars := 0
 	successfulSymbols := 0
 
 	for idx, sym := range symbols {
+		// Calculate delta update start date by querying DB for symbol's last date
+		symStart := defaultStart
+		var lastDateStr string
+		err := db.QueryRow("SELECT MAX(substr(Date, 1, 10)) FROM "+*targetTable+" WHERE symbol = ?", sym).Scan(&lastDateStr)
+		if err == nil && lastDateStr != "" {
+			if parsed, err := time.Parse("2006-01-02", lastDateStr); err == nil {
+				// We already have data up to `parsed`. Start downloading from the next day.
+				symStart = parsed.AddDate(0, 0, 1)
+			}
+		}
+
+		if symStart.After(end) {
+			fmt.Printf("[%d/%d] %-6s : Data is already up-to-date (Last: %s)\n", idx+1, len(symbols), sym, lastDateStr)
+			successfulSymbols++
+			continue
+		}
+
 		req := datasource.FetchRequest{
 			Symbol:    sym,
-			StartDate: start,
+			StartDate: symStart,
 			EndDate:   end,
 			Timeframe: *timeframe,
 		}

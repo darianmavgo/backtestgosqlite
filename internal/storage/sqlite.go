@@ -317,6 +317,61 @@ func EnsureTradeTable(db *sqlx.DB) error {
 	return err
 }
 
+// SavePendingSignals creates a shared mailbox DB for external execution bots and inserts pending signals.
+func SavePendingSignals(dbPath string, signals []models.Signal) error {
+	if len(signals) == 0 {
+		return nil
+	}
+
+	db, err := sqlx.Open("sqlite3", dbPath+"?_journal_mode=WAL")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	schema := `
+	CREATE TABLE IF NOT EXISTS signals (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		symbol TEXT NOT NULL,
+		date TEXT NOT NULL,
+		buy_limit REAL NOT NULL,
+		order_type TEXT NOT NULL,
+		status TEXT DEFAULT 'PENDING'
+	);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Preparex(`
+		INSERT INTO signals (symbol, date, buy_limit, order_type, status)
+		VALUES (?, ?, ?, ?, 'PENDING')
+	`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+
+	for _, s := range signals {
+		oType := s.OrderType
+		if oType == "" {
+			oType = "limit"
+		}
+		if _, err := stmt.Exec(s.Symbol, s.Date, s.BuyLimit, oType); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // SaveTrades persists completed simulation trades to the database.
 func SaveTrades(db *sqlx.DB, strategyID string, trades []models.Trade) error {
 	if len(trades) == 0 {

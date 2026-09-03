@@ -193,6 +193,24 @@ func main() {
 			len(signals), len(barsBySymbol), len(sortedDates))
 	}
 
+	// Export pending signals to a shared database for Option A (Mailbox)
+	if len(sortedDates) > 0 {
+		lastDate := sortedDates[len(sortedDates)-1]
+		var recentSignals []models.Signal
+		for _, s := range signals {
+			if s.Date >= lastDate {
+				recentSignals = append(recentSignals, s)
+			}
+		}
+		if len(recentSignals) > 0 {
+			if err := storage.SavePendingSignals("data/live_signals.db", recentSignals); err != nil {
+				log.Printf("Warning: Failed to export pending signals to shared mailbox: %v", err)
+			} else {
+				fmt.Printf("📬 Exported %d pending signals for %s to data/live_signals.db\n", len(recentSignals), lastDate)
+			}
+		}
+	}
+
 	sim := simulator.NewPortfolioSimulator(cfg, *capital)
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
 
