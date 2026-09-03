@@ -302,3 +302,9 @@ backtestgosqlite/
 - **Market Data Feeds**: Standard CSV Import, Yahoo Finance Chart API, Stooq
 - **Broker Execution**: Alpaca Trade API Go SDK
 - **Frontend**: HTML5, Vanilla CSS, Vanilla JavaScript, Chart.js, Tablewriter
+
+---
+
+## 🔮 Future Architecture Proposals
+
+For future improvements regarding report organization, historical data storage, and signal sharing with external execution suites (`trading_schwab`, `ibkr_personal`), please see [ARCHITECTURE_PROPOSALS.md](ARCHITECTURE_PROPOSALS.md).
