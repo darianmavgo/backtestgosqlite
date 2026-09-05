@@ -381,42 +381,8 @@ func runSingleSimulation(
 	timeExits := 0
 
 	for i := params.DeclineStreakDays; i < len(signalBars); i++ {
-		// 1. Check Decline Streak of length N
-		isStreak := true
-		for s := 0; s < params.DeclineStreakDays; s++ {
-			if signalBars[i-s].Close >= signalBars[i-s-1].Close {
-				isStreak = false
-				break
-			}
-		}
-		if !isStreak {
-			continue
-		}
-
-		// 2. Check 200 SMA Gate
-		curr := signalBars[i]
-		if params.RequireSMA200 && curr.Close < curr.SMA200 {
-			continue
-		}
-
-		// 3. Check Green Reversal Day Confirmation
-		entryDateIndex := i
-		if params.RequireGreenDay {
-			confirmed := false
-			for look := i; look < i+5 && look < len(signalBars); look++ {
-				cand := signalBars[look]
-				if cand.Close > cand.Open || cand.Close > cand.PrevClose {
-					entryDateIndex = look
-					confirmed = true
-					break
-				}
-			}
-			if !confirmed {
-				continue
-			}
-		}
-
-		if entryDateIndex >= len(signalBars) {
+		valid, entryDateIndex := evaluateEntrySignal(signalBars, i, params)
+		if !valid {
 			continue
 		}
 
@@ -437,51 +403,7 @@ func runSingleSimulation(
 			shares = 1
 		}
 
-		targetPrice := 999999.0
-		if params.TakeProfitPct > 0 {
-			targetPrice = entryPrice * (1.0 + params.TakeProfitPct)
-		}
-
-		stopPrice := 0.0
-		if params.StopLossPct > 0 {
-			stopPrice = entryPrice * (1.0 - params.StopLossPct)
-		}
-
-		exitIdx := tradeIdx + params.HoldDays
-		if exitIdx >= len(tradeBars) {
-			exitIdx = len(tradeBars) - 1
-		}
-
-		actualExitIdx := exitIdx
-		actualExitPrice := tradeBars[actualExitIdx].Close
-		targetHit := false
-		stopHit := false
-
-		for d := tradeIdx + 1; d <= exitIdx; d++ {
-			dayBar := tradeBars[d]
-
-			// Check Stop Loss First
-			if params.StopLossPct > 0 && dayBar.Low <= stopPrice {
-				actualExitIdx = d
-				actualExitPrice = stopPrice
-				if dayBar.Open < stopPrice {
-					actualExitPrice = dayBar.Open // gap down
-				}
-				stopHit = true
-				break
-			}
-
-			// Check Take Profit
-			if params.TakeProfitPct > 0 && dayBar.High >= targetPrice {
-				actualExitIdx = d
-				actualExitPrice = targetPrice
-				if dayBar.Open > targetPrice {
-					actualExitPrice = dayBar.Open // gap up
-				}
-				targetHit = true
-				break
-			}
-		}
+		actualExitIdx, actualExitPrice, targetHit, stopHit := simulateTrade(tradeBars, tradeIdx, params, entryPrice)
 
 		if targetHit {
 			targetHits++
@@ -512,6 +434,103 @@ func runSingleSimulation(
 		inPositionUntil = actualExitIdx
 	}
 
+	return calculateGridResult(params, tradePnLs, tradeReturns, tradeHoldDays, wins, losses, grossGains, grossLosses, targetHits, stopHits, timeExits, initialCapital)
+}
+
+func evaluateEntrySignal(signalBars []SignalBar, i int, params ParamSet) (bool, int) {
+	// 1. Check Decline Streak of length N
+	isStreak := true
+	for s := 0; s < params.DeclineStreakDays; s++ {
+		if signalBars[i-s].Close >= signalBars[i-s-1].Close {
+			isStreak = false
+			break
+		}
+	}
+	if !isStreak {
+		return false, 0
+	}
+
+	// 2. Check 200 SMA Gate
+	curr := signalBars[i]
+	if params.RequireSMA200 && curr.Close < curr.SMA200 {
+		return false, 0
+	}
+
+	// 3. Check Green Reversal Day Confirmation
+	entryDateIndex := i
+	if params.RequireGreenDay {
+		confirmed := false
+		for look := i; look < i+5 && look < len(signalBars); look++ {
+			cand := signalBars[look]
+			if cand.Close > cand.Open || cand.Close > cand.PrevClose {
+				entryDateIndex = look
+				confirmed = true
+				break
+			}
+		}
+		if !confirmed {
+			return false, 0
+		}
+	}
+
+	if entryDateIndex >= len(signalBars) {
+		return false, 0
+	}
+
+	return true, entryDateIndex
+}
+
+func simulateTrade(tradeBars []BarData, tradeIdx int, params ParamSet, entryPrice float64) (int, float64, bool, bool) {
+	targetPrice := 999999.0
+	if params.TakeProfitPct > 0 {
+		targetPrice = entryPrice * (1.0 + params.TakeProfitPct)
+	}
+
+	stopPrice := 0.0
+	if params.StopLossPct > 0 {
+		stopPrice = entryPrice * (1.0 - params.StopLossPct)
+	}
+
+	exitIdx := tradeIdx + params.HoldDays
+	if exitIdx >= len(tradeBars) {
+		exitIdx = len(tradeBars) - 1
+	}
+
+	actualExitIdx := exitIdx
+	actualExitPrice := tradeBars[actualExitIdx].Close
+	targetHit := false
+	stopHit := false
+
+	for d := tradeIdx + 1; d <= exitIdx; d++ {
+		dayBar := tradeBars[d]
+
+		// Check Stop Loss First
+		if params.StopLossPct > 0 && dayBar.Low <= stopPrice {
+			actualExitIdx = d
+			actualExitPrice = stopPrice
+			if dayBar.Open < stopPrice {
+				actualExitPrice = dayBar.Open // gap down
+			}
+			stopHit = true
+			break
+		}
+
+		// Check Take Profit
+		if params.TakeProfitPct > 0 && dayBar.High >= targetPrice {
+			actualExitIdx = d
+			actualExitPrice = targetPrice
+			if dayBar.Open > targetPrice {
+				actualExitPrice = dayBar.Open // gap up
+			}
+			targetHit = true
+			break
+		}
+	}
+
+	return actualExitIdx, actualExitPrice, targetHit, stopHit
+}
+
+func calculateGridResult(params ParamSet, tradePnLs []float64, tradeReturns []float64, tradeHoldDays []int, wins int, losses int, grossGains float64, grossLosses float64, targetHits int, stopHits int, timeExits int, initialCapital float64) GridResult {
 	totalTrades := len(tradePnLs)
 	if totalTrades == 0 {
 		return GridResult{Params: params}
