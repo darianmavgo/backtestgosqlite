@@ -1,6 +1,6 @@
 module github.com/darianmavgo/backtestgosqlite
 
-go 1.18
+go 1.26.1
 
 require (
 	cloud.google.com/go/storage v1.23.0
@@ -16,7 +16,10 @@ require (
 	xorm.io/xorm v1.3.1
 )
 
-require github.com/mattn/go-runewidth v0.0.2 // indirect
+require (
+	github.com/darianmavgo/schwaber v0.0.0-00010101000000-000000000000 // indirect
+	github.com/mattn/go-runewidth v0.0.2 // indirect
+)
 
 require (
 	cloud.google.com/go v0.102.1 // indirect
@@ -35,12 +38,12 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/mattn/go-sqlite3 v1.14.12
+	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/oauth2 v0.0.0-20220622183110-fd043fe589d2 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.0.0-20220624220833-87e55d714810 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
@@ -50,3 +53,5 @@ require (
 	google.golang.org/protobuf v1.28.0 // indirect
 	xorm.io/builder v0.3.11-0.20220531020008-1bd24a7dc978 // indirect
 )
+
+replace github.com/darianmavgo/schwaber => ../schwaber
