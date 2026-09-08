@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download ui server compare example-csv list millwharf
+.PHONY: all build clean test tidy backtest download ui server compare example-csv list
 
 # Go Parameters
 GOCMD=go
@@ -25,8 +25,6 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/server ./cmd/server
 	@echo "Building cmd/compare..."
 	$(GOBUILD) -o $(BIN_DIR)/compare ./cmd/compare
-	@echo "Building cmd/millwharf..."
-	$(GOBUILD) -o $(BIN_DIR)/millwharf ./cmd/millwharf
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
 
 tidy:
@@ -63,10 +61,6 @@ server: build
 compare: build
 	@echo "Running side-by-side strategy benchmark comparison..."
 	./$(BIN_DIR)/compare -db data/wc_master_backtest.db -capital 100000
-
-millwharf: build
-	@echo "Scanning stock universe for longest consistent declines since Jan 1 2026..."
-	./$(BIN_DIR)/millwharf -db data/live_scan.db -start 2026-01-01 -top 25
 
 clean:
 	@echo "Cleaning binaries..."
