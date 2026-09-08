@@ -1,1 +1,0 @@
-go run ~/Documents/runsql/runsql.go ~/Documents/wc_study/history.db

@@ -33,8 +33,8 @@ data/*.sqlite-wal
 !data/README.md
 
 # Secrets, Tokens, and Live Configurations
-configs/config.json
-!configs/config.example.json
+config/config.json
+!config/config.example.json
 gae/go/config.json
 gae/go/PAPER/config.json
 *.secret
@@ -46,7 +46,7 @@ gae/go/PAPER/config.json
 **/stock-*.json
 **/service-account.json
 **/wc2022_gae_default.secret
-configs/config.local.json
+config/config.local.json
 
 # Generated Reports & HTML Dashboards
 reports/*.html
