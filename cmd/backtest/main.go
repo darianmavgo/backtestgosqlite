@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/olekukonko/tablewriter"
@@ -15,6 +16,16 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
+
+type runResult struct {
+	strat       strategy.Strategy
+	report      models.PerformanceReport
+	trades      []models.Trade
+	equityCurve []models.DailyEquityPoint
+	dbPath      string
+	signalCount int
+	err         error
+}
 
 func printPerformanceTearSheet(strategyName string, report models.PerformanceReport) {
 	fmt.Printf("\n========================================================================================\n")
@@ -113,10 +124,151 @@ func listStrategies() {
 	fmt.Printf("\nRun any strategy with: ./bin/backtest -strategy <ID>\n\n")
 }
 
+func printTradesTable(trades []models.Trade, symbolFilter string) {
+	if len(trades) == 0 {
+		return
+	}
+	fmt.Printf("\nCompleted Trades for Simulation (Total: %d):\n", len(trades))
+	tTable := tablewriter.NewWriter(os.Stdout)
+	tTable.SetHeader([]string{"ID", "Symbol", "Entry Date", "Entry $", "Exit Date", "Exit $", "Hold Days", "Exit Reason", "Net PnL", "Return %"})
+	tTable.SetBorder(true)
+
+	startIdx := 0
+	if symbolFilter == "" && len(trades) > 20 {
+		startIdx = len(trades) - 20
+	}
+
+	for _, t := range trades[startIdx:] {
+		tTable.Append([]string{
+			fmt.Sprintf("%d", t.ID),
+			t.Symbol,
+			t.EntryDate,
+			fmt.Sprintf("$%.2f", t.EntryPrice),
+			t.ExitDate,
+			fmt.Sprintf("$%.2f", t.ExitPrice),
+			fmt.Sprintf("%d", t.HoldDays),
+			string(t.ExitReason),
+			fmt.Sprintf("$%.2f", t.NetPnL),
+			fmt.Sprintf("%.2f%%", t.ReturnPct*100),
+		})
+	}
+	tTable.Render()
+}
+
+func printComparisonTable(results []runResult) {
+	fmt.Printf("\n========================================================================================================================\n")
+	fmt.Printf("📊 MULTI-STRATEGY CONCURRENT BENCHMARK COMPARISON\n")
+	fmt.Printf("========================================================================================================================\n")
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"Strategy ID", "Name", "Total Return", "CAGR", "Sharpe", "Max Drawdown", "Win Rate", "Trades", "SQLite Results File"})
+	table.SetBorder(true)
+	table.SetAutoWrapText(false)
+
+	for _, r := range results {
+		if r.err != nil {
+			table.Append([]string{r.strat.ID(), r.strat.Name(), "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "0", "N/A"})
+			continue
+		}
+		table.Append([]string{
+			r.strat.ID(),
+			r.strat.Name(),
+			fmt.Sprintf("%.2f%%", r.report.TotalReturnPct*100),
+			fmt.Sprintf("%.2f%%", r.report.CAGR*100),
+			fmt.Sprintf("%.2f", r.report.SharpeRatio),
+			fmt.Sprintf("%.2f%%", r.report.MaxDrawdownPct*100),
+			fmt.Sprintf("%.2f%%", r.report.WinRate*100),
+			fmt.Sprintf("%d", r.report.TotalTrades),
+			r.dbPath,
+		})
+	}
+	table.Render()
+}
+
+func buildConfig(s strategy.Strategy, stopLoss, profitTarget float64, holdWindow, maxPositions int) strategy.StrategyConfig {
+	cfg := s.DefaultConfig()
+	if stopLoss > 0 {
+		cfg.StopLossPct = stopLoss
+	}
+	if profitTarget > 0 {
+		cfg.TargetPct = profitTarget
+	}
+	if holdWindow > 0 {
+		cfg.HoldingWindow = holdWindow
+	}
+	if maxPositions > 0 {
+		cfg.PositionCap = maxPositions
+	}
+	return cfg
+}
+
+func executeStrategy(
+	strat strategy.Strategy,
+	cfg strategy.StrategyConfig,
+	barsBySymbol map[string][]models.Bar,
+	sortedDates []string,
+	capital float64,
+	symbolFilter string,
+	outDir string,
+) runResult {
+	// 1. Generate signals
+	signals := strat.GenerateSignals(barsBySymbol)
+	symUpper := strings.ToUpper(symbolFilter)
+	if symUpper != "" {
+		var filtered []models.Signal
+		for _, s := range signals {
+			if strings.ToUpper(s.Symbol) == symUpper {
+				filtered = append(filtered, s)
+			}
+		}
+		signals = filtered
+	}
+
+	// 2. Simulate portfolio
+	sim := simulator.NewPortfolioSimulator(cfg, capital)
+	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
+
+	// 3. Create unique SQLite database matching strategy name
+	outDBPath, outDB, err := storage.CreateUniqueDB(outDir, strat.ID())
+	if err != nil {
+		return runResult{strat: strat, err: fmt.Errorf("failed to create unique SQLite DB for %s: %w", strat.ID(), err)}
+	}
+	defer outDB.Close()
+
+	// 4. Persist signals, trades, equity curve, and performance summary
+	if err := storage.SaveSignals(outDB, strat.ID(), signals); err != nil {
+		log.Printf("Warning: Failed to save signals to %s: %v", outDBPath, err)
+	}
+	if err := storage.SaveTrades(outDB, strat.ID(), trades); err != nil {
+		log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
+	}
+	if err := storage.SaveEquityCurve(outDB, strat.ID(), equityCurve); err != nil {
+		log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
+	}
+	if err := storage.SavePerformanceReport(outDB, strat.ID(), report); err != nil {
+		log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
+	}
+
+	return runResult{
+		strat:       strat,
+		report:      report,
+		trades:      trades,
+		equityCurve: equityCurve,
+		dbPath:      outDBPath,
+		signalCount: len(signals),
+	}
+}
+
 func main() {
-	targetDb := flag.String("db", "data/leveraged_backtest.db", "Path to target SQLite DB")
+	defaultMarketDb := "data/market_history.db"
+	if _, err := os.Stat(defaultMarketDb); os.IsNotExist(err) {
+		defaultMarketDb = "data/leveraged_backtest.db"
+	}
+
+	targetDb := flag.String("db", defaultMarketDb, "Path to source SQLite DB containing historical market bars")
 	tableName := flag.String("table", "backtest_start", "Table name containing historical bars")
-	strategyType := flag.String("strategy", "bb-capitulation", "Strategy ID to run (e.g. bb-capitulation, trend-bb, rsi2, wc, whitings_creek-sql)")
+	strategyType := flag.String("strategy", "", "Strategy ID to run, comma-separated list, or 'all' (e.g. bb-capitulation,trend-bb,rsi2)")
+	outDir := flag.String("out-dir", "reports", "Directory to write strategy-isolated SQLite database results and reports")
 	listFlag := flag.Bool("list", false, "List all registered Go and SQL strategies")
 	symbolFilter := flag.String("symbol", "", "Optional: Filter backtest to a specific symbol (e.g. DFEN, SOXL)")
 	capital := flag.Float64("capital", 100000.0, "Starting portfolio capital for simulation")
@@ -135,38 +287,51 @@ func main() {
 		return
 	}
 
-	strat, exists := strategy.Get(*strategyType)
-	if !exists {
-		log.Fatalf("Strategy '%s' not found in registry. Run with -list to view available strategies.", *strategyType)
+	// Resolve strategies from flags or positional arguments
+	stratArg := strings.TrimSpace(*strategyType)
+	posArgs := flag.Args()
+	if stratArg == "" && len(posArgs) > 0 {
+		stratArg = strings.Join(posArgs, ",")
 	}
-	if sqlStrat, ok := strat.(*strategy.SQLPipelineStrategy); ok {
-		sqlStrat.SetDBPath(*targetDb)
-	}
-
-	cfg := strat.DefaultConfig()
-	if *stopLoss > 0 {
-		cfg.StopLossPct = *stopLoss
-	}
-	if *profitTarget > 0 {
-		cfg.TargetPct = *profitTarget
-	}
-	if *holdWindow > 0 {
-		cfg.HoldingWindow = *holdWindow
-	}
-	if *maxPositions > 0 {
-		cfg.PositionCap = *maxPositions
+	if stratArg == "" {
+		stratArg = "bb-capitulation"
 	}
 
-	fmt.Printf("\n========================================================================================\n")
-	fmt.Printf("🎯 STRATEGY SELECTED: %s (ID: %s)\n", strat.Name(), strat.ID())
-	fmt.Printf("   Description:  %s\n", strat.Description())
-	fmt.Printf("   Target:       +%.1f%% | Stop-Loss: -%.1f%% | Max Hold: %d days | Max Positions: %d\n",
-		(cfg.TargetPct-1)*100, (1-cfg.StopLossPct)*100, cfg.HoldingWindow, cfg.PositionCap)
-	fmt.Printf("========================================================================================\n")
+	var selectedStrategies []strategy.Strategy
+	if strings.ToLower(stratArg) == "all" {
+		selectedStrategies = strategy.List()
+	} else {
+		tokens := strings.FieldsFunc(stratArg, func(r rune) bool {
+			return r == ',' || r == ' '
+		})
+		for _, token := range tokens {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+			s, exists := strategy.Get(token)
+			if !exists {
+				log.Fatalf("Strategy '%s' not found in registry. Run with -list to view available strategies.", token)
+			}
+			selectedStrategies = append(selectedStrategies, s)
+		}
+	}
 
+	if len(selectedStrategies) == 0 {
+		log.Fatalf("No valid strategies selected. Run with -list to view available strategies.")
+	}
+
+	// Configure DB path for any SQLPipelineStrategy
+	for _, s := range selectedStrategies {
+		if sqlStrat, ok := s.(*strategy.SQLPipelineStrategy); ok {
+			sqlStrat.SetDBPath(*targetDb)
+		}
+	}
+
+	// Open read-only historical bars from source DB
 	db, err := storage.OpenSQLite(*targetDb)
 	if err != nil {
-		log.Fatalf("Failed to open target DB %s: %v", *targetDb, err)
+		log.Fatalf("Failed to open source DB %s: %v", *targetDb, err)
 	}
 	defer db.Close()
 
@@ -176,120 +341,128 @@ func main() {
 		log.Fatalf("Error loading historical bars for simulation: %v", err)
 	}
 
-	// Generate signals from the selected strategy
-	signals := strat.GenerateSignals(barsBySymbol)
+	var results []runResult
 
-	symUpper := strings.ToUpper(*symbolFilter)
-	if symUpper != "" {
-		var filteredSignals []models.Signal
-		for _, s := range signals {
-			if strings.ToUpper(s.Symbol) == symUpper {
-				filteredSignals = append(filteredSignals, s)
-			}
+	if len(selectedStrategies) == 1 {
+		strat := selectedStrategies[0]
+		cfg := buildConfig(strat, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
+
+		fmt.Printf("\n========================================================================================\n")
+		fmt.Printf("🎯 STRATEGY SELECTED: %s (ID: %s)\n", strat.Name(), strat.ID())
+		fmt.Printf("   Description:  %s\n", strat.Description())
+		fmt.Printf("   Target:       +%.1f%% | Stop-Loss: -%.1f%% | Max Hold: %d days | Max Positions: %d\n",
+			(cfg.TargetPct-1)*100, (1-cfg.StopLossPct)*100, cfg.HoldingWindow, cfg.PositionCap)
+		fmt.Printf("========================================================================================\n")
+
+		res := executeStrategy(strat, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir)
+		if res.err != nil {
+			log.Fatalf("Backtest failed: %v", res.err)
 		}
-		signals = filteredSignals
-		fmt.Printf("Filtered to %d entry signals for symbol %s\n", len(signals), symUpper)
+		results = []runResult{res}
+
+		fmt.Printf("Generated %d entry signals.\n", res.signalCount)
+		fmt.Printf("💾 Persisted %d generated entry signals to SQLite 'signals' table.\n", res.signalCount)
+		fmt.Printf("💾 Persisted %d completed trades to SQLite 'trades' table.\n", len(res.trades))
+		fmt.Printf("💾 Persisted %d daily equity points to SQLite 'equity_curve' table.\n", len(res.equityCurve))
+		fmt.Printf("💾 Persisted quantitative performance summary to SQLite 'performance_summary' table.\n")
+
+		printPerformanceTearSheet(strat.Name(), res.report)
+		printTradesTable(res.trades, *symbolFilter)
+
+		fmt.Printf("\n💾 Dedicated Strategy SQLite Database: %s\n", res.dbPath)
 	} else {
-		fmt.Printf("Generated %d total entry signals across %d symbols over %d trading dates.\n",
-			len(signals), len(barsBySymbol), len(sortedDates))
-	}
+		fmt.Printf("\n========================================================================================\n")
+		fmt.Printf("🚀 CONCURRENT STRATEGY BACKTESTING (%d STRATEGIES)\n", len(selectedStrategies))
+		fmt.Printf("   Market Data:  %d symbols across %d dates loaded from %s\n", len(barsBySymbol), len(sortedDates), *targetDb)
+		fmt.Printf("   Output Dir:   %s/ (each strategy writes to an isolated, uniquely suffixed SQLite DB)\n", *outDir)
+		fmt.Printf("========================================================================================\n\n")
 
-	// Persist all generated signals to SQLite
-	if err := storage.SaveSignals(db, strat.ID(), signals); err != nil {
-		log.Printf("Warning: Failed to save signals to SQLite: %v", err)
-	} else if len(signals) > 0 {
-		fmt.Printf("💾 Persisted %d generated entry signals to SQLite 'signals' table.\n", len(signals))
-	}
+		results = make([]runResult, len(selectedStrategies))
+		var wg sync.WaitGroup
 
-	sim := simulator.NewPortfolioSimulator(cfg, *capital)
-	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
-
-	if err := storage.SaveTrades(db, strat.ID(), trades); err != nil {
-		log.Printf("Warning: Failed to save simulation trades to SQLite: %v", err)
-	} else if len(trades) > 0 {
-		fmt.Printf("💾 Persisted %d completed trades to SQLite 'trades' table.\n", len(trades))
-	}
-
-	// Persist daily equity curve to SQLite
-	if err := storage.SaveEquityCurve(db, strat.ID(), equityCurve); err != nil {
-		log.Printf("Warning: Failed to save equity curve to SQLite: %v", err)
-	} else if len(equityCurve) > 0 {
-		fmt.Printf("💾 Persisted %d daily equity points to SQLite 'equity_curve' table.\n", len(equityCurve))
-	}
-
-	printPerformanceTearSheet(strat.Name(), report)
-
-	if len(trades) > 0 {
-		fmt.Printf("\nCompleted Trades for Simulation (Total: %d):\n", len(trades))
-		tTable := tablewriter.NewWriter(os.Stdout)
-		tTable.SetHeader([]string{"ID", "Symbol", "Entry Date", "Entry $", "Exit Date", "Exit $", "Hold Days", "Exit Reason", "Net PnL", "Return %"})
-		tTable.SetBorder(true)
-
-		startIdx := 0
-		if *symbolFilter == "" && len(trades) > 20 {
-			startIdx = len(trades) - 20
+		for i, strat := range selectedStrategies {
+			wg.Add(1)
+			go func(idx int, s strategy.Strategy) {
+				defer wg.Done()
+				cfg := buildConfig(s, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
+				res := executeStrategy(s, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir)
+				results[idx] = res
+				if res.err != nil {
+					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.err)
+				} else {
+					fmt.Printf("✅ [%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
+						s.ID(), res.signalCount, len(res.trades), res.report.TotalReturnPct*100, res.report.SharpeRatio, res.dbPath)
+				}
+			}(i, strat)
 		}
 
-		for _, t := range trades[startIdx:] {
-			tTable.Append([]string{
-				fmt.Sprintf("%d", t.ID),
-				t.Symbol,
-				t.EntryDate,
-				fmt.Sprintf("$%.2f", t.EntryPrice),
-				t.ExitDate,
-				fmt.Sprintf("$%.2f", t.ExitPrice),
-				fmt.Sprintf("%d", t.HoldDays),
-				string(t.ExitReason),
-				fmt.Sprintf("$%.2f", t.NetPnL),
-				fmt.Sprintf("%.2f%%", t.ReturnPct*100),
-			})
-		}
-		tTable.Render()
+		wg.Wait()
+
+		printComparisonTable(results)
 	}
 
 	// Export HTML Report
 	if *htmlOutput != "" {
-		sType := "Go"
-		if strings.HasSuffix(strat.ID(), "-sql") {
-			sType = "SQL"
+		symUpper := strings.ToUpper(*symbolFilter)
+		reportTitle := "Multi-Strategy Quantitative Comparison Report"
+		if len(selectedStrategies) == 1 {
+			reportTitle = fmt.Sprintf("%s Performance Report", selectedStrategies[0].Name())
+			if symUpper != "" {
+				reportTitle = fmt.Sprintf("%s Performance Report for %s", selectedStrategies[0].Name(), symUpper)
+			}
 		}
 
-		var eqSeries []float64
-		var ddSeries []float64
-		for _, pt := range equityCurve {
-			eqSeries = append(eqSeries, pt.TotalEquity)
-			ddSeries = append(ddSeries, pt.DrawdownPct)
-		}
+		var stratReports []analytics.StrategyReportData
+		eqCurves := make(map[string][]float64)
+		ddCurves := make(map[string][]float64)
 
-		reportTitle := fmt.Sprintf("%s Performance Report", strat.Name())
-		if symUpper != "" {
-			reportTitle = fmt.Sprintf("%s Performance Report for %s", strat.Name(), symUpper)
+		var startDate, endDate string
+		var totalDays int
+		var totalYears float64
+
+		for _, r := range results {
+			if r.err != nil {
+				continue
+			}
+			sType := "Go"
+			if strings.HasSuffix(r.strat.ID(), "-sql") {
+				sType = "SQL"
+			}
+			stratReports = append(stratReports, analytics.StrategyReportData{
+				ID:     r.strat.ID(),
+				Name:   r.strat.Name(),
+				Type:   sType,
+				Report: r.report,
+				Trades: r.trades,
+			})
+			var eqSeries, ddSeries []float64
+			for _, pt := range r.equityCurve {
+				eqSeries = append(eqSeries, pt.TotalEquity)
+				ddSeries = append(ddSeries, pt.DrawdownPct)
+			}
+			eqCurves[r.strat.ID()] = eqSeries
+			ddCurves[r.strat.ID()] = ddSeries
+
+			if startDate == "" {
+				startDate = r.report.StartDate
+				endDate = r.report.EndDate
+				totalDays = r.report.TotalTradingDays
+				totalYears = r.report.TotalCalendarYears
+			}
 		}
 
 		htmlData := analytics.MultiStrategyHTMLData{
-			Title:      reportTitle,
-			Symbol:     symUpper,
-			StartDate:  report.StartDate,
-			EndDate:    report.EndDate,
-			TotalDays:  report.TotalTradingDays,
-			TotalYears: report.TotalCalendarYears,
-			InitialCap: *capital,
-			Strategies: []analytics.StrategyReportData{
-				{
-					ID:     strat.ID(),
-					Name:   strat.Name(),
-					Type:   sType,
-					Report: report,
-					Trades: trades,
-				},
-			},
-			AllDates: sortedDates,
-			EquityCurves: map[string][]float64{
-				strat.ID(): eqSeries,
-			},
-			DrawdownCurves: map[string][]float64{
-				strat.ID(): ddSeries,
-			},
+			Title:          reportTitle,
+			Symbol:         symUpper,
+			StartDate:      startDate,
+			EndDate:        endDate,
+			TotalDays:      totalDays,
+			TotalYears:     totalYears,
+			InitialCap:     *capital,
+			Strategies:     stratReports,
+			AllDates:       sortedDates,
+			EquityCurves:   eqCurves,
+			DrawdownCurves: ddCurves,
 		}
 
 		err := analytics.GenerateComparisonHTML(*htmlOutput, htmlData)

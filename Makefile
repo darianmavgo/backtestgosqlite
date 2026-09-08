@@ -43,8 +43,8 @@ example-csv: build
 	./examples/custom_csv_backtest/run_example.sh
 
 download: build
-	@echo "Downloading 4 years of history for top 50 symbols..."
-	./$(BIN_DIR)/download -db data/leveraged_backtest.db -settings data/settings.db -table leveraged_etf -limit 50 -years 4
+	@echo "Downloading 4 years of history for top 50 symbols into market_history.db..."
+	./$(BIN_DIR)/download -db data/market_history.db -settings data/settings.db -table leveraged_etf -limit 50 -years 4
 
 ui: build
 	@echo "Launching UI server on http://localhost:8080..."

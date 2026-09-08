@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -105,3 +106,204 @@ func TestTradePersistenceAndSQLAggregates(t *testing.T) {
 		t.Errorf("expected profit factor 2.5, got %f", report.ProfitFactor)
 	}
 }
+
+func TestCreateUniqueDB(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "unique_db_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	stratID := "bb-capitulation"
+
+	// First call should create bb-capitulation.db
+	p1, db1, err := CreateUniqueDB(tempDir, stratID)
+	if err != nil {
+		t.Fatalf("first CreateUniqueDB failed: %v", err)
+	}
+	defer db1.Close()
+	expected1 := filepath.Join(tempDir, "bb-capitulation.db")
+	if p1 != expected1 {
+		t.Errorf("expected %s, got %s", expected1, p1)
+	}
+
+	// Second call should create bb-capitulation_2.db
+	p2, db2, err := CreateUniqueDB(tempDir, stratID)
+	if err != nil {
+		t.Fatalf("second CreateUniqueDB failed: %v", err)
+	}
+	defer db2.Close()
+	expected2 := filepath.Join(tempDir, "bb-capitulation_2.db")
+	if p2 != expected2 {
+		t.Errorf("expected %s, got %s", expected2, p2)
+	}
+
+	// Third call should create bb-capitulation_3.db
+	p3, db3, err := CreateUniqueDB(tempDir, stratID)
+	if err != nil {
+		t.Fatalf("third CreateUniqueDB failed: %v", err)
+	}
+	defer db3.Close()
+	expected3 := filepath.Join(tempDir, "bb-capitulation_3.db")
+	if p3 != expected3 {
+		t.Errorf("expected %s, got %s", expected3, p3)
+	}
+
+	// Different strategy should start at other-strat.db
+	pOther, dbOther, err := CreateUniqueDB(tempDir, "other-strat")
+	if err != nil {
+		t.Fatalf("other strategy CreateUniqueDB failed: %v", err)
+	}
+	defer dbOther.Close()
+	expectedOther := filepath.Join(tempDir, "other-strat.db")
+	if pOther != expectedOther {
+		t.Errorf("expected %s, got %s", expectedOther, pOther)
+	}
+
+	// Test concurrent creation to verify atomic exclusivity without collisions
+	concurrentCount := 10
+	results := make([]string, concurrentCount)
+	var wg sync.WaitGroup
+
+	for i := 0; i < concurrentCount; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			p, db, err := CreateUniqueDB(tempDir, "concurrent-test")
+			if err != nil {
+				t.Errorf("concurrent CreateUniqueDB error: %v", err)
+				return
+			}
+			db.Close()
+			results[idx] = p
+		}(i)
+	}
+	wg.Wait()
+
+	seen := make(map[string]bool)
+	for _, p := range results {
+		if p == "" {
+			t.Errorf("empty path returned in concurrent test")
+			continue
+		}
+		if seen[p] {
+			t.Errorf("duplicate db path generated concurrently: %s", p)
+		}
+		seen[p] = true
+	}
+}
+
+func TestPerformanceReportPersistence(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "perf_report_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "perf.db")
+	db, err := OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	report := models.PerformanceReport{
+		StartDate:          "2022-01-01",
+		EndDate:            "2025-12-31",
+		TotalTradingDays:   1000,
+		TotalCalendarYears: 4.0,
+		InitialCapital:     100000.0,
+		FinalEquity:        185000.0,
+		NetProfit:          85000.0,
+		TotalReturnPct:     0.85,
+		CAGR:               0.166,
+		SharpeRatio:        1.45,
+		SortinoRatio:       2.10,
+		CalmarRatio:        1.25,
+		MaxDrawdownPct:     0.132,
+		MaxDrawdownDollars: 15000.0,
+		TotalTrades:        45,
+		WinningTrades:      30,
+		LosingTrades:       15,
+		WinRate:            0.6667,
+		ProfitFactor:       2.3,
+	}
+
+	stratID := "test-quant-strat"
+	if err := SavePerformanceReport(db, stratID, report); err != nil {
+		t.Fatalf("SavePerformanceReport failed: %v", err)
+	}
+
+	var count int
+	err = db.Get(&count, "SELECT COUNT(*) FROM performance_summary WHERE strategy_id = ?", stratID)
+	if err != nil {
+		t.Fatalf("failed to query performance_summary: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 row in performance_summary, got %d", count)
+	}
+
+	var netProfit float64
+	err = db.Get(&netProfit, "SELECT net_profit FROM performance_summary WHERE strategy_id = ?", stratID)
+	if err != nil {
+		t.Fatalf("failed to query net_profit: %v", err)
+	}
+	if netProfit != 85000.0 {
+		t.Errorf("expected net_profit 85000.0, got %f", netProfit)
+	}
+}
+
+func TestGetSymbolDateCoverage(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "cov_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "cov.db")
+	db, err := OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if err := EnsureBarTable(db, "backtest_start"); err != nil {
+		t.Fatalf("EnsureBarTable failed: %v", err)
+	}
+
+	// 1. Non-existent symbol coverage should return 0 count and empty dates
+	cov, err := GetSymbolDateCoverage(db, "backtest_start", "AAPL")
+	if err != nil {
+		t.Fatalf("GetSymbolDateCoverage failed: %v", err)
+	}
+	if cov.BarCount != 0 || cov.MinDate != "" || cov.MaxDate != "" {
+		t.Errorf("expected empty coverage for AAPL, got %+v", cov)
+	}
+
+	// 2. Insert some bars
+	bars := []models.Bar{
+		{Symbol: "AAPL", Date: "2024-01-02", Open: 180, Close: 185},
+		{Symbol: "AAPL", Date: "2024-01-03", Open: 185, Close: 184},
+		{Symbol: "AAPL", Date: "2024-01-04", Open: 184, Close: 186},
+	}
+	if err := UpsertBars(db, "backtest_start", bars); err != nil {
+		t.Fatalf("UpsertBars failed: %v", err)
+	}
+
+	// 3. Verify coverage after inserting bars
+	cov, err = GetSymbolDateCoverage(db, "backtest_start", "AAPL")
+	if err != nil {
+		t.Fatalf("GetSymbolDateCoverage failed: %v", err)
+	}
+	if cov.BarCount != 3 {
+		t.Errorf("expected 3 bars, got %d", cov.BarCount)
+	}
+	if cov.MinDate != "2024-01-02" {
+		t.Errorf("expected minDate 2024-01-02, got %s", cov.MinDate)
+	}
+	if cov.MaxDate != "2024-01-04" {
+		t.Errorf("expected maxDate 2024-01-04, got %s", cov.MaxDate)
+	}
+}
+
+

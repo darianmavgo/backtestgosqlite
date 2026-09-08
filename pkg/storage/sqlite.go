@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -27,6 +28,10 @@ func ValidateTableName(name string) error {
 
 // OpenSQLite opens or creates a SQLite database connection with optimized PRAGMAs.
 func OpenSQLite(dbPath string) (*sqlx.DB, error) {
+	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+		_ = os.MkdirAll(dir, 0755)
+	}
+
 	db, err := sqlx.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db at %s: %w", dbPath, err)
@@ -136,6 +141,49 @@ func EnsureBarTable(db *sqlx.DB, tableName string) error {
 	`, tableName, tableName, tableName, tableName, tableName)
 	_, err := db.Exec(schema)
 	return err
+}
+
+// SymbolDateCoverage contains the earliest date, latest date, and count of bars for a symbol in a table.
+type SymbolDateCoverage struct {
+	Symbol   string `db:"symbol"`
+	MinDate  string `db:"min_date"`
+	MaxDate  string `db:"max_date"`
+	BarCount int    `db:"bar_count"`
+}
+
+// GetSymbolDateCoverage queries the existing date range and bar count for a symbol in tableName.
+func GetSymbolDateCoverage(db *sqlx.DB, tableName, symbol string) (SymbolDateCoverage, error) {
+	cov := SymbolDateCoverage{Symbol: symbol}
+	if tableName == "" {
+		tableName = "backtest_start"
+	}
+	if err := ValidateTableName(tableName); err != nil {
+		return cov, err
+	}
+
+	query := fmt.Sprintf(`
+		SELECT 
+			coalesce(MIN(substr(Date, 1, 10)), '') as min_date,
+			coalesce(MAX(substr(Date, 1, 10)), '') as max_date,
+			COUNT(*) as bar_count
+		FROM %s
+		WHERE symbol = ?
+	`, tableName)
+
+	type row struct {
+		MinDate  string `db:"min_date"`
+		MaxDate  string `db:"max_date"`
+		BarCount int    `db:"bar_count"`
+	}
+	var r row
+	err := db.Get(&r, query, symbol)
+	if err != nil {
+		return cov, nil
+	}
+	cov.MinDate = r.MinDate
+	cov.MaxDate = r.MaxDate
+	cov.BarCount = r.BarCount
+	return cov, nil
 }
 
 // UpsertBars inserts a slice of bars into the database using a transaction.
@@ -485,6 +533,149 @@ func SaveTrades(db *sqlx.DB, strategyID string, trades []models.Trade) error {
 	}
 
 	return tx.Commit()
+}
+
+// CreateUniqueDB generates an isolated SQLite file in dir with a filename matching baseName.
+// If baseName.db already exists, it tries baseName_2.db, baseName_3.db, and so on.
+// The file creation is atomic (using os.O_CREATE|os.O_EXCL) to prevent race conditions during concurrent backtests.
+func CreateUniqueDB(dir, baseName string) (string, *sqlx.DB, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	cleanBase := strings.ToLower(strings.TrimSpace(baseName))
+	cleanBase = strings.ReplaceAll(cleanBase, " ", "_")
+	cleanBase = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, cleanBase)
+	if cleanBase == "" {
+		cleanBase = "backtest_results"
+	}
+
+	var targetPath string
+	firstPath := filepath.Join(dir, fmt.Sprintf("%s.db", cleanBase))
+	f, err := os.OpenFile(firstPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	if err == nil {
+		f.Close()
+		targetPath = firstPath
+	} else if os.IsExist(err) {
+		for i := 2; ; i++ {
+			candidate := filepath.Join(dir, fmt.Sprintf("%s_%d.db", cleanBase, i))
+			f, err := os.OpenFile(candidate, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+			if err == nil {
+				f.Close()
+				targetPath = candidate
+				break
+			}
+			if !os.IsExist(err) {
+				return "", nil, fmt.Errorf("failed to create candidate db file %s: %w", candidate, err)
+			}
+		}
+	} else {
+		return "", nil, fmt.Errorf("failed to create db file %s: %w", firstPath, err)
+	}
+
+	db, err := OpenSQLite(targetPath)
+	if err != nil {
+		return targetPath, nil, fmt.Errorf("failed to open newly created SQLite DB %s: %w", targetPath, err)
+	}
+
+	return targetPath, db, nil
+}
+
+// EnsurePerformanceReportTable creates the schema for saving quantitative backtest performance reports.
+func EnsurePerformanceReportTable(db *sqlx.DB) error {
+	schema := `
+		CREATE TABLE IF NOT EXISTS performance_summary (
+			strategy_id TEXT PRIMARY KEY,
+			start_date TEXT,
+			end_date TEXT,
+			total_trading_days INTEGER,
+			total_calendar_years REAL,
+			initial_capital REAL,
+			final_equity REAL,
+			net_profit REAL,
+			total_return_pct REAL,
+			cagr REAL,
+			sharpe_ratio REAL,
+			sortino_ratio REAL,
+			calmar_ratio REAL,
+			omega_ratio REAL,
+			ulcer_index REAL,
+			alpha REAL,
+			beta REAL,
+			benchmark_return_pct REAL,
+			max_drawdown_pct REAL,
+			max_drawdown_dollars REAL,
+			max_drawdown_peak_equity REAL,
+			max_drawdown_trough_equity REAL,
+			max_drawdown_peak_date TEXT,
+			max_drawdown_trough_date TEXT,
+			max_drawdown_days INTEGER,
+			total_trades INTEGER,
+			winning_trades INTEGER,
+			losing_trades INTEGER,
+			win_rate REAL,
+			profit_factor REAL,
+			avg_trade_return_pct REAL,
+			avg_win_amount REAL,
+			avg_loss_amount REAL,
+			payoff_ratio REAL,
+			avg_holding_days REAL,
+			avg_mae REAL,
+			avg_mfe REAL,
+			total_commission_paid REAL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
+// SavePerformanceReport persists the quantitative performance summary tear sheet to SQLite.
+func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.PerformanceReport) error {
+	if err := EnsurePerformanceReportTable(db); err != nil {
+		return err
+	}
+
+	query := `
+		INSERT OR REPLACE INTO performance_summary (
+			strategy_id, start_date, end_date, total_trading_days, total_calendar_years,
+			initial_capital, final_equity, net_profit, total_return_pct, cagr,
+			sharpe_ratio, sortino_ratio, calmar_ratio, omega_ratio, ulcer_index,
+			alpha, beta, benchmark_return_pct, max_drawdown_pct, max_drawdown_dollars,
+			max_drawdown_peak_equity, max_drawdown_trough_equity,
+			max_drawdown_peak_date, max_drawdown_trough_date, max_drawdown_days,
+			total_trades, winning_trades, losing_trades, win_rate, profit_factor,
+			avg_trade_return_pct, avg_win_amount, avg_loss_amount, payoff_ratio,
+			avg_holding_days, avg_mae, avg_mfe, total_commission_paid
+		) VALUES (
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?,
+			?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?
+		);
+	`
+	_, err := db.Exec(query,
+		strategyID, report.StartDate, report.EndDate, report.TotalTradingDays, report.TotalCalendarYears,
+		report.InitialCapital, report.FinalEquity, report.NetProfit, report.TotalReturnPct, report.CAGR,
+		report.SharpeRatio, report.SortinoRatio, report.CalmarRatio, report.OmegaRatio, report.UlcerIndex,
+		report.Alpha, report.Beta, report.BenchmarkReturnPct, report.MaxDrawdownPct, report.MaxDrawdownDollars,
+		report.MaxDrawdownPeakEquity, report.MaxDrawdownTroughEquity,
+		report.MaxDrawdownPeakDate, report.MaxDrawdownTroughDate, report.MaxDrawdownDuration,
+		report.TotalTrades, report.WinningTrades, report.LosingTrades, report.WinRate, report.ProfitFactor,
+		report.AvgTradeReturnPct, report.AvgWinAmount, report.AvgLossAmount, report.PayoffRatio,
+		report.AvgHoldingDays, report.AvgMAE, report.AvgMFE, report.TotalCommissionPaid,
+	)
+	return err
 }
 
 // FetchTradeSummaryStats computes core trade performance aggregates natively in SQLite.

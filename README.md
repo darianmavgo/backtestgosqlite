@@ -58,28 +58,99 @@ It pairs the raw execution speed and goroutine concurrency of compiled Go with t
   * **Trailing Stops**: Lock in unrealized gains by trailing peaks at a configurable percentage.
   * **ATR Dynamic Stops**: Protect against volatility expansion using multiples of Average True Range.
   * **Dual-Barrier Path Checking**: Walks day-by-day to simulate real-world intraday stops before profit targets.
-* **Concurrent Strategy Benchmarking**: Run any number of strategies in parallel across Go goroutines (`make compare`).
+* **Concurrent Multi-Strategy Engine**: Run multiple strategies simultaneously across Go goroutines (`./bin/backtest -strategy s1,s2,s3` or `./bin/backtest all`).
 
-### 2. Pluggable Market Data Sources (`cmd/download`)
-* **Bring Your Own CSV**: Ingest any standard OHLCV CSV file (from Polygon.io, Alpaca, Interactive Brokers, or manual export) with automatic column header detection.
-* **Automated Data Feed Downloads**: Multi-source daily data downloader with Yahoo Finance API v8 and Stooq fallback.
-* **SQLite Storage Engine**: High-speed batch insertion into SQLite tables with indexed lookups and WAL concurrency.
+### 2. Smart Cache-First Market Data Ingestion (`cmd/download`)
+* **Default Database**: Automatically manages and caches historical bars in **`data/market_history.db`**.
+* **Cache-First Intelligence**: Checks `market_history.db` first for existing date coverage (`min_date`, `max_date`, bar count). If data is already present, **skips network requests entirely** for instant execution.
+* **Surgical Incremental Fetching**: Downloads only the missing slices (older historical gaps or newer daily bars) from Yahoo Finance API v8 or Stooq CSV, then merges them with zero duplication.
+* **Bring Your Own CSV**: Ingest any standard OHLCV CSV file (from Polygon.io, Alpaca, Interactive Brokers, or manual export) using `-csv <path>`.
 
-### 3. Built-in Technical Indicator Library
+### 3. Isolated Strategy SQLite Results (`cmd/backtest`)
+* **Strategy-Named Databases**: Every backtest writes its complete calculations into a dedicated database named after the strategy (e.g., **`reports/bb-capitulation.db`**).
+* **Automatic Suffixing**: If the database already exists, it atomically appends incrementing suffixes (`_2.db`, `_3.db`, etc.) to prevent overwriting prior backtests.
+* **Complete Relational Results**: Stores all 4 calculation tables: `signals`, `trades`, `equity_curve`, and `performance_summary`.
+* **Concurrent Lock-Free Writing**: When backtesting multiple strategies concurrently, each goroutine writes to its own isolated SQLite file in parallel with zero SQLite lock contention.
+
+### 4. Built-in Technical Indicator Library
 Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strategy/indicators.go`](file:///Users/darianhickman/Documents/backtestgosqlite/pkg/strategy/indicators.go):
 * **Moving Averages**: `CalcSMA`, `CalcEMA`
 * **Oscillators**: `CalcRSI` (Wilder's smoothing)
 * **Volatility**: `CalcBollinger`, `CalcATR`, `CalcDonchian`
 * **Trend & Momentum**: `CalcMACD` (MACD line, Signal line, Histogram)
 
-### 4. Built-in Strategy Library
+### 5. Built-in Strategy Library
 * **`bb-capitulation`**: Lower Bollinger Band exhaustion pierces with RSI(5) oversold confirmation.
+* **`voo-tecl-combo`**: VOO regime-filtered mean reversion allocating between TECL and inverse hedging.
 * **`macd-crossover`**: Classic MACD (12, 26, 9) signal-line bullish crossover.
 * **`donchian-breakout`**: Turtle-style 20-day high momentum breakout with trailing stop.
 * **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
 * **`rsi2`**: Connors RSI(2) deep pullback strategy.
 * **`wc` / `wc-4d`**: Whitings Creek short-term capitulation mean-reversion.
 * **`buy-and-hold`**: Benchmark buy-and-hold baseline for computing active Alpha & Beta.
+
+---
+
+## 🔄 Complete Data Pipeline & SQLite Architecture
+
+The platform cleanly separates market data caching from backtest calculation storage, ensuring full reproducibility, fast incremental updates, and concurrency safety:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               1. MARKET DATA INGESTION                                 │
+│  - Remote Feeds: Yahoo Finance Chart API v8, Stooq CSV fallback                        │
+│  - Local Data: Custom OHLCV CSVs (Polygon, Alpaca, IBKR) via -csv                      │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Incremental / Cache-First
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        2. MARKET DATA CACHE (READ-ONLY IN BACKTEST)                    │
+│  📂 data/market_history.db (Table: backtest_start)                                      │
+│  - Pre-queries existing MIN(Date), MAX(Date), and bar counts per symbol                │
+│  - Skips network requests if requested horizon is fully cached                         │
+│  - Surgically pulls only missing slices (older historical gaps or newer daily bars)    │
+│  - Composite indexed lookups: idx_backtest_start_unique ON (symbol, Date)               │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Read-Only Historical Bars
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                          3. CHRONOLOGICAL SIMULATION ENGINE                            │
+│  - Evaluates Go & SQL Strategies concurrently across Goroutines                        │
+│  - Computes signals, walks daily bars, manages cash ledger, trailing stops, PnL       │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Isolated Calculations
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                    4. STRATEGY RESULTS PERSISTENCE (WRITE-ONLY)                        │
+│  📂 reports/<strategy_id>.db                                                           │
+│  - Automatically appends _2, _3, ... suffixes if database already exists               │
+│  - Dedicated concurrent SQLite file per strategy (zero database lock contention)       │
+│                                                                                        │
+│  Captured Tables:                                                                      │
+│  ├── signals             : Entry signals (date, symbol, order_type, price, regime)     │
+│  ├── trades              : Closed trades (entry/exit $, hold days, PnL, MAE, MFE)      │
+│  ├── equity_curve        : Daily portfolio time-series (equity, cash, invested, MDD)   │
+│  └── performance_summary : Institutional tear sheet (CAGR, Sharpe, Sortino, Calmar)    │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ Multi-Strategy Aggregation
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        5. REPORTING & VISUALIZATION DASHBOARD                          │
+│  - Console: Quantitative Tear Sheets & Side-by-Side Comparison Tables                  │
+│  - HTML: Interactive Chart.js Dashboards (reports/backtest_report.html)                │
+│  - Web UI: Local browser server (make ui -> http://localhost:8080)                     │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### SQLite Database Files Reference
+
+| Database File | Directory | Primary Role | Schema / Key Tables | Written By | Read By |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`market_history.db`** | `data/` | **Master OHLCV Bar Cache** | `backtest_start` (OHLCV daily bars: `symbol`, `Date`, `open`, `high`, `low`, `close`, `volume`) | `cmd/download` | `cmd/backtest`, `cmd/ui`, `cmd/gridsearch` |
+| **`<strategy_id>.db`** *(e.g. `bb-capitulation.db`, `_2.db`, `_3.db`)* | `reports/` | **Isolated Backtest Run Results** | `signals`, `trades`, `equity_curve`, `performance_summary` | `cmd/backtest` | External analysis, SQLite CLI, Notebooks |
+| **`settings.db`** | `data/` | **Universe & Configuration Seed** | `leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d` | Seed scripts / Admin | `cmd/download`, `cmd/ui` |
+| **`sample.db` / `sample_stocks.db`** | `data/` | **Testing & Custom CSV Sandbox** | `backtest_start` | `cmd/download -csv` | `examples/custom_csv_backtest` |
+| **`sp500_etfs_study.db`** | `data/` | **Multi-Scenario Study Matrix** | `tecl_allocation_matrix`, `compare_3x_etfs_matrix` | `cmd/export_studies` | Study reports |
 
 ---
 
@@ -97,7 +168,20 @@ make list
 ./bin/backtest -list
 ```
 
-### 3. Run Custom CSV Backtest
+### 3. Download & Cache Market Data (Smart Cache-First)
+Download historical bars into `data/market_history.db`. The downloader automatically checks what data already exists in the database and only pulls missing dates:
+```bash
+# Download 5 years of history for VOO and TECL
+./bin/download -symbols VOO,TECL -years 5
+
+# Download top leveraged ETF universe from settings.db
+./bin/download -table leveraged_etf -limit 50 -years 4
+
+# Run again: instantly skips network calls if data is up-to-date!
+./bin/download -symbols VOO,TECL -years 5
+```
+
+### 4. Run Custom CSV Backtest
 Ingest your own OHLCV CSV file and run an immediate backtest:
 ```bash
 make example-csv
@@ -106,23 +190,26 @@ make example-csv
 ./bin/backtest -db data/sample.db -strategy donchian-breakout -capital 50000
 ```
 
-### 4. Run Strategy Backtests
+### 5. Run Strategy Backtests
 ```bash
-# High-Performance BB-Capitulation Strategy
-./bin/backtest -strategy bb-capitulation -capital 100000
+# Run by Strategy ID or Positional Argument (creates reports/bb-capitulation.db)
+./bin/backtest bb-capitulation -capital 100000
+./bin/backtest voo-tecl-combo
 
-# MACD Crossover Strategy
-./bin/backtest -strategy macd-crossover -capital 100000
+# Running again automatically creates reports/bb-capitulation_2.db, _3.db, etc.
+./bin/backtest bb-capitulation
 
-# Donchian 20-Day Momentum Breakout with Trailing Stop
-./bin/backtest -strategy donchian-breakout -capital 100000
+# Run Multiple Strategies Concurrently (writes separate SQLite databases in parallel!)
+./bin/backtest -strategy bb-capitulation,trend-bb,rsi2,macd-crossover
+
+# Run All Registered Strategies Concurrently
+./bin/backtest all
 
 # Single Symbol Filter (e.g. SOXL, AAPL, SPY)
 ./bin/backtest -strategy bb-capitulation -symbol SOXL -capital 100000
 ```
 
-
-### 5. Launch the Local Web Dashboard
+### 6. Launch the Local Web Dashboard
 ```bash
 make ui
 # Open http://localhost:8080 in your browser

@@ -7,10 +7,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -48,8 +50,16 @@ func readSymbolsFile(filePath string) ([]string, error) {
 	return symbols, nil
 }
 
+func fetchWithFallback(ctx context.Context, primary, fallback datasource.DataSource, req datasource.FetchRequest) ([]models.Bar, error) {
+	bars, err := primary.Fetch(ctx, req)
+	if (err != nil || len(bars) == 0) && fallback != nil {
+		bars, err = fallback.Fetch(ctx, req)
+	}
+	return bars, err
+}
+
 func main() {
-	targetDb := flag.String("db", "data/leveraged_backtest.db", "Target SQLite DB path")
+	targetDb := flag.String("db", "data/market_history.db", "Target SQLite DB path for market history (default: data/market_history.db)")
 	settingsDb := flag.String("settings", "data/settings.db", "Settings DB path (for table seed lookups)")
 	sourceType := flag.String("source", "yahoo", "Data source provider: yahoo, stooq, csv")
 	csvPath := flag.String("csv", "", "Path to CSV file or directory of CSV files (used with -source csv)")
@@ -60,7 +70,21 @@ func main() {
 	years := flag.Int("years", 4, "Number of years of history")
 	timeframe := flag.String("timeframe", "1d", "Bar timeframe (1d, 1h, 5m)")
 	targetTable := flag.String("target-table", "backtest_start", "Target table name in target SQLite DB")
+	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
 	flag.Parse()
+
+	// If default target DB does not exist yet, seed it from existing leveraged_backtest.db if available
+	if *targetDb == "data/market_history.db" {
+		if _, err := os.Stat(*targetDb); os.IsNotExist(err) {
+			if _, errLegacy := os.Stat("data/leveraged_backtest.db"); errLegacy == nil {
+				if input, err := os.ReadFile("data/leveraged_backtest.db"); err == nil {
+					_ = os.MkdirAll("data", 0755)
+					_ = os.WriteFile(*targetDb, input, 0644)
+					fmt.Printf("📦 Initialized %s from existing historical data cache.\n", *targetDb)
+				}
+			}
+		}
+	}
 
 	db, err := storage.OpenSQLite(*targetDb)
 	if err != nil {
@@ -126,7 +150,8 @@ func main() {
 		log.Fatalf("No symbols resolved. Specify -symbols SPY,QQQ or -symbols-file <path> or -table <name>")
 	}
 
-	fmt.Printf("Fetched %d symbols to download: %v\n", len(symbols), symbols)
+	fmt.Printf("Database: %s (Table: %s)\n", *targetDb, *targetTable)
+	fmt.Printf("Target Universe: %d symbols: %v\n", len(symbols), symbols)
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	var primarySource datasource.DataSource
@@ -143,42 +168,116 @@ func main() {
 	start := now.AddDate(-*years, 0, 0)
 	end := now
 
-	fmt.Printf("Downloading %s bars from %s to %s for %d symbols using %s...\n\n",
-		*timeframe, start.Format("2006-01-02"), end.Format("2006-01-02"), len(symbols), primarySource.Name())
+	reqStartStr := start.Format("2006-01-02")
+	reqEndStr := end.Format("2006-01-02")
 
-	totalBars := 0
-	successfulSymbols := 0
+	fmt.Printf("Target Horizon: %s bars from %s to %s using %s\n",
+		*timeframe, reqStartStr, reqEndStr, primarySource.Name())
+	fmt.Printf("🔍 Checking %s first for existing cached data...\n\n", filepath.Base(*targetDb))
+
+	totalNewBars := 0
+	cachedSymbols := 0
+	updatedSymbols := 0
 
 	for idx, sym := range symbols {
-		req := datasource.FetchRequest{
-			Symbol:    sym,
-			StartDate: start,
-			EndDate:   end,
-			Timeframe: *timeframe,
+		cov, err := storage.GetSymbolDateCoverage(db, *targetTable, sym)
+		if err != nil {
+			log.Printf("[%d/%d] Error checking database coverage for %s: %v", idx+1, len(symbols), sym, err)
 		}
 
-		bars, err := primarySource.Fetch(ctx, req)
-		if (err != nil || len(bars) == 0) && fallbackSource != nil {
-			// Fallback
-			bars, err = fallbackSource.Fetch(ctx, req)
+		// Determine missing date windows
+		var missingWindows []datasource.FetchRequest
+
+		if cov.BarCount == 0 || *forceDownload {
+			// Symbol is completely missing from DB (or forced full refresh)
+			missingWindows = append(missingWindows, datasource.FetchRequest{
+				Symbol:    sym,
+				StartDate: start,
+				EndDate:   end,
+				Timeframe: *timeframe,
+			})
+		} else {
+			// Symbol already exists in DB from cov.MinDate to cov.MaxDate
+			// 1. Check if older historical bars are missing (start is before cov.MinDate by more than a weekend/holiday)
+			if reqStartStr < cov.MinDate {
+				dbMin, err := time.Parse("2006-01-02", cov.MinDate)
+				if err == nil && dbMin.Sub(start) > 4*24*time.Hour {
+					missingWindows = append(missingWindows, datasource.FetchRequest{
+						Symbol:    sym,
+						StartDate: start,
+						EndDate:   dbMin,
+						Timeframe: *timeframe,
+					})
+				}
+			}
+
+			// 2. Check if newer historical bars are missing (end is after cov.MaxDate)
+			if cov.MaxDate < reqEndStr {
+				dbMax, err := time.Parse("2006-01-02", cov.MaxDate)
+				if err == nil && cov.MaxDate != reqEndStr {
+					missingWindows = append(missingWindows, datasource.FetchRequest{
+						Symbol:    sym,
+						StartDate: dbMax,
+						EndDate:   end,
+						Timeframe: *timeframe,
+					})
+				}
+			}
 		}
 
-		if err != nil || len(bars) == 0 {
-			log.Printf("[%d/%d] Failed %s: %v", idx+1, len(symbols), sym, err)
+		// If DB already has all requested data, skip remote fetch!
+		if len(missingWindows) == 0 {
+			cachedSymbols++
+			fmt.Printf("[%d/%d] %-6s : ⚡ Up-to-date in %s (%d bars, %s ➔ %s). 0 missing, skipped remote fetch.\n",
+				idx+1, len(symbols), sym, filepath.Base(*targetDb), cov.BarCount, cov.MinDate, cov.MaxDate)
 			continue
 		}
 
-		if err := storage.UpsertBars(db, *targetTable, bars); err != nil {
-			log.Printf("[%d/%d] Error saving %s to database: %v", idx+1, len(symbols), sym, err)
+		// Fetch only the missing window(s)
+		symNewBars := 0
+		fetchError := false
+
+		for _, winReq := range missingWindows {
+			bars, err := fetchWithFallback(ctx, primarySource, fallbackSource, winReq)
+			if err != nil {
+				log.Printf("[%d/%d] Failed fetching missing data for %s (%s to %s): %v",
+					idx+1, len(symbols), sym, winReq.StartDate.Format("2006-01-02"), winReq.EndDate.Format("2006-01-02"), err)
+				fetchError = true
+				continue
+			}
+			if len(bars) == 0 {
+				continue
+			}
+
+			if err := storage.UpsertBars(db, *targetTable, bars); err != nil {
+				log.Printf("[%d/%d] Error saving %s bars to DB: %v", idx+1, len(symbols), sym, err)
+				fetchError = true
+				continue
+			}
+			symNewBars += len(bars)
+		}
+
+		if fetchError && symNewBars == 0 && cov.BarCount == 0 {
 			continue
 		}
 
-		successfulSymbols++
-		totalBars += len(bars)
-		fmt.Printf("[%d/%d] %-6s : %4d bars saved (Total: %d bars)\n", idx+1, len(symbols), sym, len(bars), totalBars)
+		totalNewBars += symNewBars
+		updatedSymbols++
+
+		if cov.BarCount == 0 {
+			fmt.Printf("[%d/%d] %-6s : 📥 Not in DB. Pulled %d bars (%s ➔ %s) from %s ➔ %s\n",
+				idx+1, len(symbols), sym, symNewBars, reqStartStr, reqEndStr, primarySource.Name(), filepath.Base(*targetDb))
+		} else if symNewBars > 0 {
+			fmt.Printf("[%d/%d] %-6s : 🔄 Found %d bars in DB (%s ➔ %s). Pulled %d missing bars from %s ➔ %s\n",
+				idx+1, len(symbols), sym, cov.BarCount, cov.MinDate, cov.MaxDate, symNewBars, primarySource.Name(), filepath.Base(*targetDb))
+		} else {
+			fmt.Printf("[%d/%d] %-6s : ⚡ Found %d bars in DB (%s ➔ %s). Checked %s (no new closed bars available).\n",
+				idx+1, len(symbols), sym, cov.BarCount, cov.MinDate, cov.MaxDate, primarySource.Name())
+		}
+
 		time.Sleep(120 * time.Millisecond) // rate limit
 	}
 
-	fmt.Printf("\n✨ Done! Downloaded %d total bars across %d/%d symbols into %s (%s).\n",
-		totalBars, successfulSymbols, len(symbols), *targetDb, *targetTable)
+	fmt.Printf("\n✨ Summary: %s is updated! (%d symbols already up-to-date, %d symbols fetched/updated, %d new bars added).\n   All %d requested symbols are now fully cached in %s.\n",
+		*targetDb, cachedSymbols, updatedSymbols, totalNewBars, len(symbols), filepath.Base(*targetDb))
 }
