@@ -327,7 +327,7 @@ func main() {
 			w.Write(indexHTML)
 		} else {
 			// Fallback to disk read
-			content, _ := os.ReadFile(filepath.Join(wcDir, "web", "index.html"))
+			content, _ := os.ReadFile(filepath.Join(wcDir, "cmd", "ui", "web", "index.html"))
 			w.Write(content)
 		}
 	})
