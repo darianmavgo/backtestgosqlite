@@ -282,8 +282,11 @@ func FetchBenchmarkBars(db *sqlx.DB, tableName, benchmarkSymbol string) (map[str
 }
 
 // FetchAllBarsChronological loads all historical bars indexed by symbol and date.
-func FetchAllBarsChronological(db *sqlx.DB) (map[string][]models.Bar, []string, error) {
-	return FetchBars(db, "backtest_start", nil, "", "")
+func FetchAllBarsChronological(db *sqlx.DB, tableName string) (map[string][]models.Bar, []string, error) {
+	if tableName == "" {
+		tableName = "backtest_start"
+	}
+	return FetchBars(db, tableName, nil, "", "")
 }
 
 // EnsureTradeTable creates the institutional trades table schema.
@@ -317,6 +320,127 @@ func EnsureTradeTable(db *sqlx.DB) error {
 	`
 	_, err := db.Exec(schema)
 	return err
+}
+
+func EnsureSignalTable(db *sqlx.DB) error {
+	schema := `
+		CREATE TABLE IF NOT EXISTS signals (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			strategy_id TEXT,
+			symbol TEXT,
+			date TEXT,
+			order_type TEXT,
+			direction TEXT,
+			entry_price REAL,
+			take_profit REAL,
+			stop_loss REAL,
+			regime TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_signals_strat_sym ON signals(strategy_id, symbol, date);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
+func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error {
+	if len(signals) == 0 {
+		return nil
+	}
+	if err := EnsureSignalTable(db); err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO signals (
+			strategy_id, symbol, date, order_type, direction, entry_price, take_profit, stop_loss, regime
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, s := range signals {
+		dir := s.Direction
+		if dir == "" {
+			dir = "LONG"
+		}
+		typ := s.OrderType
+		if typ == "" {
+			typ = "limit"
+		}
+		// In models.Signal, entry price is usually stored in BuyLimit or Close. BuyLimit is safer for Limit orders.
+		entryPrice := s.BuyLimit
+		if entryPrice == 0 {
+			entryPrice = s.Close
+		}
+
+		_, err := stmt.Exec(
+			strategyID, s.Symbol, s.Date, typ, dir, entryPrice, s.TakeProfit, s.StopLoss, s.Regime,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func EnsureEquityCurveTable(db *sqlx.DB) error {
+	schema := `
+		CREATE TABLE IF NOT EXISTS equity_curve (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			strategy_id TEXT,
+			date TEXT,
+			total_equity REAL,
+			cash REAL,
+			invested REAL,
+			drawdown_pct REAL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_equity_strat_date ON equity_curve(strategy_id, date);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
+func SaveEquityCurve(db *sqlx.DB, strategyID string, curve []models.DailyEquityPoint) error {
+	if len(curve) == 0 {
+		return nil
+	}
+	if err := EnsureEquityCurveTable(db); err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO equity_curve (
+			strategy_id, date, total_equity, cash, invested, drawdown_pct
+		) VALUES (?, ?, ?, ?, ?, ?)
+	`
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, p := range curve {
+		_, err := stmt.Exec(strategyID, p.Date, p.TotalEquity, p.Cash, p.PositionsValue, p.DrawdownPct)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // SaveTrades persists completed simulation trades to the database.

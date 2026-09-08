@@ -114,7 +114,8 @@ func listStrategies() {
 }
 
 func main() {
-	targetDb := flag.String("db", "data/wc_master_backtest.db", "Path to target SQLite DB containing backtest_start table")
+	targetDb := flag.String("db", "data/leveraged_backtest.db", "Path to target SQLite DB")
+	tableName := flag.String("table", "backtest_start", "Table name containing historical bars")
 	strategyType := flag.String("strategy", "bb-capitulation", "Strategy ID to run (e.g. bb-capitulation, trend-bb, rsi2, wc, whitings_creek-sql)")
 	listFlag := flag.Bool("list", false, "List all registered Go and SQL strategies")
 	symbolFilter := flag.String("symbol", "", "Optional: Filter backtest to a specific symbol (e.g. DFEN, SOXL)")
@@ -169,8 +170,8 @@ func main() {
 	}
 	defer db.Close()
 
-	fmt.Printf("\n⚙️ Loading chronological bars for Portfolio Simulation (Starting Capital: $%.2f)...\n", *capital)
-	barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db)
+	fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", *tableName, *capital)
+	barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, *tableName)
 	if err != nil {
 		log.Fatalf("Error loading historical bars for simulation: %v", err)
 	}
@@ -193,14 +194,27 @@ func main() {
 			len(signals), len(barsBySymbol), len(sortedDates))
 	}
 
+	// Persist all generated signals to SQLite
+	if err := storage.SaveSignals(db, strat.ID(), signals); err != nil {
+		log.Printf("Warning: Failed to save signals to SQLite: %v", err)
+	} else if len(signals) > 0 {
+		fmt.Printf("💾 Persisted %d generated entry signals to SQLite 'signals' table.\n", len(signals))
+	}
+
 	sim := simulator.NewPortfolioSimulator(cfg, *capital)
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
 
-	// Persist completed trades to SQLite table
 	if err := storage.SaveTrades(db, strat.ID(), trades); err != nil {
 		log.Printf("Warning: Failed to save simulation trades to SQLite: %v", err)
 	} else if len(trades) > 0 {
-		fmt.Printf("💾 Successfully persisted %d completed trades to SQLite 'trades' table.\n", len(trades))
+		fmt.Printf("💾 Persisted %d completed trades to SQLite 'trades' table.\n", len(trades))
+	}
+
+	// Persist daily equity curve to SQLite
+	if err := storage.SaveEquityCurve(db, strat.ID(), equityCurve); err != nil {
+		log.Printf("Warning: Failed to save equity curve to SQLite: %v", err)
+	} else if len(equityCurve) > 0 {
+		fmt.Printf("💾 Persisted %d daily equity points to SQLite 'equity_curve' table.\n", len(equityCurve))
 	}
 
 	printPerformanceTearSheet(strat.Name(), report)
