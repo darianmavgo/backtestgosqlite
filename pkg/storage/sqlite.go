@@ -297,6 +297,71 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 	return bySymbol, dates, nil
 }
 
+// FetchRecentBars retrieves only the most recent N bars per symbol for fast live scanning,
+// while computing accurate SMA200/SMA50 across the historical series.
+func FetchRecentBars(db *sqlx.DB, tableName string, symbols []string, limitPerSymbol int) (map[string][]models.Bar, []string, error) {
+	if tableName == "" {
+		tableName = "backtest_start"
+	}
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, nil, err
+	}
+	if limitPerSymbol <= 0 {
+		limitPerSymbol = 250
+	}
+
+	whereClause := "WHERE 1=1"
+	var args []interface{}
+	if len(symbols) > 0 {
+		placeholders := make([]string, len(symbols))
+		for i, s := range symbols {
+			placeholders[i] = "?"
+			args = append(args, s)
+		}
+		whereClause += fmt.Sprintf(" AND symbol IN (%s)", strings.Join(placeholders, ","))
+	}
+
+	query := fmt.Sprintf(`
+		SELECT idx, symbol, Date, open, high, low, close, volume, sma200, sma50
+		FROM (
+			SELECT 
+				coalesce(idx, rowid, 0) as idx, 
+				symbol, 
+				substr(Date, 1, 10) as Date, 
+				open, high, low, close, volume,
+				AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
+				AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 49 PRECEDING AND CURRENT ROW)  AS sma50,
+				ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) DESC) as rn
+			FROM %s
+			%s
+		)
+		WHERE rn <= ?
+		ORDER BY Date ASC, symbol ASC;
+	`, tableName, whereClause)
+
+	args = append(args, limitPerSymbol)
+
+	var allBars []models.Bar
+	err := db.Select(&allBars, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	bySymbol := make(map[string][]models.Bar)
+	datesSeen := make(map[string]bool)
+	var dates []string
+
+	for _, b := range allBars {
+		bySymbol[b.Symbol] = append(bySymbol[b.Symbol], b)
+		if !datesSeen[b.Date] {
+			datesSeen[b.Date] = true
+			dates = append(dates, b.Date)
+		}
+	}
+
+	return bySymbol, dates, nil
+}
+
 // FetchBenchmarkBars loads benchmark bars indexed by date (e.g. SPY).
 func FetchBenchmarkBars(db *sqlx.DB, tableName, benchmarkSymbol string) (map[string]models.Bar, error) {
 	if tableName == "" {

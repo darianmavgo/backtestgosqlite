@@ -146,8 +146,9 @@ The platform cleanly separates market data caching from backtest calculation sto
 
 | Database File | Directory | Primary Role | Schema / Key Tables | Written By | Read By |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`market_history.db`** | `data/` | **Master OHLCV Bar Cache** | `backtest_start` (OHLCV daily bars: `symbol`, `Date`, `open`, `high`, `low`, `close`, `volume`) | `cmd/download` | `cmd/backtest`, `cmd/ui`, `cmd/gridsearch` |
+| **`market_history.db`** | `data/` | **Master OHLCV Bar Cache** | `backtest_start` (OHLCV daily bars: `symbol`, `Date`, `open`, `high`, `low`, `close`, `volume`) | `cmd/download` | `cmd/backtest`, `cmd/livescan`, `cmd/ui`, `cmd/gridsearch` |
 | **`<strategy_id>.db`** *(e.g. `bb-capitulation.db`, `_2.db`, `_3.db`)* | `reports/` | **Isolated Backtest Run Results** | `signals`, `trades`, `equity_curve`, `performance_summary` | `cmd/backtest` | External analysis, SQLite CLI, Notebooks |
+| **`livescan_signals.db`** *(optional with `-save`)* | `reports/` | **Live Signal Log** | `live_signals` (actionable orders for today/tomorrow) | `cmd/livescan` | Live order execution & alerts |
 | **`settings.db`** | `data/` | **Universe & Configuration Seed** | `leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d` | Seed scripts / Admin | `cmd/download`, `cmd/ui` |
 | **`sample.db` / `sample_stocks.db`** | `data/` | **Testing & Custom CSV Sandbox** | `backtest_start` | `cmd/download -csv` | `examples/custom_csv_backtest` |
 | **`sp500_etfs_study.db`** | `data/` | **Multi-Scenario Study Matrix** | `tecl_allocation_matrix`, `compare_3x_etfs_matrix` | `cmd/export_studies` | Study reports |
@@ -209,7 +210,26 @@ make example-csv
 ./bin/backtest -strategy bb-capitulation -symbol SOXL -capital 100000
 ```
 
-### 6. Launch the Local Web Dashboard
+### 6. Live Signal Scanner (`cmd/livescan`)
+Scan recent market history to calculate whether a position entry should happen **today** or **tomorrow**. Takes the exact same arguments as `backtest`, but operates lightning-fast by only querying recent warm bars from SQLite:
+```bash
+# Scan a single strategy on all universe symbols
+./bin/livescan bb-capitulation -capital 100000
+
+# Scan specific symbols with custom risk overrides
+./bin/livescan -strategy bb-capitulation -symbol SOXL,TECL -capital 50000 -stoploss 0.95 -target 1.15
+
+# Scan ALL strategies concurrently across the entire database universe
+./bin/livescan all
+
+# Output as JSON for automated execution bots or cron jobs
+./bin/livescan -strategy bb-capitulation -json
+
+# Save actionable orders to SQLite database (reports/livescan_signals.db)
+./bin/livescan all -save
+```
+
+### 7. Launch the Local Web Dashboard
 ```bash
 make ui
 # Open http://localhost:8080 in your browser
@@ -335,6 +355,7 @@ backtestgosqlite/
 │
 ├── cmd/                              # CLI Executable Entrypoints
 │   ├── backtest/main.go              # Multi-strategy backtester & tear sheet CLI
+│   ├── livescan/main.go              # Live signal scanner for today/tomorrow orders
 │   ├── download/main.go              # Multi-source data loader (CSV, Yahoo, Stooq)
 │   ├── ui/main.go                    # Local Web Dashboard UI Server
 │   ├── export_studies/main.go        # Batch CSV export for strategy studies

@@ -7,11 +7,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
+
+var sqlPipelineMu sync.Mutex
 
 // SQLPipelineStrategy adapts any directory of sequential SQL scripts into a runnable Strategy.
 type SQLPipelineStrategy struct {
@@ -68,12 +71,22 @@ func (s *SQLPipelineStrategy) SetDBPath(dbPath string) {
 
 // GenerateSignals executes the SQL pipeline scripts in order and extracts entry signals.
 func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	sqlPipelineMu.Lock()
+	defer sqlPipelineMu.Unlock()
+
 	targetDb := s.dbPath
 	if targetDb == "" {
 		targetDb = "data/wc_master_backtest.db"
 	}
 
-	db, err := sqlx.Open("sqlite3", targetDb)
+	dsn := targetDb
+	if !strings.Contains(dsn, "?") {
+		dsn += "?_busy_timeout=15000&_journal_mode=WAL"
+	} else {
+		dsn += "&_busy_timeout=15000"
+	}
+
+	db, err := sqlx.Open("sqlite3", dsn)
 	if err != nil {
 		log.Printf("Warning: SQL strategy %s failed to open DB %s: %v", s.id, targetDb, err)
 		return nil

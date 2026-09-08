@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -305,5 +306,57 @@ func TestGetSymbolDateCoverage(t *testing.T) {
 		t.Errorf("expected maxDate 2024-01-04, got %s", cov.MaxDate)
 	}
 }
+
+func TestFetchRecentBars(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "recent_bars_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "test_recent.db")
+	db, err := OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if err := EnsureBarTable(db, "backtest_start"); err != nil {
+		t.Fatalf("EnsureBarTable failed: %v", err)
+	}
+
+	var bars []models.Bar
+	for i := 1; i <= 10; i++ {
+		dateStr := fmt.Sprintf("2024-01-%02d", i)
+		bars = append(bars, models.Bar{
+			Symbol: "SPY",
+			Date:   dateStr,
+			Close:  float64(400 + i),
+		})
+	}
+	if err := UpsertBars(db, "backtest_start", bars); err != nil {
+		t.Fatalf("UpsertBars failed: %v", err)
+	}
+
+	// Fetch only the latest 3 bars
+	bySymbol, dates, err := FetchRecentBars(db, "backtest_start", []string{"SPY"}, 3)
+	if err != nil {
+		t.Fatalf("FetchRecentBars failed: %v", err)
+	}
+
+	spyBars := bySymbol["SPY"]
+	if len(spyBars) != 3 {
+		t.Fatalf("expected 3 bars, got %d", len(spyBars))
+	}
+	if len(dates) != 3 {
+		t.Fatalf("expected 3 dates, got %d", len(dates))
+	}
+
+	// Verify chronological order of the returned 3 most recent bars
+	if spyBars[0].Date != "2024-01-08" || spyBars[2].Date != "2024-01-10" {
+		t.Errorf("expected range 2024-01-08 to 2024-01-10, got %s to %s", spyBars[0].Date, spyBars[2].Date)
+	}
+}
+
 
 

@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download ui example-csv list
+.PHONY: all build clean test tidy backtest download livescan ui example-csv list
 
 # Go Parameters
 GOCMD=go
@@ -19,6 +19,8 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/download ./cmd/download
 	@echo "Building cmd/backtest..."
 	$(GOBUILD) -o $(BIN_DIR)/backtest ./cmd/backtest
+	@echo "Building cmd/livescan..."
+	$(GOBUILD) -o $(BIN_DIR)/livescan ./cmd/livescan
 	@echo "Building cmd/ui..."
 	$(GOBUILD) -o $(BIN_DIR)/ui ./cmd/ui
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
@@ -37,6 +39,10 @@ list: build
 backtest: build
 	@echo "Running default backtest (BB-Capitulation)..."
 	./$(BIN_DIR)/backtest -strategy bb-capitulation -capital 100000
+
+livescan: build
+	@echo "Running live scan for entry signals today/tomorrow..."
+	./$(BIN_DIR)/livescan -strategy bb-capitulation -capital 100000
 
 example-csv: build
 	@echo "Running custom CSV ingestion and backtest example..."
