@@ -2,6 +2,22 @@
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
 CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
 
+DROP TABLE IF EXISTS trend_calc_slice;
+CREATE TABLE trend_calc_slice (
+    idx INTEGER,
+    symbol TEXT,
+    date TEXT,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    prev_close REAL,
+    prev2_close REAL,
+    sma50 REAL,
+    count50 INTEGER
+);
+
 DROP TABLE IF EXISTS rsi2_trend_signals;
 CREATE TABLE rsi2_trend_signals (
     idx INTEGER,

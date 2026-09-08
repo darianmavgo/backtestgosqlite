@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"sort"
-
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
@@ -45,39 +43,10 @@ func (s *RSI2TrendStrategy) Validate() error {
 }
 
 func (s *RSI2TrendStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var signals []models.Signal
-
-	for sym, bars := range barsBySymbol {
-		if len(bars) < 55 {
-			continue
-		}
-		sma50 := CalcSMA(bars, 50)
-		rsi2 := CalcRSI(bars, 2)
-
-		for i := 50; i < len(bars); i++ {
-			if bars[i].Close > sma50[i] && rsi2[i] < 10.0 && rsi2[i] > 0 {
-				signals = append(signals, models.Signal{
-					Idx:      bars[i].Idx,
-					Symbol:   sym,
-					Date:     bars[i].Date,
-					Open:     bars[i].Open,
-					High:     bars[i].High,
-					Low:      bars[i].Low,
-					Close:    bars[i].Close,
-					Volume:   bars[i].Volume,
-					BuyLimit: bars[i].Close,
-					Entry:    1,
-				})
-			}
-		}
+	// Delegate signal generation directly to the canonical SQLite pipeline
+	if sqlStrat, exists := Get("rsi2_trend-sql"); exists {
+		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-
-	sort.Slice(signals, func(i, j int) bool {
-		if signals[i].Date == signals[j].Date {
-			return signals[i].Symbol < signals[j].Symbol
-		}
-		return signals[i].Date < signals[j].Date
-	})
-
-	return signals
+	pipe := NewSQLPipelineStrategy("rsi2_trend-pipeline", s.Name(), s.Description(), "sql/strategies/rsi2_trend", "data/market_history.db", s.DefaultConfig())
+	return pipe.GenerateSignals(barsBySymbol)
 }

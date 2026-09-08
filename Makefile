@@ -31,7 +31,7 @@ tidy:
 
 test:
 	@echo "Running tests..."
-	$(GOTEST) -v ./internal/... ./cmd/...
+	go test -v ./pkg/... ./cmd/...
 
 list: build
 	./$(BIN_DIR)/backtest -list

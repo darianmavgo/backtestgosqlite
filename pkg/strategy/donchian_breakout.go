@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"sort"
-
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
@@ -47,40 +45,10 @@ func (s *DonchianBreakoutStrategy) Validate() error {
 }
 
 func (s *DonchianBreakoutStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var signals []models.Signal
-
-	for sym, bars := range barsBySymbol {
-		if len(bars) < 25 {
-			continue
-		}
-		dc := CalcDonchian(bars, 20)
-
-		for i := 20; i < len(bars); i++ {
-			// Day T-1 high was upper channel; Day T close breaks above previous day's upper band
-			if bars[i].Close > dc.Upper[i-1] {
-				signals = append(signals, models.Signal{
-					Idx:       bars[i].Idx,
-					Symbol:    sym,
-					Date:      bars[i].Date,
-					Open:      bars[i].Open,
-					High:      bars[i].High,
-					Low:       bars[i].Low,
-					Close:     bars[i].Close,
-					Volume:    bars[i].Volume,
-					BuyLimit:  bars[i].Close,
-					OrderType: "market",
-					Entry:     1,
-				})
-			}
-		}
+	// Delegate signal generation directly to the canonical SQLite pipeline
+	if sqlStrat, exists := Get("donchian_breakout-sql"); exists {
+		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-
-	sort.Slice(signals, func(i, j int) bool {
-		if signals[i].Date == signals[j].Date {
-			return signals[i].Symbol < signals[j].Symbol
-		}
-		return signals[i].Date < signals[j].Date
-	})
-
-	return signals
+	pipe := NewSQLPipelineStrategy("donchian_breakout-pipeline", s.Name(), s.Description(), "sql/strategies/donchian_breakout", "data/market_history.db", s.DefaultConfig())
+	return pipe.GenerateSignals(barsBySymbol)
 }

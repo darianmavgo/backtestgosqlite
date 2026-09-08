@@ -2,6 +2,19 @@
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
 CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
 
+DROP TABLE IF EXISTS donchian_slice;
+CREATE TABLE donchian_slice (
+    idx INTEGER,
+    symbol TEXT,
+    date TEXT,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    volume INTEGER,
+    upper_20d REAL
+);
+
 DROP TABLE IF EXISTS donchian_breakout_signals;
 CREATE TABLE donchian_breakout_signals (
     idx INTEGER,

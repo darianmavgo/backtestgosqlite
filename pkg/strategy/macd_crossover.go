@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"sort"
-
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
@@ -45,44 +43,10 @@ func (s *MACDCrossoverStrategy) Validate() error {
 }
 
 func (s *MACDCrossoverStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var signals []models.Signal
-
-	for sym, bars := range barsBySymbol {
-		if len(bars) < 40 {
-			continue
-		}
-		macd := CalcMACD(bars, 12, 26, 9)
-
-		for i := 36; i < len(bars); i++ {
-			// MACD line crosses above Signal line while MACD line is below zero (bullish reversal momentum)
-			prevCross := macd.MACD[i-1] <= macd.Signal[i-1]
-			currCross := macd.MACD[i] > macd.Signal[i]
-			isOversold := macd.MACD[i] < 0
-
-			if prevCross && currCross && isOversold {
-				signals = append(signals, models.Signal{
-					Idx:       bars[i].Idx,
-					Symbol:    sym,
-					Date:      bars[i].Date,
-					Open:      bars[i].Open,
-					High:      bars[i].High,
-					Low:       bars[i].Low,
-					Close:     bars[i].Close,
-					Volume:    bars[i].Volume,
-					BuyLimit:  bars[i].Close,
-					OrderType: "limit",
-					Entry:     1,
-				})
-			}
-		}
+	// Delegate signal generation directly to the canonical SQLite pipeline
+	if sqlStrat, exists := Get("macd_crossover-sql"); exists {
+		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-
-	sort.Slice(signals, func(i, j int) bool {
-		if signals[i].Date == signals[j].Date {
-			return signals[i].Symbol < signals[j].Symbol
-		}
-		return signals[i].Date < signals[j].Date
-	})
-
-	return signals
+	pipe := NewSQLPipelineStrategy("macd_crossover-pipeline", s.Name(), s.Description(), "sql/strategies/macd_crossover", "data/market_history.db", s.DefaultConfig())
+	return pipe.GenerateSignals(barsBySymbol)
 }
