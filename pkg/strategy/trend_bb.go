@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"sort"
-
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
@@ -45,42 +43,10 @@ func (s *TrendBBOversoldStrategy) Validate() error {
 }
 
 func (s *TrendBBOversoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var signals []models.Signal
-
-	for sym, bars := range barsBySymbol {
-		if len(bars) < 55 {
-			continue
-		}
-		bb := CalcBollinger(bars, 20, 2.0)
-		rsi5 := CalcRSI(bars, 5)
-		sma50 := CalcSMA(bars, 50)
-
-		for i := 50; i < len(bars); i++ {
-			// Trend Filter: In macro bull trend (Close > SMA50)
-			// Oversold Trigger: Low pierced lower BB AND RSI(5) < 30
-			if bars[i].Close > sma50[i] && bars[i].Low < bb.Lower[i] && rsi5[i] < 30 {
-				signals = append(signals, models.Signal{
-					Idx:      bars[i].Idx,
-					Symbol:   sym,
-					Date:     bars[i].Date,
-					Open:     bars[i].Open,
-					High:     bars[i].High,
-					Low:      bars[i].Low,
-					Close:    bars[i].Close,
-					Volume:   bars[i].Volume,
-					BuyLimit: bars[i].Close,
-					Entry:    1,
-				})
-			}
-		}
+	// Delegate signal generation directly to the canonical SQLite pipeline
+	if sqlStrat, exists := Get("trend_bb-sql"); exists {
+		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-
-	sort.Slice(signals, func(i, j int) bool {
-		if signals[i].Date == signals[j].Date {
-			return signals[i].Symbol < signals[j].Symbol
-		}
-		return signals[i].Date < signals[j].Date
-	})
-
-	return signals
+	pipe := NewSQLPipelineStrategy("trend_bb-pipeline", s.Name(), s.Description(), "sql/strategies/trend_bb", "data/market_history.db", s.DefaultConfig())
+	return pipe.GenerateSignals(barsBySymbol)
 }
