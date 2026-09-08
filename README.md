@@ -66,7 +66,7 @@ It pairs the raw execution speed and goroutine concurrency of compiled Go with t
 * **SQLite Storage Engine**: High-speed batch insertion into SQLite tables with indexed lookups and WAL concurrency.
 
 ### 3. Built-in Technical Indicator Library
-Zero external C dependencies. Pure Go vectorized indicator math in [`internal/strategy/indicators.go`](file:///Users/darianhickman/Documents/backtestgosqlite/internal/strategy/indicators.go):
+Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strategy/indicators.go`](file:///Users/darianhickman/Documents/backtestgosqlite/pkg/strategy/indicators.go):
 * **Moving Averages**: `CalcSMA`, `CalcEMA`
 * **Oscillators**: `CalcRSI` (Wilder's smoothing)
 * **Volatility**: `CalcBollinger`, `CalcATR`, `CalcDonchian`
@@ -121,15 +121,8 @@ make example-csv
 ./bin/backtest -strategy bb-capitulation -symbol SOXL -capital 100000
 ```
 
-### 5. Multi-Strategy Comparative Benchmark
-Run all strategies concurrently against your dataset in parallel:
-```bash
-make compare
-# or:
-./bin/compare -db data/wc_master_backtest.db -capital 100000
-```
 
-### 6. Launch the Local Web Dashboard
+### 5. Launch the Local Web Dashboard
 ```bash
 make ui
 # Open http://localhost:8080 in your browser
@@ -139,14 +132,14 @@ make ui
 
 ## 🛠️ Writing Your Own Strategy in Go (Under 35 Lines)
 
-Create `internal/strategy/my_strategy.go`:
+Create `pkg/strategy/my_strategy.go`:
 
 ```go
 package strategy
 
 import (
     "sort"
-    "github.com/darianmavgo/backtestgosqlite/internal/models"
+    "github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
 type MyStrategy struct{}
@@ -254,13 +247,13 @@ backtestgosqlite/
 ├── Comparison.md                     # Performance & architecture comparison
 │
 ├── cmd/                              # CLI Executable Entrypoints
-│   ├── backtest/main.go              # Single strategy backtester & tear sheet CLI
-│   ├── compare/main.go               # Concurrent multi-strategy benchmark suite
+│   ├── backtest/main.go              # Multi-strategy backtester & tear sheet CLI
 │   ├── download/main.go              # Multi-source data loader (CSV, Yahoo, Stooq)
 │   ├── ui/main.go                    # Local Web Dashboard UI Server
-│   └── server/main.go                # Automated execution HTTP server
+│   ├── export_studies/main.go        # Batch CSV export for strategy studies
+│   └── gridsearch/main.go            # Multi-core parameter optimization grid search
 │
-├── internal/                         # Modular Core Go Packages
+├── pkg/                              # Modular Core Go Packages
 │   ├── models/models.go              # Domain types (Bar, Signal, Position, Trade, Report)
 │   ├── datasource/                   # Pluggable data layer (CSV, Yahoo, Stooq, SQLite)
 │   ├── strategy/                     # Unified strategy registry, indicators & algorithms
@@ -281,7 +274,6 @@ backtestgosqlite/
 │   └── storage/                      # SQLite WAL database helpers & query engine
 │
 ├── sql/                              # SQL Pipeline Strategies
-│   ├── 01_schema/                    # Master database schema DDL
 │   └── strategies/                   # Auto-discovered SQL strategy pipelines
 │       ├── README.md                 # SQL strategy authoring guide
 │       └── whitings_creek/           # 25-stage relational pipeline

@@ -16,10 +16,7 @@ require (
 	xorm.io/xorm v1.3.1
 )
 
-require (
-	github.com/darianmavgo/schwaber v0.0.0-00010101000000-000000000000 // indirect
-	github.com/mattn/go-runewidth v0.0.2 // indirect
-)
+require github.com/mattn/go-runewidth v0.0.2 // indirect
 
 require (
 	cloud.google.com/go v0.102.1 // indirect

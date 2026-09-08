@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download ui server compare example-csv list
+.PHONY: all build clean test tidy backtest download ui example-csv list
 
 # Go Parameters
 GOCMD=go
@@ -21,10 +21,6 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/backtest ./cmd/backtest
 	@echo "Building cmd/ui..."
 	$(GOBUILD) -o $(BIN_DIR)/ui ./cmd/ui
-	@echo "Building cmd/server..."
-	$(GOBUILD) -o $(BIN_DIR)/server ./cmd/server
-	@echo "Building cmd/compare..."
-	$(GOBUILD) -o $(BIN_DIR)/compare ./cmd/compare
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
 
 tidy:
