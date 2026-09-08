@@ -9,11 +9,11 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/olekukonko/tablewriter"
-	"github.com/darianmavgo/backtestgosqlite/internal/analytics"
-	"github.com/darianmavgo/backtestgosqlite/internal/models"
-	"github.com/darianmavgo/backtestgosqlite/internal/simulator"
-	"github.com/darianmavgo/backtestgosqlite/internal/storage"
-	"github.com/darianmavgo/backtestgosqlite/internal/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
+	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
 func printPerformanceTearSheet(strategyName string, report models.PerformanceReport) {

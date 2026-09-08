@@ -307,4 +307,4 @@ backtestgosqlite/
 
 ## 🔮 Future Architecture Proposals
 
-For future improvements regarding report organization, historical data storage, and signal sharing with external execution suites (`trading_schwab`, `ibkr_personal`), please see [ARCHITECTURE_PROPOSALS.md](ARCHITECTURE_PROPOSALS.md).
+For future improvements regarding report organization, historical data storage, and signal sharing with external execution suites (e.g., `trading_schwab`), please see [ARCHITECTURE_PROPOSALS.md](ARCHITECTURE_PROPOSALS.md).

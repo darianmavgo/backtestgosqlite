@@ -24,12 +24,12 @@ Presently, downloading data often results in redundant network calls or duplicat
 
 ## 3. Signal Sharing with External Projects 🚀
 
-To bridge the gap between `backtestgosqlite` (the intelligence engine) and `trading_schwab` / `ibkr_personal` (the execution engines):
+To bridge the gap between `backtestgosqlite` (the intelligence engine) and `trading_schwab` (the execution engine):
 
 ### Recommendations:
 * **Option A: The Shared SQLite "Mailbox" (Easiest)**
   * **How:** `backtestgosqlite` writes generated signals (Symbol, Action, Price, Size) into a shared SQLite database (e.g., `live_signals.db`) configured with Write-Ahead Logging (WAL).
-  * **Consumption:** `ibkr_personal` (bot) and `trading_schwab` run polling loops on `live_signals.db` to pick up unexecuted signals. Once executed, they update the signal row with a `status='EXECUTED'`.
+  * **Consumption:** `trading_schwab` runs polling loops on `live_signals.db` to pick up unexecuted signals. Once executed, it updates the signal row with a `status='EXECUTED'`.
 * **Option B: Lightweight Go REST / gRPC API (Most Robust)**
   * **How:** Run a lightweight Go HTTP server within `backtestgosqlite` (or a sidecar process) exposing a `/api/v1/signals/pending` endpoint.
   * **Consumption:** External execution scripts poll this API. This abstracts away the database layer and allows execution bots to live on entirely different machines.

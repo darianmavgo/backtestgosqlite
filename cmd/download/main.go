@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/darianmavgo/backtestgosqlite/internal/datasource"
-	"github.com/darianmavgo/backtestgosqlite/internal/storage"
+	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )

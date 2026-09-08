@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download ui server compare example-csv list millwharf ibkr
+.PHONY: all build clean test tidy backtest download ui server compare example-csv list millwharf
 
 # Go Parameters
 GOCMD=go
