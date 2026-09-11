@@ -46,6 +46,11 @@ func (s *VOOTECLSPXUCombo) Validate() error {
 	return ValidateConfig(s.DefaultConfig())
 }
 
+// RequiredSymbols returns the specific market symbols required by this combo strategy.
+func (s *VOOTECLSPXUCombo) RequiredSymbols() []string {
+	return []string{"VOO", "TECL", "SPXU"}
+}
+
 // DefaultConfig returns the canonical VOO-TECL combo parameters.
 func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
 	return StrategyConfig{

@@ -25,6 +25,11 @@ type Strategy interface {
 	GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal
 }
 
+// RequiredSymbolsProvider is optionally implemented by strategies that require specific assets (e.g. multi-leg or combo strategies).
+type RequiredSymbolsProvider interface {
+	RequiredSymbols() []string
+}
+
 // StrategyConfig encapsulates the operational parameters for an algorithm.
 type StrategyConfig struct {
 	ID                 string  `json:"id"`

@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -277,6 +281,8 @@ func main() {
 	profitTarget := flag.Float64("target", 0.0, "Optional override: Take-profit multiplier (e.g. 1.18 for +18%)")
 	holdWindow := flag.Int("hold", 0, "Optional override: Max holding days window")
 	htmlOutput := flag.String("html", "reports/backtest_report.html", "Path to export interactive HTML dashboard report")
+	autoDownload := flag.Bool("auto-download", true, "Automatically detect missing market data and run download")
+	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
 	flag.Parse()
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
@@ -326,6 +332,11 @@ func main() {
 		if sqlStrat, ok := s.(*strategy.SQLPipelineStrategy); ok {
 			sqlStrat.SetDBPath(*targetDb)
 		}
+	}
+
+	// Detect missing market data and download before running backtest
+	if err := detectAndDownloadMissingData(*targetDb, *tableName, selectedStrategies, *symbolFilter, *autoDownload, *downloadYears); err != nil {
+		log.Fatalf("Market data resolution error: %v", err)
 	}
 
 	// Open read-only historical bars from source DB
@@ -472,4 +483,131 @@ func main() {
 			fmt.Printf("\n✨ Interactive HTML Report generated: %s\n\n", *htmlOutput)
 		}
 	}
+}
+
+func detectAndDownloadMissingData(
+	targetDb string,
+	tableName string,
+	strategies []strategy.Strategy,
+	symbolFilter string,
+	autoDownload bool,
+	downloadYears int,
+) error {
+	requiredSet := make(map[string]struct{})
+
+	// 1. If explicit symbol filter requested
+	if sym := strings.ToUpper(strings.TrimSpace(symbolFilter)); sym != "" {
+		requiredSet[sym] = struct{}{}
+	}
+
+	// 2. Symbols required by chosen strategies
+	for _, s := range strategies {
+		if reqProvider, ok := s.(strategy.RequiredSymbolsProvider); ok {
+			for _, sym := range reqProvider.RequiredSymbols() {
+				if sym = strings.ToUpper(strings.TrimSpace(sym)); sym != "" {
+					requiredSet[sym] = struct{}{}
+				}
+			}
+		}
+		cfg := s.DefaultConfig()
+		if bm := strings.ToUpper(strings.TrimSpace(cfg.Benchmark)); bm != "" {
+			requiredSet[bm] = struct{}{}
+		}
+	}
+
+	// 3. Open DB to check table and coverage
+	db, err := storage.OpenSQLite(targetDb)
+	if err != nil {
+		return fmt.Errorf("failed to open database %s: %w", targetDb, err)
+	}
+
+	if err := storage.EnsureBarTable(db, tableName); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to ensure bar table %s: %w", tableName, err)
+	}
+
+	var totalBars int
+	_ = db.Get(&totalBars, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName))
+
+	// If no specific symbols required and table is completely empty, populate baseline universe
+	if len(requiredSet) == 0 && totalBars == 0 {
+		for _, sym := range []string{"SPY", "QQQ", "VOO", "TECL", "SOXL", "TQQQ"} {
+			requiredSet[sym] = struct{}{}
+		}
+	}
+
+	var missingSymbols []string
+	for sym := range requiredSet {
+		cov, err := storage.GetSymbolDateCoverage(db, tableName, sym)
+		if err != nil || cov.BarCount == 0 {
+			missingSymbols = append(missingSymbols, sym)
+		}
+	}
+	sort.Strings(missingSymbols)
+
+	db.Close() // Close before spawning download process
+
+	if len(missingSymbols) == 0 {
+		return nil
+	}
+
+	if !autoDownload {
+		return fmt.Errorf("missing market data for symbol(s) %v in %s (%s). Run with -auto-download or run: ./bin/download -symbols %s",
+			missingSymbols, targetDb, tableName, strings.Join(missingSymbols, ","))
+	}
+
+	fmt.Printf("\n🔍 Detected missing market data for %d symbol(s) in %s (%s): %v\n",
+		len(missingSymbols), targetDb, tableName, missingSymbols)
+	fmt.Printf("📥 Running download to fetch missing historical bars (%d years)...\n\n", downloadYears)
+
+	if err := runDownload(targetDb, tableName, missingSymbols, downloadYears); err != nil {
+		return fmt.Errorf("download command failed for symbols %v: %w", missingSymbols, err)
+	}
+
+	fmt.Printf("\n✅ Successfully updated market data for %v in %s (%s).\n", missingSymbols, targetDb, tableName)
+	return nil
+}
+
+func runDownload(targetDb, targetTable string, symbols []string, years int) error {
+	if len(symbols) == 0 {
+		return nil
+	}
+
+	symArg := strings.Join(symbols, ",")
+	yearsArg := strconv.Itoa(years)
+
+	// Look for download binary
+	candidates := []string{
+		filepath.Join("bin", "download"),
+		"download",
+	}
+
+	if execPath, err := os.Executable(); err == nil {
+		candidates = append([]string{filepath.Join(filepath.Dir(execPath), "download")}, candidates...)
+	}
+
+	var downloadBin string
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			downloadBin = c
+			break
+		}
+		if lp, err := exec.LookPath(c); err == nil {
+			downloadBin = lp
+			break
+		}
+	}
+
+	var cmd *exec.Cmd
+	if downloadBin != "" {
+		cmd = exec.Command(downloadBin, "-db", targetDb, "-target-table", targetTable, "-symbols", symArg, "-years", yearsArg)
+	} else {
+		cmd = exec.Command("go", "run", "./cmd/download", "-db", targetDb, "-target-table", targetTable, "-symbols", symArg, "-years", yearsArg)
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	return cmd.Run()
 }

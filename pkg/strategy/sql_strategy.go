@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -67,6 +68,45 @@ func (s *SQLPipelineStrategy) Validate() error {
 // SetDBPath sets the target database for executing the SQL pipeline.
 func (s *SQLPipelineStrategy) SetDBPath(dbPath string) {
 	s.dbPath = dbPath
+}
+
+// RequiredSymbols inspects the pipeline SQL queries for explicit symbol requirements (e.g. symbol = 'XYZ').
+func (s *SQLPipelineStrategy) RequiredSymbols() []string {
+	if s.pipelineDir == "" {
+		return nil
+	}
+	files, err := os.ReadDir(s.pipelineDir)
+	if err != nil {
+		return nil
+	}
+
+	symMap := make(map[string]bool)
+	symRegex := regexp.MustCompile(`(?i)\bsymbol\s*=\s*'([A-Za-z0-9]+)'`)
+
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
+			content, err := os.ReadFile(filepath.Join(s.pipelineDir, f.Name()))
+			if err != nil {
+				continue
+			}
+			matches := symRegex.FindAllStringSubmatch(string(content), -1)
+			for _, m := range matches {
+				if len(m) > 1 {
+					sym := strings.ToUpper(strings.TrimSpace(m[1]))
+					if sym != "" {
+						symMap[sym] = true
+					}
+				}
+			}
+		}
+	}
+
+	var syms []string
+	for sym := range symMap {
+		syms = append(syms, sym)
+	}
+	sort.Strings(syms)
+	return syms
 }
 
 // GenerateSignals executes the SQL pipeline scripts in order and extracts entry signals.
