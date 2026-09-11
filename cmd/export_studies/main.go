@@ -218,9 +218,9 @@ func main() {
 	fmt.Println("✅ Populated inverse_3x_reversion_matrix")
 
 	// ------------------------------------------------------------------
-	// 5. All-Weather Combo via unified VOOTECLCombo Strategy.
+	// 5. All-Weather Combo via unified VOOTECLSPXUCombo Strategy.
 	// ------------------------------------------------------------------
-	comboStrat := strategy.NewVOOTECLCombo()
+	comboStrat := strategy.NewVOOTECLSPXUCombo()
 	comboCfg := comboStrat.DefaultConfig()
 	barsBySymbol := map[string][]models.Bar{"VOO": vooBars, "TECL": teclBars, "SPXU": spxuBars}
 	comboSigs := comboStrat.GenerateSignals(barsBySymbol)

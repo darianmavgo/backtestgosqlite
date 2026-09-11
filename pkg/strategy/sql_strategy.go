@@ -138,8 +138,28 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 	}
 
 	for _, tbl := range tableCandidates {
+		// First try extended select with optional direction, regime, and overrides
+		extendedQuery := fmt.Sprintf(`
+			SELECT coalesce(idx, rowid, 0) as idx, symbol, substr(date, 1, 10) as date,
+			       open, high, low, close, volume, buylimit, entry,
+			       coalesce(direction, 'LONG') as direction,
+			       coalesce(regime, 'All Regimes') as regime,
+			       coalesce(hold_days_override, 0) as hold_days_override,
+			       coalesce(take_profit, 0.0) as take_profit,
+			       coalesce(stop_loss, 0.0) as stop_loss
+			FROM %s
+			WHERE entry = 1
+			ORDER BY date, symbol ASC;
+		`, tbl)
+		err = db.Select(&signals, extendedQuery)
+		if err == nil && len(signals) > 0 {
+			break
+		}
+
+		// Fallback to basic columns with safe coalesce on idx
 		query := fmt.Sprintf(`
-			SELECT idx, symbol, substr(date, 1, 10) as date, open, high, low, close, volume, buylimit, entry
+			SELECT coalesce(idx, rowid, 0) as idx, symbol, substr(date, 1, 10) as date,
+			       open, high, low, close, volume, buylimit, entry
 			FROM %s
 			WHERE entry = 1
 			ORDER BY date, symbol ASC;

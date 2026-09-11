@@ -1,7 +1,7 @@
 -- LONG TECL when VOO down 3 days
 INSERT INTO voo_tecl_combo_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
-    t.idx,
+    coalesce(t.idx, t.rowid, 0) AS idx,
     'TECL' AS symbol,
     v.date,
     t.open,
@@ -24,7 +24,7 @@ WHERE v.down_streak >= 3;
 -- Also ensure we don't insert a SHORT if a LONG was already inserted for that date (LONG takes priority)
 INSERT INTO voo_tecl_combo_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
-    s.idx,
+    coalesce(s.idx, s.rowid, 0) AS idx,
     'SPXU' AS symbol,
     v.date,
     s.open,

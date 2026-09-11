@@ -42,17 +42,17 @@ type Signal struct {
 	AssetClass string             `db:"asset_class" json:"asset_class,omitempty"`
 
 	// Direction indicates whether this is a LONG or SHORT entry signal.
-	// Set by strategies that trade multiple directions (e.g. VOOTECLCombo).
-	Direction string `json:"direction,omitempty"` // "LONG" or "SHORT"
+	// Set by strategies that trade multiple directions (e.g. VOOTECLSPXUCombo).
+	Direction string `db:"direction" json:"direction,omitempty"` // "LONG" or "SHORT"
 
 	// Regime records the market regime in effect when the signal fired.
 	// For observability only — regime filtering is done inside GenerateSignals.
-	Regime string `json:"regime,omitempty"` // e.g. "VOO<SMA200", "All Regimes"
+	Regime string `db:"regime" json:"regime,omitempty"` // e.g. "VOO<SMA200", "All Regimes"
 
 	// HoldDaysOverride, when > 0, overrides the strategy-level HoldingWindow
 	// for this specific signal. Used by multi-leg strategies with different
 	// hold periods per leg (e.g. long=8 days, short=2 days).
-	HoldDaysOverride int `json:"hold_days_override,omitempty"`
+	HoldDaysOverride int `db:"hold_days_override" json:"hold_days_override,omitempty"`
 }
 
 // ExitReason represents the trigger that closed a trade.

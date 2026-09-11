@@ -4,7 +4,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-// VOOTECLCombo implements the All-Weather Dual Combo strategy:
+// VOOTECLSPXUCombo implements the All-Weather Dual Combo strategy:
 //
 //   - LONG TECL when VOO closes down 3 consecutive days
 //     (+5% take-profit, 0% stop-loss, 8-day max hold, 65% allocation)
@@ -18,32 +18,36 @@ import (
 //
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual
 // and applied by the PortfolioSimulator.
-type VOOTECLCombo struct{}
+type VOOTECLSPXUCombo struct{}
 
-// NewVOOTECLCombo constructs and auto-registers the strategy.
-func NewVOOTECLCombo() *VOOTECLCombo {
-	s := &VOOTECLCombo{}
+// NewVOOTECLSPXUCombo constructs and auto-registers the strategy.
+func NewVOOTECLSPXUCombo() *VOOTECLSPXUCombo {
+	s := &VOOTECLSPXUCombo{}
 	Register(s)
+	RegisterAlias("voo-tecl-combo", s)
+	RegisterAlias("vooteclcombo", s)
+	RegisterAlias("VOOTECLSPXUCombo", s)
+	RegisterAlias("vooteclspxucombo", s)
 	return s
 }
 
-func (s *VOOTECLCombo) ID() string { return "voo-tecl-combo" }
+func (s *VOOTECLSPXUCombo) ID() string { return "voo-tecl-spxu-combo" }
 
-func (s *VOOTECLCombo) Name() string { return "VOO→TECL All-Weather Combo" }
+func (s *VOOTECLSPXUCombo) Name() string { return "VOO→TECL/SPXU All-Weather Combo" }
 
-func (s *VOOTECLCombo) Description() string {
+func (s *VOOTECLSPXUCombo) Description() string {
 	return "Long TECL on 3-consecutive VOO down-closes (+5% TP / 8d hold) " +
 		"combined with Short SPXU on 3-consecutive VOO up-closes in bear markets " +
 		"(VOO < SMA200, +6% TP / -5% SL / 2d hold). Long takes priority on same-day conflicts. " +
 		"65% allocation per trade. 4.5% T-bill yield on idle cash."
 }
 
-func (s *VOOTECLCombo) Validate() error {
+func (s *VOOTECLSPXUCombo) Validate() error {
 	return ValidateConfig(s.DefaultConfig())
 }
 
 // DefaultConfig returns the canonical VOO-TECL combo parameters.
-func (s *VOOTECLCombo) DefaultConfig() StrategyConfig {
+func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
 	return StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
@@ -60,7 +64,7 @@ func (s *VOOTECLCombo) DefaultConfig() StrategyConfig {
 	}
 }
 
-func (s *VOOTECLCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+func (s *VOOTECLSPXUCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	// Delegate signal generation directly to the canonical SQLite pipeline
 	if sqlStrat, exists := Get("voo_tecl_combo-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
@@ -70,5 +74,5 @@ func (s *VOOTECLCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []m
 }
 
 func init() {
-	Register(NewVOOTECLCombo())
+	NewVOOTECLSPXUCombo()
 }
