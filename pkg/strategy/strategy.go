@@ -21,6 +21,11 @@ type Strategy interface {
 	// Validate ensures the strategy configuration is logically sound.
 	Validate() error
 
+	// SetDatabases injects the required database paths.
+	// marketDBPath: Read-only source for historical data.
+	// calcDBPath: Isolated database for all strategy calculations and intermediate tables.
+	SetDatabases(marketDBPath, calcDBPath string)
+
 	// GenerateSignals evaluates historical bars across all symbols and returns chronological entry signals.
 	GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal
 }

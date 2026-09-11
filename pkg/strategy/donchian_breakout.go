@@ -5,7 +5,10 @@ import (
 )
 
 // DonchianBreakoutStrategy implements the classic 20-day Donchian Channel breakout strategy (Turtle Trading style).
-type DonchianBreakoutStrategy struct{}
+type DonchianBreakoutStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&DonchianBreakoutStrategy{})
@@ -49,6 +52,12 @@ func (s *DonchianBreakoutStrategy) GenerateSignals(barsBySymbol map[string][]mod
 	if sqlStrat, exists := Get("donchian_breakout-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("donchian_breakout-pipeline", s.Name(), s.Description(), "sql/strategies/donchian_breakout", "data/market_history.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("donchian_breakout-pipeline", s.Name(), s.Description(), "sql/strategies/donchian_breakout", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
+}
+
+func (s *DonchianBreakoutStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

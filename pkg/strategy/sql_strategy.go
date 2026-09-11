@@ -22,13 +22,14 @@ type SQLPipelineStrategy struct {
 	id          string
 	name        string
 	description string
-	pipelineDir string
-	dbPath      string
-	config      StrategyConfig
+	pipelineDir  string
+	marketDBPath string
+	calcDBPath   string
+	config       StrategyConfig
 }
 
 // NewSQLPipelineStrategy creates a new SQL-backed strategy from a directory of SQL scripts.
-func NewSQLPipelineStrategy(id, name, description, pipelineDir, dbPath string, config StrategyConfig) *SQLPipelineStrategy {
+func NewSQLPipelineStrategy(id, name, description, pipelineDir string, config StrategyConfig) *SQLPipelineStrategy {
 	config.ID = id
 	config.Name = name
 	config.Description = description
@@ -38,7 +39,6 @@ func NewSQLPipelineStrategy(id, name, description, pipelineDir, dbPath string, c
 		name:        name,
 		description: description,
 		pipelineDir: pipelineDir,
-		dbPath:      dbPath,
 		config:      config,
 	}
 	Register(s)
@@ -65,9 +65,10 @@ func (s *SQLPipelineStrategy) Validate() error {
 	return ValidateConfig(s.config)
 }
 
-// SetDBPath sets the target database for executing the SQL pipeline.
-func (s *SQLPipelineStrategy) SetDBPath(dbPath string) {
-	s.dbPath = dbPath
+// SetDatabases injects the required database paths.
+func (s *SQLPipelineStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }
 
 // RequiredSymbols inspects the pipeline SQL queries for explicit symbol requirements (e.g. symbol = 'XYZ').
@@ -114,12 +115,12 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 	sqlPipelineMu.Lock()
 	defer sqlPipelineMu.Unlock()
 
-	targetDb := s.dbPath
-	if targetDb == "" {
-		targetDb = "data/wc_master_backtest.db"
+	if s.marketDBPath == "" || s.calcDBPath == "" {
+		log.Printf("Warning: SQL strategy %s requires both marketDBPath and calcDBPath", s.id)
+		return nil
 	}
 
-	dsn := targetDb
+	dsn := s.calcDBPath
 	if !strings.Contains(dsn, "?") {
 		dsn += "?_busy_timeout=15000&_journal_mode=WAL"
 	} else {
@@ -128,10 +129,23 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 
 	db, err := sqlx.Open("sqlite3", dsn)
 	if err != nil {
-		log.Printf("Warning: SQL strategy %s failed to open DB %s: %v", s.id, targetDb, err)
+		log.Printf("Warning: SQL strategy %s failed to open calc DB %s: %v", s.id, s.calcDBPath, err)
 		return nil
 	}
 	defer db.Close()
+
+	// Attach marketDB as read-only source
+	attachQuery := fmt.Sprintf("ATTACH DATABASE '%s' AS market;", s.marketDBPath)
+	if _, err := db.Exec(attachQuery); err != nil {
+		log.Printf("Warning: SQL strategy %s failed to attach market database %s: %v", s.id, s.marketDBPath, err)
+		return nil
+	}
+
+	// Create view to seamlessly proxy backtest_start and preserve rowid for calculations
+	if _, err := db.Exec("CREATE TEMP VIEW IF NOT EXISTS backtest_start AS SELECT rowid, * FROM market.backtest_start;"); err != nil {
+		log.Printf("Warning: SQL strategy %s failed to create view for backtest_start: %v", s.id, err)
+		return nil
+	}
 
 	// Execute pipeline scripts in lexical order
 	files, err := os.ReadDir(s.pipelineDir)
@@ -226,11 +240,6 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 
 // AutoRegisterSQLStrategies scans the sql/strategies directory and registers any SQL pipeline folders.
 func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
-	dbPath := "data/sample_stocks.db"
-	if len(defaultDBPath) > 0 && defaultDBPath[0] != "" {
-		dbPath = defaultDBPath[0]
-	}
-
 	stratDir := filepath.Join(rootDir, "sql", "strategies")
 	entries, err := os.ReadDir(stratDir)
 	if err != nil {
@@ -284,7 +293,7 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.HoldingWindow = 10
 			}
 
-			NewSQLPipelineStrategy(id, name, desc, pipelinePath, dbPath, cfg)
+			NewSQLPipelineStrategy(id, name, desc, pipelinePath, cfg)
 		}
 	}
 }

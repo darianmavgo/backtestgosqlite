@@ -45,6 +45,8 @@ type MillwharfStrategy struct {
 	TakeProfitLookback int   // Lookback window for highest high (default: 6 days)
 	MaxProfitCap     float64 // Maximum take-profit cap multiplier (default: 1.20 for +20%)
 	HoldingWindow    int     // Number of holding days before market open exit (default: 4)
+	marketDBPath     string
+	calcDBPath       string
 }
 
 func init() {
@@ -109,7 +111,8 @@ func (s *MillwharfStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar
 	if sqlStrat, exists := Get("millwharf-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("millwharf-pipeline", s.Name(), s.Description(), "sql/strategies/millwharf", "data/market_history.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("millwharf-pipeline", s.Name(), s.Description(), "sql/strategies/millwharf", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
 }
 
@@ -202,4 +205,9 @@ func FindLongestDeclines(barsBySymbol map[string][]models.Bar, startDate string,
 	})
 
 	return allStreaks
+}
+
+func (s *MillwharfStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

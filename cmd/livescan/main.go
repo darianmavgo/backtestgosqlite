@@ -184,11 +184,9 @@ func main() {
 		log.Fatalf("No valid strategies selected. Run with -list to view available strategies.")
 	}
 
-	// Configure DB path for any SQLPipelineStrategy
+	// Configure DB paths for all strategies
 	for _, s := range selectedStrategies {
-		if sqlStrat, ok := s.(*strategy.SQLPipelineStrategy); ok {
-			sqlStrat.SetDBPath(*targetDb)
-		}
+		s.SetDatabases(*targetDb, ":memory:")
 	}
 
 	// Open DB connection

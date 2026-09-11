@@ -1,6 +1,6 @@
 -- Schema and queries for Top 5 S&P 500 ETFs 4-Day Position Study
-CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
-CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
+
+
 
 -- Calculated Slice Table: is_down_slice for decline & streak analysis
 DROP TABLE IF EXISTS is_down_slice;

@@ -5,7 +5,10 @@ import (
 )
 
 // RSI2TrendStrategy implements the Connors RSI(2) Trend Pullback strategy.
-type RSI2TrendStrategy struct{}
+type RSI2TrendStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&RSI2TrendStrategy{})
@@ -47,6 +50,12 @@ func (s *RSI2TrendStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar
 	if sqlStrat, exists := Get("rsi2_trend-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("rsi2_trend-pipeline", s.Name(), s.Description(), "sql/strategies/rsi2_trend", "data/market_history.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("rsi2_trend-pipeline", s.Name(), s.Description(), "sql/strategies/rsi2_trend", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
+}
+
+func (s *RSI2TrendStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

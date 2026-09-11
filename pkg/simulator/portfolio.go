@@ -12,15 +12,15 @@ import (
 
 // PortfolioSimulator runs a chronological multi-asset event simulation with capital constraints.
 type PortfolioSimulator struct {
-	Config            strategy.StrategyConfig
-	InitialCapital    float64
-	Cash              float64
-	Positions         map[string]*models.Position
-	ClosedTrades      []models.Trade
-	EquityCurve       []models.DailyEquityPoint
-	BenchmarkBars     map[string]models.Bar
-	Sizer             PositionSizer
-	tradeIDCounter    int
+	Config             strategy.StrategyConfig
+	InitialCapital     float64
+	Cash               float64
+	Positions          map[string]*models.Position
+	ClosedTrades       []models.Trade
+	EquityCurve        []models.DailyEquityPoint
+	BenchmarkBars      map[string]models.Bar
+	Sizer              PositionSizer
+	tradeIDCounter     int
 	dailyCashYieldRate float64 // pre-computed daily compound factor from CashYieldAnnual
 }
 
@@ -29,21 +29,9 @@ func NewPortfolioSimulator(config strategy.StrategyConfig, initialCapital float6
 	if initialCapital <= 0 {
 		initialCapital = 100000.0 // Default $100k account
 	}
-	if config.HoldingWindow <= 0 {
-		config.HoldingWindow = 10
-	}
-	if config.PositionCap <= 0 {
-		config.PositionCap = 5
-	}
-	if config.AllocationPct <= 0 {
-		config.AllocationPct = 0.20
-	}
-	if config.TargetPct <= 0 {
-		config.TargetPct = 1.18
-	}
-	if config.StopLossPct <= 0 {
-		config.StopLossPct = 0.93
-	}
+
+	// Note: We no longer enforce arbitrary default fallbacks for TargetPct and StopLossPct.
+	// If a strategy wants these values, it must explicitly configure them.
 
 	// Pre-compute the daily compounding factor for T-bill yield accrual.
 	// Uses 252 trading days per year: dailyRate = (1 + annual)^(1/252) - 1

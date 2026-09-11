@@ -5,7 +5,10 @@ import (
 )
 
 // WC4DayHoldStrategy buys on Whitings Creek decline signal and strictly exits after 4 trading days without stop-loss or profit-target.
-type WC4DayHoldStrategy struct{}
+type WC4DayHoldStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&WC4DayHoldStrategy{})
@@ -47,6 +50,12 @@ func (s *WC4DayHoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Ba
 	if sqlStrat, exists := Get("whitings_creek-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("wc-pipeline", s.Name(), s.Description(), "sql/strategies/whitings_creek", "data/wc_master_backtest.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("wc-pipeline", s.Name(), s.Description(), "sql/strategies/whitings_creek", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
+}
+
+func (s *WC4DayHoldStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

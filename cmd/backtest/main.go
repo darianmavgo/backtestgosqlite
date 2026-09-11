@@ -214,8 +214,19 @@ func executeStrategy(
 	capital float64,
 	symbolFilter string,
 	outDir string,
+	marketDBPath string,
 ) runResult {
-	// 1. Generate signals
+	// 1. Create unique SQLite database matching strategy name FIRST
+	outDBPath, outDB, err := storage.CreateUniqueDB(outDir, strat.ID())
+	if err != nil {
+		return runResult{strat: strat, err: fmt.Errorf("failed to create unique SQLite DB for %s: %w", strat.ID(), err)}
+	}
+	outDB.Close() // Close it so SQLPipelineStrategy can natively execute against it if needed
+
+	// 2. Set DB routing for ALL strategies
+	strat.SetDatabases(marketDBPath, outDBPath)
+
+	// 3. Generate signals (calculations will now write natively into outDBPath if applicable)
 	signals := strat.GenerateSignals(barsBySymbol)
 	symUpper := strings.ToUpper(symbolFilter)
 	if symUpper != "" {
@@ -232,12 +243,13 @@ func executeStrategy(
 	sim := simulator.NewPortfolioSimulator(cfg, capital)
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
 
-	// 3. Create unique SQLite database matching strategy name
-	outDBPath, outDB, err := storage.CreateUniqueDB(outDir, strat.ID())
+	// 5. Persist signals, trades, equity curve, and performance summary
+	// Re-open outDB to write simulator output
+	outDB, err = storage.OpenSQLite(outDBPath)
 	if err != nil {
-		return runResult{strat: strat, err: fmt.Errorf("failed to create unique SQLite DB for %s: %w", strat.ID(), err)}
-	}
-	defer outDB.Close()
+		log.Printf("Warning: Failed to re-open %s for simulator results: %v", outDBPath, err)
+	} else {
+		defer outDB.Close()
 
 	// 4. Persist signals, trades, equity curve, and performance summary
 	if err := storage.SaveSignals(outDB, strat.ID(), signals); err != nil {
@@ -250,7 +262,8 @@ func executeStrategy(
 		log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
 	}
 	if err := storage.SavePerformanceReport(outDB, strat.ID(), report); err != nil {
-		log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
+			log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
+		}
 	}
 
 	return runResult{
@@ -327,12 +340,6 @@ func main() {
 		log.Fatalf("No valid strategies selected. Run with -list to view available strategies.")
 	}
 
-	// Configure DB path for any SQLPipelineStrategy
-	for _, s := range selectedStrategies {
-		if sqlStrat, ok := s.(*strategy.SQLPipelineStrategy); ok {
-			sqlStrat.SetDBPath(*targetDb)
-		}
-	}
 
 	// Detect missing market data and download before running backtest
 	if err := detectAndDownloadMissingData(*targetDb, *tableName, selectedStrategies, *symbolFilter, *autoDownload, *downloadYears); err != nil {
@@ -365,7 +372,7 @@ func main() {
 			(cfg.TargetPct-1)*100, (1-cfg.StopLossPct)*100, cfg.HoldingWindow, cfg.PositionCap)
 		fmt.Printf("========================================================================================\n")
 
-		res := executeStrategy(strat, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir)
+		res := executeStrategy(strat, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb)
 		if res.err != nil {
 			log.Fatalf("Backtest failed: %v", res.err)
 		}
@@ -396,7 +403,7 @@ func main() {
 			go func(idx int, s strategy.Strategy) {
 				defer wg.Done()
 				cfg := buildConfig(s, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
-				res := executeStrategy(s, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir)
+				res := executeStrategy(s, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb)
 				results[idx] = res
 				if res.err != nil {
 					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.err)

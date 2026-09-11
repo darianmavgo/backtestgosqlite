@@ -1,9 +1,9 @@
--- Schema for SQL-based VOO TECL Combo Strategy
+-- Schema for SQL-based VOO TECL SPXU Combo Strategy (VOO & TECL 3-day decline)
 
 
 
-DROP TABLE IF EXISTS voo_streaks_slice;
-CREATE TABLE voo_streaks_slice (
+DROP TABLE IF EXISTS voo_tecl_streaks_slice;
+CREATE TABLE voo_tecl_streaks_slice (
     idx INTEGER,
     symbol TEXT,
     date TEXT,
@@ -16,9 +16,10 @@ CREATE TABLE voo_streaks_slice (
     down_streak INTEGER,
     up_streak INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_voo_tecl_streaks_slice_sym_date ON voo_tecl_streaks_slice(symbol, date);
 
-DROP TABLE IF EXISTS voo_tecl_combo_signals;
-CREATE TABLE voo_tecl_combo_signals (
+DROP TABLE IF EXISTS voo_tecl_spxu_combo_signals;
+CREATE TABLE voo_tecl_spxu_combo_signals (
     idx INTEGER,
     symbol TEXT,
     date TEXT,
@@ -35,4 +36,4 @@ CREATE TABLE voo_tecl_combo_signals (
     take_profit REAL,
     stop_loss REAL
 );
-CREATE INDEX IF NOT EXISTS idx_voo_tecl_combo_signals ON voo_tecl_combo_signals (symbol, date);
+CREATE INDEX IF NOT EXISTS idx_voo_tecl_spxu_combo_signals ON voo_tecl_spxu_combo_signals (symbol, date);

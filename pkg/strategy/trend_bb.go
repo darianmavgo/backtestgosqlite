@@ -5,7 +5,10 @@ import (
 )
 
 // TrendBBOversoldStrategy implements the Trend-Gated Bollinger Oversold strategy.
-type TrendBBOversoldStrategy struct{}
+type TrendBBOversoldStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&TrendBBOversoldStrategy{})
@@ -47,6 +50,12 @@ func (s *TrendBBOversoldStrategy) GenerateSignals(barsBySymbol map[string][]mode
 	if sqlStrat, exists := Get("trend_bb-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("trend_bb-pipeline", s.Name(), s.Description(), "sql/strategies/trend_bb", "data/market_history.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("trend_bb-pipeline", s.Name(), s.Description(), "sql/strategies/trend_bb", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
+}
+
+func (s *TrendBBOversoldStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

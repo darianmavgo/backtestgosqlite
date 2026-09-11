@@ -77,3 +77,5 @@ func (s *BuyAndHoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Ba
 
 	return signals
 }
+
+func (s *BuyAndHoldStrategy) SetDatabases(marketDBPath, calcDBPath string) {}

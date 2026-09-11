@@ -7,7 +7,10 @@ import (
 )
 
 // WhitingsCreekStrategy implements the classical Whitings Creek reversal strategy.
-type WhitingsCreekStrategy struct{}
+type WhitingsCreekStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&WhitingsCreekStrategy{})
@@ -49,7 +52,8 @@ func (s *WhitingsCreekStrategy) GenerateSignals(barsBySymbol map[string][]models
 	if sqlStrat, exists := Get("whitings_creek-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("wc-pipeline", s.Name(), s.Description(), "sql/strategies/whitings_creek", "data/wc_master_backtest.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("wc-pipeline", s.Name(), s.Description(), "sql/strategies/whitings_creek", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
 }
 
@@ -59,4 +63,9 @@ func (s *WhitingsCreekStrategy) GenerateSQLPipelineQueries(cliffDropRatio, profi
 		fmt.Sprintf("UPDATE wc_buy_signal_slice SET entry = 1 WHERE close < %.2f * minlow;", cliffDropRatio),
 		fmt.Sprintf("UPDATE win20_10d_slice SET win20_10d = 1 WHERE max_high10 >= %.2f * buylimit;", profitTargetPct),
 	}
+}
+
+func (s *WhitingsCreekStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

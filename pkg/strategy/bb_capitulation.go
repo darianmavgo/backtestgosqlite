@@ -5,7 +5,10 @@ import (
 )
 
 // BBCapitulationStrategy implements the Bollinger Band Capitulation + Reversal Bounce strategy.
-type BBCapitulationStrategy struct{}
+type BBCapitulationStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&BBCapitulationStrategy{})
@@ -47,6 +50,12 @@ func (s *BBCapitulationStrategy) GenerateSignals(barsBySymbol map[string][]model
 	if sqlStrat, exists := Get("bb_capitulation-sql"); exists {
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
-	pipe := NewSQLPipelineStrategy("bb_capitulation-pipeline", s.Name(), s.Description(), "sql/strategies/bb_capitulation", "data/market_history.db", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("bb_capitulation-pipeline", s.Name(), s.Description(), "sql/strategies/bb_capitulation", s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
+}
+
+func (s *BBCapitulationStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
 }

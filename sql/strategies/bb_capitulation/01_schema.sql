@@ -1,6 +1,6 @@
 -- Schema for SQL-based Bollinger Band Capitulation + Reversal Bounce Strategy
-CREATE UNIQUE INDEX IF NOT EXISTS idx_backtest_start_unique ON backtest_start(symbol, Date);
-CREATE INDEX IF NOT EXISTS idx_backtest_start_sym_date ON backtest_start(symbol, Date);
+
+
 
 DROP TABLE IF EXISTS bb_stats_slice;
 CREATE TABLE bb_stats_slice (
