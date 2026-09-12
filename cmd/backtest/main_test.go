@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
@@ -23,7 +24,7 @@ func TestDetectAndDownloadMissingData_Disabled(t *testing.T) {
 	db.Close()
 
 	comboStrat := strategy.NewVOOTECLSPXUCombo()
-	err = detectAndDownloadMissingData(dbPath, tableName, []strategy.Strategy{comboStrat}, "", false, 5)
+	err = runner.DetectAndDownloadMissingData(dbPath, tableName, []strategy.Strategy{comboStrat}, "", false, 5)
 	if err == nil {
 		t.Fatalf("expected error when autoDownload=false and data missing, got nil")
 	}
