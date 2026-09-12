@@ -29,7 +29,7 @@ CREATE TABLE bb_slice (
     sma20 REAL,
     sma20_sq REAL,
     count20 INTEGER,
-    lower_bb REAL
+    is_lower_bb_broken INTEGER
 );
 
 DROP TABLE IF EXISTS rsi5_slice;

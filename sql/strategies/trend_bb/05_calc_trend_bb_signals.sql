@@ -17,6 +17,6 @@ JOIN rsi5_slice r ON s.idx = r.idx
 WHERE s.count50 >= 50
   AND s.close > s.sma50
   AND b.count20 >= 20
-  AND s.low < b.lower_bb
+  AND b.is_lower_bb_broken = 1
   AND r.rsi5 IS NOT NULL
   AND r.rsi5 < 30;

@@ -48,6 +48,7 @@ func (s *TrendBBOversoldStrategy) Validate() error {
 func (s *TrendBBOversoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	// Delegate signal generation directly to the canonical SQLite pipeline
 	if sqlStrat, exists := Get("trend_bb-sql"); exists {
+		sqlStrat.SetDatabases(s.marketDBPath, s.calcDBPath)
 		return sqlStrat.GenerateSignals(barsBySymbol)
 	}
 	pipe := NewSQLPipelineStrategy("trend_bb-pipeline", s.Name(), s.Description(), "sql/strategies/trend_bb", s.DefaultConfig())
