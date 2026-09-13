@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/go-echarts/go-echarts/v2 v2.7.2 // indirect
 	github.com/lib/pq v1.10.2 // indirect
 	github.com/mattn/go-runewidth v0.0.2 // indirect
 )
