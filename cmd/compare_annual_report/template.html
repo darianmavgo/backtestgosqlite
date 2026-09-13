@@ -407,46 +407,65 @@ const standalonePoints = ${STANDALONE_POINTS_JSON};
 const preemptData = ${PREEMPT_DATA_JSON};
 
 // Populate Table
+// Populate Table
 const tbody = document.getElementById('tableBody');
-rowsData.forEach(r => {
-  const tr = document.createElement('tr');
-  const spreadClass = r.spread_vs_standalone_pct >= 0 ? 'positive' : 'negative';
-  const spreadSign = r.spread_vs_standalone_pct >= 0 ? '+' : '';
+if (tbody && Array.isArray(rowsData)) {
+  rowsData.forEach(r => {
+    const tr = document.createElement('tr');
+    const spread = Number(r.spread_vs_standalone_pct || 0);
+    const spreadClass = spread >= 0 ? 'positive' : 'negative';
+    const spreadSign = spread >= 0 ? '+' : '';
+    const vooRet = Number(r.voo_return_pct || 0);
+    const standRet = Number(r.standalone_return_pct || 0);
+    const sharedRet = Number(r.shared_return_pct || 0);
+    const standEq = Number(r.standalone_end_eq || 0);
+    const sharedEq = Number(r.shared_end_eq || 0);
+    const standDD = Number(r.standalone_max_dd_pct || 0);
+    const sharedDD = Number(r.shared_max_dd_pct || 0);
+    const standCash = Number(r.standalone_idle_cash_pct || 0);
+    const sharedCash = Number(r.shared_idle_cash_pct || 0);
 
-  tr.innerHTML = `
-    <td><strong>${r.year}</strong></td>
-    <td class="neutral">${r.horizon}</td>
-    <td class="${r.voo_return_pct >= 0 ? 'positive' : 'negative'}">${r.voo_return_pct >= 0 ? '+' : ''}${r.voo_return_pct.toFixed(2)}%</td>
-    <td class="${r.standalone_return_pct >= 0 ? 'positive' : 'negative'}">${r.standalone_return_pct >= 0 ? '+' : ''}${r.standalone_return_pct.toFixed(2)}%</td>
-    <td class="${r.shared_return_pct >= 0 ? 'positive' : 'negative'}">${r.shared_return_pct >= 0 ? '+' : ''}${r.shared_return_pct.toFixed(2)}%</td>
-    <td class="${spreadClass}">${spreadSign}${r.spread_vs_standalone_pct.toFixed(2)}%</td>
-    <td>$${r.standalone_end_eq.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-    <td>$${r.shared_end_eq.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-    <td class="negative">-${r.standalone_max_dd_pct.toFixed(2)}%</td>
-    <td class="negative">-${r.shared_max_dd_pct.toFixed(2)}%</td>
-    <td><span class="badge badge-stand">${r.standalone_idle_cash_pct.toFixed(1)}%</span> vs <span class="badge badge-shared">${r.shared_idle_cash_pct.toFixed(1)}%</span></td>
-  `;
-  tbody.appendChild(tr);
-});
+    tr.innerHTML = `
+      <td><strong>${r.year || ''}</strong></td>
+      <td class="neutral">${r.horizon || ''}</td>
+      <td class="${vooRet >= 0 ? 'positive' : 'negative'}">${vooRet >= 0 ? '+' : ''}${vooRet.toFixed(2)}%</td>
+      <td class="${standRet >= 0 ? 'positive' : 'negative'}">${standRet >= 0 ? '+' : ''}${standRet.toFixed(2)}%</td>
+      <td class="${sharedRet >= 0 ? 'positive' : 'negative'}">${sharedRet >= 0 ? '+' : ''}${sharedRet.toFixed(2)}%</td>
+      <td class="${spreadClass}">${spreadSign}${spread.toFixed(2)}%</td>
+      <td>$${standEq.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td>$${sharedEq.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td class="negative">-${standDD.toFixed(2)}%</td>
+      <td class="negative">-${sharedDD.toFixed(2)}%</td>
+      <td><span class="badge badge-stand">${standCash.toFixed(1)}%</span> vs <span class="badge badge-shared">${sharedCash.toFixed(1)}%</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
 
 // Populate Preemption Table (Top 12)
 const pbody = document.getElementById('preemptBody');
-preemptData.slice(0, 12).forEach(p => {
-  const tr = document.createElement('tr');
-  const pnlClass = p.net_pnl >= 0 ? 'positive' : 'negative';
-  tr.innerHTML = `
-    <td>#${p.id}</td>
-    <td><span class="badge badge-preempt">${p.symbol}</span></td>
-    <td class="neutral">${p.entry_date}</td>
-    <td>$${p.entry_price.toFixed(2)}</td>
-    <td class="neutral">${p.exit_date}</td>
-    <td>$${p.exit_price.toFixed(2)}</td>
-    <td>${p.hold_days} d</td>
-    <td class="${pnlClass}">$${p.net_pnl.toFixed(2)}</td>
-    <td class="${pnlClass}">${p.return_pct >= 0 ? '+' : ''}${(p.return_pct * 100).toFixed(2)}%</td>
-  `;
-  pbody.appendChild(tr);
-});
+if (pbody && Array.isArray(preemptData)) {
+  preemptData.slice(0, 12).forEach(p => {
+    const tr = document.createElement('tr');
+    const netPnL = Number(p.net_pnl || 0);
+    const pnlClass = netPnL >= 0 ? 'positive' : 'negative';
+    const entryP = Number(p.entry_price || 0);
+    const exitP = Number(p.exit_price || 0);
+    const retP = Number(p.return_pct || 0) * 100;
+    tr.innerHTML = `
+      <td>#${p.id}</td>
+      <td><span class="badge badge-preempt">${p.symbol}</span></td>
+      <td class="neutral">${p.entry_date}</td>
+      <td>$${entryP.toFixed(2)}</td>
+      <td class="neutral">${p.exit_date}</td>
+      <td>$${exitP.toFixed(2)}</td>
+      <td>${p.hold_days} d</td>
+      <td class="${pnlClass}">$${netPnL.toFixed(2)}</td>
+      <td class="${pnlClass}">${retP >= 0 ? '+' : ''}${retP.toFixed(2)}%</td>
+    `;
+    pbody.appendChild(tr);
+  });
+}
 
 // 1. Annual Bar Chart
 new Chart(document.getElementById('annualBarChart'), {

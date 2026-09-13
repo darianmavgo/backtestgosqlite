@@ -20,46 +20,46 @@ import (
 var htmlTemplate string
 
 type AnnualComparisonRow struct {
-	Year                   string  `db:"year"`
-	Horizon                string  `db:"horizon"`
-	TradingDays            int     `db:"trading_days"`
-	CalendarDays           float64 `db:"calendar_days"`
-	VOOStart               float64 `db:"voo_start"`
-	VOOEnd                 float64 `db:"voo_end"`
-	StandaloneStartEq      float64 `db:"standalone_start_eq"`
-	StandaloneEndEq        float64 `db:"standalone_end_eq"`
-	SharedStartEq          float64 `db:"shared_start_eq"`
-	SharedEndEq            float64 `db:"shared_end_eq"`
-	VOOReturnPct           float64 `db:"voo_return_pct"`
-	StandaloneReturnPct    float64 `db:"standalone_return_pct"`
-	SharedReturnPct        float64 `db:"shared_return_pct"`
-	SpreadVsStandalonePct  float64 `db:"spread_vs_standalone_pct"`
-	VOOCAGRPct             float64 `json:"voo_cagr_pct"`
-	StandaloneCAGRPct      float64 `json:"standalone_cagr_pct"`
-	SharedCAGRPct          float64 `json:"shared_cagr_pct"`
-	SharedDollarDiff       float64 `db:"shared_dollar_diff"`
-	StandaloneMaxDDPct     float64 `db:"standalone_max_dd_pct"`
-	SharedMaxDDPct         float64 `db:"shared_max_dd_pct"`
-	StandaloneIdleCashPct  float64 `db:"standalone_idle_cash_pct"`
-	SharedIdleCashPct      float64 `db:"shared_idle_cash_pct"`
+	Year                  string  `db:"year" json:"year"`
+	Horizon               string  `db:"horizon" json:"horizon"`
+	TradingDays           int     `db:"trading_days" json:"trading_days"`
+	CalendarDays          float64 `db:"calendar_days" json:"calendar_days"`
+	VOOStart              float64 `db:"voo_start" json:"voo_start"`
+	VOOEnd                float64 `db:"voo_end" json:"voo_end"`
+	StandaloneStartEq     float64 `db:"standalone_start_eq" json:"standalone_start_eq"`
+	StandaloneEndEq       float64 `db:"standalone_end_eq" json:"standalone_end_eq"`
+	SharedStartEq         float64 `db:"shared_start_eq" json:"shared_start_eq"`
+	SharedEndEq           float64 `db:"shared_end_eq" json:"shared_end_eq"`
+	VOOReturnPct          float64 `db:"voo_return_pct" json:"voo_return_pct"`
+	StandaloneReturnPct   float64 `db:"standalone_return_pct" json:"standalone_return_pct"`
+	SharedReturnPct       float64 `db:"shared_return_pct" json:"shared_return_pct"`
+	SpreadVsStandalonePct float64 `db:"spread_vs_standalone_pct" json:"spread_vs_standalone_pct"`
+	VOOCAGRPct            float64 `json:"voo_cagr_pct"`
+	StandaloneCAGRPct     float64 `json:"standalone_cagr_pct"`
+	SharedCAGRPct         float64 `json:"shared_cagr_pct"`
+	SharedDollarDiff      float64 `db:"shared_dollar_diff" json:"shared_dollar_diff"`
+	StandaloneMaxDDPct    float64 `db:"standalone_max_dd_pct" json:"standalone_max_dd_pct"`
+	SharedMaxDDPct        float64 `db:"shared_max_dd_pct" json:"shared_max_dd_pct"`
+	StandaloneIdleCashPct float64 `db:"standalone_idle_cash_pct" json:"standalone_idle_cash_pct"`
+	SharedIdleCashPct     float64 `db:"shared_idle_cash_pct" json:"shared_idle_cash_pct"`
 }
 
 type DailyPoint struct {
-	Date   string  `db:"date"`
-	Equity float64 `db:"total_equity"`
-	Cash   float64 `db:"cash"`
+	Date   string  `db:"date" json:"date"`
+	Equity float64 `db:"total_equity" json:"total_equity"`
+	Cash   float64 `db:"cash" json:"cash"`
 }
 
 type PreemptedTrade struct {
-	ID         int     `db:"id"`
-	Symbol     string  `db:"symbol"`
-	EntryDate  string  `db:"entry_date"`
-	EntryPrice float64 `db:"entry_price"`
-	ExitDate   string  `db:"exit_date"`
-	ExitPrice  float64 `db:"exit_price"`
-	HoldDays   int     `db:"hold_days"`
-	NetPnL     float64 `db:"net_pnl"`
-	ReturnPct  float64 `db:"return_pct"`
+	ID         int     `db:"id" json:"id"`
+	Symbol     string  `db:"symbol" json:"symbol"`
+	EntryDate  string  `db:"entry_date" json:"entry_date"`
+	EntryPrice float64 `db:"entry_price" json:"entry_price"`
+	ExitDate   string  `db:"exit_date" json:"exit_date"`
+	ExitPrice  float64 `db:"exit_price" json:"exit_price"`
+	HoldDays   int     `db:"hold_days" json:"hold_days"`
+	NetPnL     float64 `db:"net_pnl" json:"net_pnl"`
+	ReturnPct  float64 `db:"return_pct" json:"return_pct"`
 }
 
 func main() {
