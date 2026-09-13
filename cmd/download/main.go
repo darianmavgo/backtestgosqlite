@@ -82,13 +82,14 @@ func main() {
 	timeframe := flag.String("timeframe", "1d", "Bar timeframe (1d, 1h, 5m, 1m)")
 	targetTable := flag.String("target-table", "backtest_start", "Target table name in target SQLite DB")
 	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
+	seedDb := flag.String("seed-db", "data/leveraged_backtest.db", "Legacy database to seed from if target DB doesn't exist")
 	flag.Parse()
 
 	// If default target DB does not exist yet, seed it from existing leveraged_backtest.db if available
 	if *targetDb == "data/market_history.db" {
 		if _, err := os.Stat(*targetDb); os.IsNotExist(err) {
-			if _, errLegacy := os.Stat("data/leveraged_backtest.db"); errLegacy == nil {
-				if input, err := os.ReadFile("data/leveraged_backtest.db"); err == nil {
+			if _, errLegacy := os.Stat(*seedDb); errLegacy == nil {
+				if input, err := os.ReadFile(*seedDb); err == nil {
 					_ = os.MkdirAll("data", 0755)
 					_ = os.WriteFile(*targetDb, input, 0644)
 					fmt.Printf("📦 Initialized %s from existing historical data cache.\n", *targetDb)
