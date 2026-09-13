@@ -433,14 +433,51 @@ func (s *SharedAccountSimulator) Run(
 	for _, entry := range s.Strategies {
 		sID := entry.Strategy.ID()
 		var stratTrades []models.Trade
+		var stratNetPnL float64
+		tradePnLByDate := make(map[string]float64)
 		for _, t := range s.ClosedTrades {
 			if t.StrategyID == sID {
 				stratTrades = append(stratTrades, t)
+				stratNetPnL += t.NetPnL
+				tradePnLByDate[t.ExitDate] += t.NetPnL
 			}
 		}
+
+		// Reconstruct an accurate strategy-specific equity curve from its trade PnL history
+		var stratCurve []models.DailyEquityPoint
+		cumPnL := 0.0
+		peakStratEq := s.InitialCapital
+		for _, pt := range s.EquityCurve {
+			if pnl, ok := tradePnLByDate[pt.Date]; ok {
+				cumPnL += pnl
+			}
+			currEq := math.Max(0.0, s.InitialCapital+cumPnL)
+			if currEq > peakStratEq {
+				peakStratEq = currEq
+			}
+			dd := 0.0
+			if peakStratEq > 0 {
+				dd = (peakStratEq - currEq) / peakStratEq
+			}
+			stratCurve = append(stratCurve, models.DailyEquityPoint{
+				Date:        pt.Date,
+				TotalEquity: currEq,
+				DrawdownPct: dd,
+			})
+		}
+
 		stratReport := analytics.CalculatePerformanceMetricsWithBenchmark(
-			s.InitialCapital, stratTrades, s.EquityCurve, s.BenchmarkBars,
+			s.InitialCapital, stratTrades, stratCurve, s.BenchmarkBars,
 		)
+		stratReport.NetProfit = stratNetPnL
+		stratReport.FinalEquity = s.InitialCapital + stratNetPnL
+		if s.InitialCapital > 0 {
+			stratReport.TotalReturnPct = stratNetPnL / s.InitialCapital
+		}
+		years := stratReport.TotalCalendarYears
+		if years >= 0.5 && stratReport.FinalEquity > 0 && stratReport.InitialCapital > 0 {
+			stratReport.CAGR = math.Pow(stratReport.FinalEquity/stratReport.InitialCapital, 1.0/years) - 1.0
+		}
 		perStrategyReports[sID] = stratReport
 	}
 

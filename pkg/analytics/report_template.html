@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>{{TITLE}} - Quantitative Strategy Benchmark</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -311,6 +314,9 @@
                 <p>Quantitative Strategy & Portfolio Simulation Performance Report</p>
             </div>
             <div class="badge-group">
+                <div class="badge" style="border-color: rgba(139, 92, 246, 0.4); color: #c4b5fd; background: rgba(139, 92, 246, 0.15);">
+                    <span>🕒 Generated: {{GENERATED_AT}}</span>
+                </div>
                 <div class="badge badge-green">
                     <span>📅 Window: {{START_DATE}} to {{END_DATE}}</span>
                 </div>
@@ -425,7 +431,7 @@
         </div>
 
         <footer>
-            wc_2022 Algorithmic Trading & Backtesting Engine &bull; Generated on {{END_DATE}}
+            wc_2022 Algorithmic Trading & Backtesting Engine &bull; Report Generated: <strong>{{GENERATED_AT}}</strong> &bull; Backtest Data Horizon: {{START_DATE}} to {{END_DATE}}
         </footer>
     </div>
 

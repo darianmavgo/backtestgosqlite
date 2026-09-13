@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
@@ -16,6 +17,7 @@ var reportTemplateHTML string
 
 type MultiStrategyHTMLData struct {
 	Title          string                   `json:"title"`
+	GeneratedAt    string                   `json:"generated_at"`
 	Symbol         string                   `json:"symbol"`
 	StartDate      string                   `json:"start_date"`
 	EndDate        string                   `json:"end_date"`
@@ -43,19 +45,24 @@ func GenerateComparisonHTML(outputPath string, data MultiStrategyHTMLData) error
 		_ = os.MkdirAll(dir, 0755)
 	}
 
+	if data.GeneratedAt == "" {
+		data.GeneratedAt = time.Now().Format("2006-01-02 15:04:05 MST")
+	}
+
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON data: %w", err)
 	}
 
 	replacements := map[string]string{
-		"{{TITLE}}":       data.Title,
-		"{{START_DATE}}":  data.StartDate,
-		"{{END_DATE}}":    data.EndDate,
-		"{{TOTAL_YEARS}}": fmt.Sprintf("%.1f", data.TotalYears),
-		"{{TOTAL_DAYS}}":  fmt.Sprintf("%d", data.TotalDays),
-		"{{INITIAL_CAP}}": fmt.Sprintf("%.2f", data.InitialCap),
-		"{{JSON_DATA}}":   string(jsonBytes),
+		"{{TITLE}}":        data.Title,
+		"{{GENERATED_AT}}": data.GeneratedAt,
+		"{{START_DATE}}":   data.StartDate,
+		"{{END_DATE}}":     data.EndDate,
+		"{{TOTAL_YEARS}}":  fmt.Sprintf("%.1f", data.TotalYears),
+		"{{TOTAL_DAYS}}":   fmt.Sprintf("%d", data.TotalDays),
+		"{{INITIAL_CAP}}":  fmt.Sprintf("%.2f", data.InitialCap),
+		"{{JSON_DATA}}":    string(jsonBytes),
 	}
 
 	outputContent := reportTemplateHTML

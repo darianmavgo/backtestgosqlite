@@ -153,6 +153,11 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 		var sqlFiles []string
 		for _, f := range files {
 			if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
+				lower := strings.ToLower(f.Name())
+				// Skip post-backtest reporting and audit queries that operate on equity_curve
+				if strings.Contains(lower, "audit") || strings.Contains(lower, "annual") || strings.Contains(lower, "report") || strings.Contains(lower, "compare") {
+					continue
+				}
 				sqlFiles = append(sqlFiles, filepath.Join(s.pipelineDir, f.Name()))
 			}
 		}

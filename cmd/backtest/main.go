@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
@@ -204,6 +206,7 @@ func main() {
 
 			htmlData := analytics.MultiStrategyHTMLData{
 				Title:          reportTitle,
+				GeneratedAt:    time.Now().Format("2006-01-02 15:04:05 MST"),
 				Symbol:         symUpper,
 				StartDate:      sharedRes.CombinedReport.StartDate,
 				EndDate:        sharedRes.CombinedReport.EndDate,
@@ -219,7 +222,15 @@ func main() {
 			if err := analytics.GenerateComparisonHTML(*htmlOutput, htmlData); err != nil {
 				log.Printf("Warning: Failed to generate HTML report %s: %v", *htmlOutput, err)
 			} else {
-				fmt.Printf("\n✨ Interactive HTML Report generated: %s\n\n", *htmlOutput)
+				fmt.Printf("\n✨ Interactive HTML Report generated: %s\n", *htmlOutput)
+				// Also write to root directory if htmlOutput was in a subdirectory
+				baseName := filepath.Base(*htmlOutput)
+				if filepath.Dir(*htmlOutput) != "." && baseName != "" {
+					_ = analytics.GenerateComparisonHTML(baseName, htmlData)
+					fmt.Printf("✨ Root copy also generated: %s\n\n", baseName)
+				} else {
+					fmt.Println()
+				}
 			}
 		}
 		return
@@ -391,6 +402,7 @@ func main() {
 
 		htmlData := analytics.MultiStrategyHTMLData{
 			Title:          reportTitle,
+			GeneratedAt:    time.Now().Format("2006-01-02 15:04:05 MST"),
 			Symbol:         symUpper,
 			StartDate:      startDate,
 			EndDate:        endDate,
@@ -407,7 +419,14 @@ func main() {
 		if err != nil {
 			log.Printf("Warning: Failed to generate HTML report %s: %v", *htmlOutput, err)
 		} else {
-			fmt.Printf("\n✨ Interactive HTML Report generated: %s\n\n", *htmlOutput)
+			fmt.Printf("\n✨ Interactive HTML Report generated: %s\n", *htmlOutput)
+			baseName := filepath.Base(*htmlOutput)
+			if filepath.Dir(*htmlOutput) != "." && baseName != "" {
+				_ = analytics.GenerateComparisonHTML(baseName, htmlData)
+				fmt.Printf("✨ Root copy also generated: %s\n\n", baseName)
+			} else {
+				fmt.Println()
+			}
 		}
 	}
 }
