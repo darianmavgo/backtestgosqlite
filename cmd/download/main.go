@@ -52,23 +52,34 @@ func readSymbolsFile(filePath string) ([]string, error) {
 
 func fetchWithFallback(ctx context.Context, primary, fallback datasource.DataSource, req datasource.FetchRequest) ([]models.Bar, error) {
 	bars, err := primary.Fetch(ctx, req)
-	if (err != nil || len(bars) == 0) && fallback != nil {
-		bars, err = fallback.Fetch(ctx, req)
+	if err == nil && len(bars) > 0 {
+		return bars, nil
 	}
-	return bars, err
+	if fallback != nil {
+		log.Printf("Primary source (%s) failed for %s: %v. Attempting fallback to %s...", primary.Name(), req.Symbol, err, fallback.Name())
+		fallbackBars, fallbackErr := fallback.Fetch(ctx, req)
+		if fallbackErr == nil && len(fallbackBars) > 0 {
+			return fallbackBars, nil
+		}
+		return nil, fmt.Errorf("%s failed: %w (fallback %s failed: %v)", primary.Name(), err, fallback.Name(), fallbackErr)
+	}
+	return nil, err
 }
 
 func main() {
 	targetDb := flag.String("db", "data/market_history.db", "Target SQLite DB path for market history (default: data/market_history.db)")
 	settingsDb := flag.String("settings", "data/settings.db", "Settings DB path (for table seed lookups)")
-	sourceType := flag.String("source", "yahoo", "Data source provider: yahoo, stooq, csv")
+	sourceType := flag.String("source", "yahoo", "Data source provider: yahoo, polygon, stooq, csv")
+	polygonKey := flag.String("polygon-key", "", "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	csvPath := flag.String("csv", "", "Path to CSV file or directory of CSV files (used with -source csv)")
 	symbolFlag := flag.String("symbols", "", "Comma-separated list of symbols to download/import (e.g. SPY,QQQ,TQQQ)")
 	symbolsFile := flag.String("symbols-file", "", "Path to text file with one symbol per line")
 	table := flag.String("table", "leveraged_etf", "Table name in settings.db with symbols (fallback if no symbols specified)")
 	limit := flag.Int("limit", 50, "Limit number of symbols (0 for all)")
 	years := flag.Int("years", 4, "Number of years of history")
-	timeframe := flag.String("timeframe", "1d", "Bar timeframe (1d, 1h, 5m)")
+	startFlag := flag.String("start", "", "Optional start date (YYYY-MM-DD), overrides -years")
+	endFlag := flag.String("end", "", "Optional end date (YYYY-MM-DD), defaults to now")
+	timeframe := flag.String("timeframe", "1d", "Bar timeframe (1d, 1h, 5m, 1m)")
 	targetTable := flag.String("target-table", "backtest_start", "Target table name in target SQLite DB")
 	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
 	flag.Parse()
@@ -157,9 +168,17 @@ func main() {
 	var primarySource datasource.DataSource
 	var fallbackSource datasource.DataSource
 
-	if strings.ToLower(*sourceType) == "stooq" {
+	switch strings.ToLower(*sourceType) {
+	case "polygon":
+		polySource := datasource.NewPolygonDataSource(*polygonKey, client)
+		if polySource.APIKey == "" {
+			log.Fatalf("Polygon API key is required. Pass -polygon-key <KEY> or set POLYGON_API_KEY in your environment / .env file")
+		}
+		primarySource = polySource
+		fallbackSource = datasource.NewYahooDataSource(client)
+	case "stooq":
 		primarySource = datasource.NewStooqDataSource(client)
-	} else {
+	default:
 		primarySource = datasource.NewYahooDataSource(client)
 		fallbackSource = datasource.NewStooqDataSource(client)
 	}
@@ -167,6 +186,21 @@ func main() {
 	now := time.Now().UTC()
 	start := now.AddDate(-*years, 0, 0)
 	end := now
+
+	if *startFlag != "" {
+		if parsed, err := time.Parse("2006-01-02", *startFlag); err == nil {
+			start = parsed.UTC()
+		} else {
+			log.Fatalf("Invalid -start date %q: expected YYYY-MM-DD", *startFlag)
+		}
+	}
+	if *endFlag != "" {
+		if parsed, err := time.Parse("2006-01-02", *endFlag); err == nil {
+			end = parsed.UTC()
+		} else {
+			log.Fatalf("Invalid -end date %q: expected YYYY-MM-DD", *endFlag)
+		}
+	}
 
 	reqStartStr := start.Format("2006-01-02")
 	reqEndStr := end.Format("2006-01-02")
@@ -180,7 +214,7 @@ func main() {
 	updatedSymbols := 0
 
 	for idx, sym := range symbols {
-		cov, err := storage.GetSymbolDateCoverage(db, *targetTable, sym)
+		cov, err := storage.GetSymbolDateCoverageWithTimeframe(db, *targetTable, sym, *timeframe)
 		if err != nil {
 			log.Printf("[%d/%d] Error checking database coverage for %s: %v", idx+1, len(symbols), sym, err)
 		}

@@ -136,9 +136,10 @@ func EnsureBarTable(db *sqlx.DB, tableName string) error {
 			volume BIGINT,
 			symbol TEXT
 		);
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_unique ON %s(symbol, Date);
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_unique ON %s(symbol, Date, timeframe);
 		CREATE INDEX IF NOT EXISTS idx_%s_sym_date ON %s(symbol, Date);
-	`, tableName, tableName, tableName, tableName, tableName)
+		CREATE INDEX IF NOT EXISTS idx_%s_sym_tf_date ON %s(symbol, timeframe, Date);
+	`, tableName, tableName, tableName, tableName, tableName, tableName, tableName)
 	_, err := db.Exec(schema)
 	return err
 }
@@ -151,8 +152,13 @@ type SymbolDateCoverage struct {
 	BarCount int    `db:"bar_count"`
 }
 
-// GetSymbolDateCoverage queries the existing date range and bar count for a symbol in tableName.
+// GetSymbolDateCoverage queries the existing date range and bar count for a symbol in tableName across all timeframes.
 func GetSymbolDateCoverage(db *sqlx.DB, tableName, symbol string) (SymbolDateCoverage, error) {
+	return GetSymbolDateCoverageWithTimeframe(db, tableName, symbol, "")
+}
+
+// GetSymbolDateCoverageWithTimeframe queries existing date coverage filtered by timeframe if provided.
+func GetSymbolDateCoverageWithTimeframe(db *sqlx.DB, tableName, symbol, timeframe string) (SymbolDateCoverage, error) {
 	cov := SymbolDateCoverage{Symbol: symbol}
 	if tableName == "" {
 		tableName = "backtest_start"
@@ -167,7 +173,7 @@ func GetSymbolDateCoverage(db *sqlx.DB, tableName, symbol string) (SymbolDateCov
 			coalesce(MAX(substr(Date, 1, 10)), '') as max_date,
 			COUNT(*) as bar_count
 		FROM %s
-		WHERE symbol = ?
+		WHERE symbol = ? AND (? = '' OR timeframe = ?)
 	`, tableName)
 
 	type row struct {
@@ -176,7 +182,7 @@ func GetSymbolDateCoverage(db *sqlx.DB, tableName, symbol string) (SymbolDateCov
 		BarCount int    `db:"bar_count"`
 	}
 	var r row
-	err := db.Get(&r, query, symbol)
+	err := db.Get(&r, query, symbol, timeframe, timeframe)
 	if err != nil {
 		return cov, nil
 	}
