@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
+	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -16,10 +17,7 @@ import (
 )
 
 func main() {
-	defaultMarketDb := "data/market_history.db"
-	if _, err := os.Stat(defaultMarketDb); os.IsNotExist(err) {
-		defaultMarketDb = "data/leveraged_backtest.db"
-	}
+	defaultMarketDb := cliutils.GetDefaultMarketDB()
 
 	targetDb := flag.String("db", defaultMarketDb, "Path to source SQLite DB containing historical market bars")
 	tableName := flag.String("table", "backtest_start", "Table name containing historical bars")
