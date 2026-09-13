@@ -1,6 +1,10 @@
 package strategy
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"sort"
+)
 
 // ParamSet represents a key-value dictionary of numeric strategy parameters.
 type ParamSet map[string]float64
@@ -53,4 +57,147 @@ func ValidateConfig(cfg StrategyConfig) error {
 		return fmt.Errorf("allocation percentage must be between 0 and 1.0, got %f", cfg.AllocationPct)
 	}
 	return nil
+}
+
+// BaselineParams records the default/baked-in configuration of a strategy.
+type BaselineParams struct {
+	SignalDays int     `json:"signal_days"`
+	HoldDays   int     `json:"hold_days"`
+	TakeProfit float64 `json:"take_profit"`
+	StopLoss   float64 `json:"stop_loss"`
+	Allocation float64 `json:"allocation"`
+	Regime     string  `json:"regime"`
+}
+
+// ParameterSpace defines the parameter dimensions and search bounds for a strategy during grid search.
+type ParameterSpace struct {
+	StrategyID   string         `json:"strategy_id"`
+	StrategyName string         `json:"strategy_name"`
+	Description  string         `json:"description"`
+	Symbols      []string       `json:"symbols"`       // Tradable symbols
+	SignalSymbol string         `json:"signal_symbol"` // Symbol for signal generation (e.g. GLD, VOO)
+	Direction    string         `json:"direction"`     // "drop" (reversal bounce) or "rally" (breakout / short)
+	SignalDays   []int          `json:"signal_days"`
+	HoldDays     []int          `json:"hold_days"`
+	TakeProfits  []float64      `json:"take_profits"`
+	StopLosses   []float64      `json:"stop_losses"`
+	Regimes      []string       `json:"regimes"`
+	Allocations  []float64      `json:"allocations"`
+	CashYield    float64        `json:"cash_yield"`
+	Baseline     BaselineParams `json:"baseline"`
+}
+
+// ParameterSpaceProvider is optionally implemented by strategies that declare their custom search space.
+type ParameterSpaceProvider interface {
+	ParameterSpace() ParameterSpace
+}
+
+// AssessParameterSpace inspects a strategy to determine its baked-in parameters
+// and generate a tailored parameter space for grid search optimization.
+func AssessParameterSpace(s Strategy) ParameterSpace {
+	if p, ok := s.(ParameterSpaceProvider); ok {
+		return p.ParameterSpace()
+	}
+
+	cfg := s.DefaultConfig()
+
+	var symbols []string
+	if req, ok := s.(RequiredSymbolsProvider); ok && len(req.RequiredSymbols()) > 0 {
+		symbols = req.RequiredSymbols()
+	} else if cfg.Benchmark != "" {
+		symbols = []string{cfg.Benchmark}
+	} else {
+		symbols = []string{"VOO"}
+	}
+
+	signalSym := symbols[0]
+	if cfg.Benchmark != "" {
+		signalSym = cfg.Benchmark
+	}
+
+	tp := cfg.TakeProfitPct
+	if tp == 0 && cfg.TargetPct > 1.0 {
+		tp = cfg.TargetPct - 1.0
+	}
+
+	sl := cfg.StopLossPct
+	if sl > 0.5 && sl < 1.0 {
+		sl = 1.0 - sl
+	}
+
+	hold := cfg.HoldingWindow
+	if hold <= 0 {
+		hold = 8
+	}
+
+	alloc := cfg.AllocationPct
+	if alloc <= 0 {
+		alloc = 0.65
+	}
+
+	// Build holding windows around the baked-in default
+	holdSet := map[int]bool{2: true, 4: true, 6: true, 8: true, 10: true, 12: true, 15: true, hold: true}
+	var holdDays []int
+	for h := range holdSet {
+		holdDays = append(holdDays, h)
+	}
+	sort.Ints(holdDays)
+
+	// Build TP options around the baked-in default
+	tpList := []float64{0.0, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.10}
+	if tp > 0 {
+		hasTP := false
+		for _, t := range tpList {
+			if math.Abs(t-tp) < 1e-4 {
+				hasTP = true
+				break
+			}
+		}
+		if !hasTP {
+			tpList = append(tpList, tp)
+			sort.Float64s(tpList)
+		}
+	}
+
+	// Build SL options around the baked-in default
+	slList := []float64{0.0, 0.02, 0.03, 0.05, 0.07}
+	if sl > 0 {
+		hasSL := false
+		for _, s := range slList {
+			if math.Abs(s-sl) < 1e-4 {
+				hasSL = true
+				break
+			}
+		}
+		if !hasSL {
+			slList = append(slList, sl)
+			sort.Float64s(slList)
+		}
+	}
+
+	regimes := []string{"All Regimes", fmt.Sprintf("%s>=SMA200", signalSym), fmt.Sprintf("%s<SMA200", signalSym)}
+
+	return ParameterSpace{
+		StrategyID:   s.ID(),
+		StrategyName: s.Name(),
+		Description:  s.Description(),
+		Symbols:      symbols,
+		SignalSymbol: signalSym,
+		Direction:    "drop",
+		SignalDays:   []int{2, 3, 4, 5},
+		HoldDays:     holdDays,
+		TakeProfits:  tpList,
+		StopLosses:   slList,
+		Regimes:      regimes,
+		Allocations:  []float64{alloc},
+		CashYield:    cfg.CashYieldAnnual,
+		Baseline: BaselineParams{
+			SignalDays: 3,
+			HoldDays:   hold,
+			TakeProfit: tp,
+			StopLoss:   sl,
+			Allocation: alloc,
+			Regime:     "All Regimes",
+		},
+	}
 }

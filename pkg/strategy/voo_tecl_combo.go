@@ -89,6 +89,34 @@ func (s *VOOTECLCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []m
 	return pipe.GenerateSignals(barsBySymbol)
 }
 
+// ParameterSpace returns the tailored parameter search space centered around VOO-TECL combo defaults.
+func (s *VOOTECLCombo) ParameterSpace() ParameterSpace {
+	cfg := s.DefaultConfig()
+	return ParameterSpace{
+		StrategyID:   s.ID(),
+		StrategyName: s.Name(),
+		Description:  s.Description(),
+		Symbols:      []string{"TECL"},
+		SignalSymbol: "VOO",
+		Direction:    "drop",
+		SignalDays:   []int{2, 3, 4, 5},
+		HoldDays:     []int{2, 4, 6, 8, 10, 12, 14},
+		TakeProfits:  []float64{0.03, 0.05, 0.07, 0.10},
+		StopLosses:   []float64{0.0, 0.05, 0.10, 0.15, 0.20},
+		Regimes:      []string{"All Regimes", "VOO>=SMA200"},
+		Allocations:  []float64{cfg.AllocationPct},
+		CashYield:    cfg.CashYieldAnnual,
+		Baseline: BaselineParams{
+			SignalDays: 3,
+			HoldDays:   cfg.HoldingWindow,
+			TakeProfit: cfg.TakeProfitPct,
+			StopLoss:   cfg.StopLossPct,
+			Allocation: cfg.AllocationPct,
+			Regime:     "All Regimes",
+		},
+	}
+}
+
 func init() {
 	NewVOOTECLCombo()
 }

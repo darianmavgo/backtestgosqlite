@@ -291,6 +291,14 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.TargetPct = 1.15
 				cfg.StopLossPct = 0.93
 				cfg.HoldingWindow = 10
+			case "gld_decline":
+				cfg.Benchmark = "GLD"
+				cfg.AllocationPct = 0.65
+				cfg.TakeProfitPct = 0.05
+				cfg.StopLossPct = 0.00
+				cfg.HoldingWindow = 8
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
 			}
 
 			NewSQLPipelineStrategy(id, name, desc, pipelinePath, cfg)

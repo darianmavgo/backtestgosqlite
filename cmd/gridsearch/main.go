@@ -1,19 +1,26 @@
-// cmd/gridsearch — Parallel parameter sweep using the unified engine.
+// cmd/gridsearch — Parallel parameter sweep assessing baked-in strategy parameters.
 //
 // Usage:
 //
-//	# Bear market optimization (inverse ETFs):
-//	go run cmd/gridsearch/main.go -mode bear -alloc 0.65
+//	# Assess and optimize gld_decline:
+//	go run cmd/gridsearch/main.go gld_decline
+//	go run cmd/gridsearch/main.go -strategy gld_decline
 //
-//	# Bull market multi-asset sweep:
-//	go run cmd/gridsearch/main.go -mode bull -alloc 0.65
+//	# Assess and optimize voo_tecl_combo:
+//	go run cmd/gridsearch/main.go voo_tecl_combo
+//
+//	# List all optimizable strategies:
+//	go run cmd/gridsearch/main.go -list
 package main
 
 import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,23 +33,124 @@ import (
 )
 
 type gridResult struct {
-	Label  string
-	Report models.PerformanceReport
-	Trades []models.Trade
-	Curve  []models.DailyEquityPoint
+	Label      string
+	Report     models.PerformanceReport
+	Trades     []models.Trade
+	Curve      []models.DailyEquityPoint
+	IsBaseline bool
+}
+
+func formatPercents(vals []float64) []string {
+	res := make([]string, len(vals))
+	for i, v := range vals {
+		if v == 0 {
+			res[i] = "None (0%)"
+		} else {
+			res[i] = fmt.Sprintf("%.0f%%", v*100)
+		}
+	}
+	return res
 }
 
 func main() {
-	dbPath     := flag.String("db", "data/sp500_etfs_study.db", "Path to SQLite database")
-	mode       := flag.String("mode", "bear", "Sweep mode: 'bear' or 'bull'")
-	signalSym  := flag.String("signal", "VOO", "Signal generation symbol")
-	capital    := flag.Float64("capital", 100000.0, "Starting cash ($)")
-	allocPct   := flag.Float64("alloc", 0.65, "Allocation percentage (0.65 = 65%)")
-	cashYield  := flag.Float64("yield", 0.045, "Cash yield on idle reserves")
-	minTrades  := flag.Int("min-trades", 10, "Minimum trade count filter")
-	topN       := flag.Int("top", 10, "Top N results to display")
-	htmlOutput := flag.String("html", "reports/gridsearch_results.html", "Path to export HTML comparison report")
+	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
+	stratFlag := flag.String("strategy", "", "Strategy ID to assess and optimize (e.g. 'gld_decline', 'voo_tecl_combo')")
+	stratShort := flag.String("strat", "", "Alias for -strategy")
+	modeFlag := flag.String("mode", "", "Legacy compatibility alias for -strategy")
+	listFlag := flag.Bool("list", false, "List registered strategies with baked-in parameters")
+	signalSym := flag.String("signal", "", "Signal generation symbol override")
+	customTradeSym := flag.String("symbol", "", "Specific trade symbol override")
+	capital := flag.Float64("capital", 100000.0, "Starting cash ($)")
+	allocPct := flag.Float64("alloc", 0.65, "Allocation percentage override (e.g. 0.65 = 65%)")
+	cashYield := flag.Float64("yield", 0.045, "Cash yield on idle reserves (4.5% = 0.045)")
+	minTrades := flag.Int("min-trades", 5, "Minimum trade count filter")
+	topN := flag.Int("top", 10, "Top N results to display")
+	htmlOutput := flag.String("html", "", "Path to export HTML comparison report (defaults to reports/<strategy>_gridsearch.html)")
 	flag.Parse()
+
+	// Track which flags were explicitly set by the user
+	userPassedFlags := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		userPassedFlags[f.Name] = true
+	})
+
+	if *listFlag {
+		fmt.Println("\n=======================================================================================================================")
+		fmt.Println("📋 REGISTERED STRATEGIES AVAILABLE FOR GRID SEARCH OPTIMIZATION:")
+		fmt.Println("=======================================================================================================================")
+		for _, s := range strategy.List() {
+			space := strategy.AssessParameterSpace(s)
+			fmt.Printf("  • %-20s %s\n", s.ID(), s.Name())
+			fmt.Printf("    Baked-in: Asset=%s | Hold=%dd | TP=%.1f%% | SL=%.1f%% | Alloc=%.0f%%\n",
+				space.SignalSymbol, space.Baseline.HoldDays, space.Baseline.TakeProfit*100, space.Baseline.StopLoss*100, space.Baseline.Allocation*100)
+		}
+		fmt.Println("=======================================================================================================================")
+		fmt.Println()
+		return
+	}
+
+	// Resolve strategy ID from flag, positional argument, or legacy mode
+	stratID := strings.TrimSpace(*stratFlag)
+	if stratID == "" {
+		stratID = strings.TrimSpace(*stratShort)
+	}
+	if stratID == "" && len(flag.Args()) > 0 {
+		stratID = strings.TrimSpace(flag.Args()[0])
+	}
+	if stratID == "" && *modeFlag != "" {
+		switch strings.ToLower(*modeFlag) {
+		case "gld", "gld_decline", "gld-decline":
+			stratID = "gld_decline"
+		case "bull", "voo", "voo_tecl_combo":
+			stratID = "voo-tecl-combo"
+		case "bear":
+			// Bear market inverse search
+			stratID = "voo-tecl-combo"
+		default:
+			stratID = *modeFlag
+		}
+	}
+
+	if stratID == "" {
+		fmt.Println()
+		fmt.Println("⚠️  No strategy specified! Please specify a strategy to optimize.")
+		fmt.Println("Usage:   go run cmd/gridsearch/main.go <strategy_id>")
+		fmt.Println("Example: go run cmd/gridsearch/main.go gld_decline")
+		fmt.Println()
+		fmt.Println("Run with -list to view all available strategies:")
+		fmt.Println("         go run cmd/gridsearch/main.go -list")
+		fmt.Println()
+		os.Exit(1)
+	}
+
+	strat, found := strategy.Get(stratID)
+	if !found {
+		log.Fatalf("Unknown strategy '%s'. Run with -list to see available strategies.", stratID)
+	}
+
+	// Assess the baked-in strategy parameters
+	paramSpace := strategy.AssessParameterSpace(strat)
+
+	// Apply user overrides if explicitly provided
+	if userPassedFlags["alloc"] {
+		paramSpace.Allocations = []float64{*allocPct}
+	}
+	if userPassedFlags["yield"] {
+		paramSpace.CashYield = *cashYield
+	}
+	if userPassedFlags["symbol"] && *customTradeSym != "" {
+		paramSpace.Symbols = []string{*customTradeSym}
+	}
+	if userPassedFlags["signal"] && *signalSym != "" {
+		paramSpace.SignalSymbol = *signalSym
+	}
+
+	// Default HTML report path based on strategy ID
+	cleanID := strings.ReplaceAll(strat.ID(), "-", "_")
+	reportFile := fmt.Sprintf("reports/%s_gridsearch.html", cleanID)
+	if *htmlOutput != "" {
+		reportFile = *htmlOutput
+	}
 
 	db, err := storage.OpenSQLite(*dbPath)
 	if err != nil {
@@ -50,41 +158,19 @@ func main() {
 	}
 	defer db.Close()
 
-	// Fetch VOO signal bars (with SMA200 for regime gate).
-	barMap, _, err := storage.FetchBars(db, "backtest_start", []string{*signalSym}, "", "")
+	// Fetch signal bars (with SMA200/SMA50 for regime gating)
+	barMap, _, err := storage.FetchBars(db, "backtest_start", []string{paramSpace.SignalSymbol}, "", "")
 	if err != nil {
-		log.Fatalf("Failed to fetch %s bars: %v", *signalSym, err)
+		log.Fatalf("Failed to fetch %s bars: %v", paramSpace.SignalSymbol, err)
 	}
-	signalBars := barMap[*signalSym]
-
-	// Configure sweep parameters based on mode.
-	var symbols []string
-	var direction string
-	var signalDaysList, holdDaysList []int
-	var tpList, slList []float64
-	var regimeFilters []string
-
-	if *mode == "bear" {
-		symbols       = []string{"SPXU", "SQQQ", "SOXS"}
-		direction     = "rally"
-		signalDaysList = []int{2, 3, 4, 5}
-		holdDaysList  = []int{1, 2, 3, 4, 5, 6, 8, 10, 12, 15}
-		tpList        = []float64{0.0, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.15, 0.20}
-		slList        = []float64{0.0, 0.03, 0.05, 0.07, 0.10, 0.15}
-		regimeFilters = []string{"VOO<SMA200", "VOO<SMA50", "All Regimes"}
-	} else {
-		symbols       = []string{"TECL", "UPRO", "TQQQ", "SOXL", "FAS", "UDOW"}
-		direction     = "drop"
-		signalDaysList = []int{2, 3, 4}
-		holdDaysList  = []int{2, 4, 6, 8, 10, 12, 14}
-		tpList        = []float64{0.03, 0.05, 0.07, 0.10}
-		slList        = []float64{0.0, 0.10, 0.15, 0.20}
-		regimeFilters = []string{"All Regimes", "VOO>=SMA200"}
+	signalBars := barMap[paramSpace.SignalSymbol]
+	if len(signalBars) == 0 {
+		log.Fatalf("No price bars found in DB for signal symbol %s", paramSpace.SignalSymbol)
 	}
 
-	// Fetch trade bars for all target symbols.
-	tradeBarsMap := make(map[string][]models.Bar, len(symbols))
-	for _, sym := range symbols {
+	// Fetch trade bars for all target symbols
+	tradeBarsMap := make(map[string][]models.Bar, len(paramSpace.Symbols))
+	for _, sym := range paramSpace.Symbols {
 		tBarMap, _, err := storage.FetchBars(db, "backtest_start", []string{sym}, "", "")
 		bars := tBarMap[sym]
 		if err == nil && len(bars) > 0 {
@@ -92,7 +178,7 @@ func main() {
 		}
 	}
 
-	// Build sorted dates across all bars.
+	// Build unified sorted date list
 	dateSet := make(map[string]struct{})
 	for _, b := range signalBars {
 		dateSet[b.Date] = struct{}{}
@@ -108,8 +194,28 @@ func main() {
 	}
 	sort.Strings(sortedDates)
 
+	totalPerms := len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
+		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
+
 	fmt.Printf("\n=======================================================================================================================\n")
-	fmt.Printf("⚡ PARALLEL GRID SEARCH (Mode: %s | %.0f%% Alloc + %.1f%% Yield)\n", *mode, *allocPct*100, *cashYield*100)
+	fmt.Printf("⚡ STRATEGY GRID SEARCH OPTIMIZER\n")
+	fmt.Printf("=======================================================================================================================\n")
+	fmt.Printf("Strategy:      %s (ID: %s)\n", strat.Name(), strat.ID())
+	fmt.Printf("Description:   %s\n\n", strat.Description())
+	fmt.Printf("📋 Baked-In Baseline Parameters:\n")
+	fmt.Printf("   • Signal / Asset:     %s (Direction: %s)\n", paramSpace.SignalSymbol, paramSpace.Direction)
+	fmt.Printf("   • Consecutive Days:   %d days\n", paramSpace.Baseline.SignalDays)
+	fmt.Printf("   • Max Holding Window: %d days\n", paramSpace.Baseline.HoldDays)
+	fmt.Printf("   • Take-Profit Target: +%.2f%%\n", paramSpace.Baseline.TakeProfit*100)
+	fmt.Printf("   • Stop-Loss Limit:    %.2f%%\n", paramSpace.Baseline.StopLoss*100)
+	fmt.Printf("   • Allocation / APY:   %.1f%% capital | %.1f%% idle APY\n\n", paramSpace.Allocations[0]*100, paramSpace.CashYield*100)
+	fmt.Printf("🎯 Evaluated Parameter Grid (%d Permutations):\n", totalPerms)
+	fmt.Printf("   • Tradable Assets:    %v\n", paramSpace.Symbols)
+	fmt.Printf("   • Consecutive Days:   %v\n", paramSpace.SignalDays)
+	fmt.Printf("   • Holding Windows:    %v days\n", paramSpace.HoldDays)
+	fmt.Printf("   • Take-Profit:        %v\n", formatPercents(paramSpace.TakeProfits))
+	fmt.Printf("   • Stop-Loss:          %v\n", formatPercents(paramSpace.StopLosses))
+	fmt.Printf("   • Regime Filters:     %v\n", paramSpace.Regimes)
 	fmt.Printf("=======================================================================================================================\n\n")
 
 	start := time.Now()
@@ -121,66 +227,99 @@ func main() {
 		tp         float64
 		sl         float64
 		regime     string
+		alloc      float64
 		tradeBars  []models.Bar
+		isBaseline bool
 	}
 
 	tasks := make(chan task, 5000)
 	var results []gridResult
+	var baselineRes *gridResult
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	// Spin up 16 worker goroutines.
+	// 16 parallel worker goroutines
 	for w := 0; w < 16; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for t := range tasks {
 				barsBySymbol := map[string][]models.Bar{
-					*signalSym: signalBars,
-					t.sym:      t.tradeBars,
+					paramSpace.SignalSymbol: signalBars,
+					t.sym:                   t.tradeBars,
 				}
 
 				cfg := strategy.StrategyConfig{
-					AllocationPct:   *allocPct,
+					AllocationPct:   t.alloc,
 					TakeProfitPct:   t.tp,
 					StopLossPct:     t.sl,
 					HoldingWindow:   t.hold,
 					PositionCap:     1,
-					CashYieldAnnual: *cashYield,
+					CashYieldAnnual: paramSpace.CashYield,
 				}
 
-				sigs := buildSignals(signalBars, t.tradeBars, t.sigDays, direction, t.regime, t.tp, t.sl, t.hold, t.sym)
+				sigs := buildSignals(signalBars, t.tradeBars, t.sigDays, paramSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym)
 				if len(sigs) < *minTrades {
-					return
+					continue
 				}
 
 				sim := simulator.NewPortfolioSimulator(cfg, *capital)
 				report, trades, curve := sim.Run(sigs, barsBySymbol, sortedDates)
 
 				if report.TotalTrades < *minTrades {
-					return
+					continue
 				}
 
 				label := fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
+				res := gridResult{
+					Label:      label,
+					Report:     report,
+					Trades:     trades,
+					Curve:      curve,
+					IsBaseline: t.isBaseline,
+				}
+
 				mu.Lock()
-				results = append(results, gridResult{Label: label, Report: report, Trades: trades, Curve: curve})
+				results = append(results, res)
+				if t.isBaseline {
+					bCopy := res
+					baselineRes = &bCopy
+				}
 				mu.Unlock()
 			}
 		}()
 	}
 
-	// Enqueue all permutations.
-	for _, sym := range symbols {
+	// Enqueue all permutations
+	for _, sym := range paramSpace.Symbols {
 		tBars, ok := tradeBarsMap[sym]
 		if !ok {
 			continue
 		}
-		for _, sigDays := range signalDaysList {
-			for _, regime := range regimeFilters {
-				for _, hold := range holdDaysList {
-					for _, tp := range tpList {
-						for _, sl := range slList {
-							tasks <- task{sym: sym, sigDays: sigDays, hold: hold, tp: tp, sl: sl, regime: regime, tradeBars: tBars}
+		for _, sigDays := range paramSpace.SignalDays {
+			for _, regime := range paramSpace.Regimes {
+				for _, hold := range paramSpace.HoldDays {
+					for _, tp := range paramSpace.TakeProfits {
+						for _, sl := range paramSpace.StopLosses {
+							for _, alloc := range paramSpace.Allocations {
+								isBase := (sigDays == paramSpace.Baseline.SignalDays &&
+									hold == paramSpace.Baseline.HoldDays &&
+									math.Abs(tp-paramSpace.Baseline.TakeProfit) < 1e-4 &&
+									math.Abs(sl-paramSpace.Baseline.StopLoss) < 1e-4 &&
+									regime == paramSpace.Baseline.Regime)
+
+								tasks <- task{
+									sym:        sym,
+									sigDays:    sigDays,
+									hold:       hold,
+									tp:         tp,
+									sl:         sl,
+									regime:     regime,
+									alloc:      alloc,
+									tradeBars:  tBars,
+									isBaseline: isBase,
+								}
+							}
 						}
 					}
 				}
@@ -198,7 +337,15 @@ func main() {
 		return
 	}
 
-	// Rank by Calmar.
+	// Print Baseline Performance first as benchmark
+	if baselineRes != nil {
+		fmt.Println("📌 BAKED-IN STRATEGY BASELINE:")
+		fmt.Printf("   %-50s  Net Profit=+$%.2f  CAGR=%.2f%%  MaxDD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d\n\n",
+			baselineRes.Label, baselineRes.Report.NetProfit, baselineRes.Report.CAGR*100, baselineRes.Report.MaxDrawdownPct*100,
+			baselineRes.Report.CalmarRatio, baselineRes.Report.WinRate*100, baselineRes.Report.TotalTrades)
+	}
+
+	// Rank by Calmar Ratio
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Report.CalmarRatio > results[j].Report.CalmarRatio
 	})
@@ -207,13 +354,18 @@ func main() {
 		topCalmar = topCalmar[:*topN]
 	}
 
-	fmt.Printf("⭐ TOP %d BY CALMAR RATIO:\n", len(topCalmar))
+	fmt.Printf("⭐ TOP %d BY CALMAR RATIO (Risk-Adjusted):\n", len(topCalmar))
 	for i, r := range topCalmar {
-		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d\n",
-			i+1, r.Label, r.Report.CAGR, r.Report.MaxDrawdownPct, r.Report.CalmarRatio, r.Report.WinRate*100, r.Report.TotalTrades)
+		comp := ""
+		if baselineRes != nil && baselineRes.Report.CalmarRatio > 0 {
+			diff := (r.Report.CalmarRatio - baselineRes.Report.CalmarRatio) / baselineRes.Report.CalmarRatio * 100.0
+			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
+		}
+		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d%s\n",
+			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.CalmarRatio, r.Report.WinRate*100, r.Report.TotalTrades, comp)
 	}
 
-	// Rank by Net Profit.
+	// Rank by Net Profit
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Report.NetProfit > results[j].Report.NetProfit
 	})
@@ -223,24 +375,41 @@ func main() {
 	}
 	fmt.Printf("\n💰 TOP %d BY NET PROFIT:\n", len(topProfit))
 	for i, r := range topProfit {
-		fmt.Printf("  #%d  %-50s  Profit=+$%.2f  CAGR=%.2f%%\n", i+1, r.Label, r.Report.NetProfit, r.Report.CAGR)
+		comp := ""
+		if baselineRes != nil && baselineRes.Report.NetProfit > 0 {
+			diff := (r.Report.NetProfit - baselineRes.Report.NetProfit) / baselineRes.Report.NetProfit * 100.0
+			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
+		}
+		fmt.Printf("  #%d  %-50s  Profit=+$%.2f  CAGR=%.2f%%%s\n", i+1, r.Label, r.Report.NetProfit, r.Report.CAGR*100, comp)
 	}
 
-	// Export HTML.
-	if *htmlOutput != "" {
-		multiResults := make([]charting.MultiResult, len(topCalmar))
-		for i, r := range topCalmar {
-			multiResults[i] = charting.MultiResult{Label: r.Label, Report: r.Report, DailyCurve: r.Curve}
+	// Export HTML Comparison Report
+	if reportFile != "" {
+		var multiResults []charting.MultiResult
+		if baselineRes != nil {
+			multiResults = append(multiResults, charting.MultiResult{
+				Label:      fmt.Sprintf("⭐ [BASELINE] %s", baselineRes.Label),
+				Report:     baselineRes.Report,
+				DailyCurve: baselineRes.Curve,
+			})
 		}
+		for _, r := range topCalmar {
+			multiResults = append(multiResults, charting.MultiResult{
+				Label:      r.Label,
+				Report:     r.Report,
+				DailyCurve: r.Curve,
+			})
+		}
+
 		view := charting.FromMultiReports(
-			fmt.Sprintf("Grid Search Optimization Matrix (%s Mode)", *mode),
-			fmt.Sprintf("Parallel parameter sweep — top %d by Calmar Ratio", len(topCalmar)),
+			fmt.Sprintf("Grid Search Optimization: %s", strat.Name()),
+			fmt.Sprintf("Parameter sweep centered on baked-in defaults — top %d by Calmar Ratio", len(topCalmar)),
 			multiResults, signalBars, *capital,
 		)
-		if err := charting.GenerateHTML(*htmlOutput, view); err != nil {
+		if err := charting.GenerateHTML(reportFile, view); err != nil {
 			log.Printf("Warning: Failed to save HTML report: %v", err)
 		} else {
-			fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n\n", *htmlOutput)
+			fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n\n", reportFile)
 		}
 	}
 }
@@ -278,17 +447,21 @@ func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direc
 			continue
 		}
 		// Regime gate
-		switch regime {
-		case "VOO<SMA200":
+		switch {
+		case strings.HasSuffix(regime, "<SMA200"):
 			if voo.SMA200 > 0 && voo.Close >= voo.SMA200 {
 				continue
 			}
-		case "VOO<SMA50":
+		case strings.HasSuffix(regime, "<SMA50"):
 			if voo.SMA50 > 0 && voo.Close >= voo.SMA50 {
 				continue
 			}
-		case "VOO>=SMA200":
+		case strings.HasSuffix(regime, ">=SMA200"):
 			if voo.SMA200 > 0 && voo.Close < voo.SMA200 {
+				continue
+			}
+		case strings.HasSuffix(regime, ">=SMA50"):
+			if voo.SMA50 > 0 && voo.Close < voo.SMA50 {
 				continue
 			}
 		}
@@ -311,13 +484,27 @@ func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direc
 			Volume:           tradeBar.Volume,
 			Entry:            1,
 			Direction:        dir,
+			OrderType:        "limit",
+			BuyLimit:         entryPrice,
+			Regime:           regime,
 			HoldDaysOverride: holdDays,
+			AssetClass:       "equity",
+			StrategyID:       tradeSym + "-opt",
+			Priority:         0,
 		}
 		if tpPct > 0 {
-			sig.TakeProfit = entryPrice * (1.0 + tpPct)
+			if isLong {
+				sig.TakeProfit = entryPrice * (1.0 + tpPct)
+			} else {
+				sig.TakeProfit = entryPrice * (1.0 - tpPct)
+			}
 		}
 		if slPct > 0 {
-			sig.StopLoss = entryPrice * (1.0 - slPct)
+			if isLong {
+				sig.StopLoss = entryPrice * (1.0 - slPct)
+			} else {
+				sig.StopLoss = entryPrice * (1.0 + slPct)
+			}
 		}
 		signals = append(signals, sig)
 	}

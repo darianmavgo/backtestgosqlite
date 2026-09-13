@@ -102,13 +102,13 @@ func FromPerformanceReport(
 		},
 		{
 			Label: "Annualized CAGR",
-			Value: fmt.Sprintf("%.2f%% / yr", report.CAGR),
+			Value: fmt.Sprintf("%.2f%% / yr", report.CAGR*100),
 			Sub:   fmt.Sprintf("+%.2f%% Total Return", report.TotalReturnPct),
 			Color: "#38bdf8",
 		},
 		{
 			Label: "Max Drawdown",
-			Value: fmt.Sprintf("%.2f%%", report.MaxDrawdownPct),
+			Value: fmt.Sprintf("%.2f%%", report.MaxDrawdownPct*100),
 			Sub:   fmt.Sprintf("Calmar Ratio: %.2f", report.CalmarRatio),
 			Color: "#38bdf8",
 		},
@@ -174,8 +174,8 @@ func FromEquityCurve(
 ) ReportView {
 	kpis := []KPICard{
 		{Label: "Final Account Value", Value: fmt.Sprintf("$%.2f", report.FinalEquity), Sub: fmt.Sprintf("+$%.2f Net Profit", report.NetProfit), Color: "#10b981"},
-		{Label: "Annualized CAGR", Value: fmt.Sprintf("%.2f%% / yr", report.CAGR), Sub: fmt.Sprintf("+%.2f%% Total Return", report.TotalReturnPct), Color: "#38bdf8"},
-		{Label: "Max Drawdown", Value: fmt.Sprintf("%.2f%%", report.MaxDrawdownPct), Sub: fmt.Sprintf("Calmar Ratio: %.2f", report.CalmarRatio), Color: "#38bdf8"},
+		{Label: "Annualized CAGR", Value: fmt.Sprintf("%.2f%% / yr", report.CAGR*100), Sub: fmt.Sprintf("+%.2f%% Total Return", report.TotalReturnPct), Color: "#38bdf8"},
+		{Label: "Max Drawdown", Value: fmt.Sprintf("%.2f%%", report.MaxDrawdownPct*100), Sub: fmt.Sprintf("Calmar Ratio: %.2f", report.CalmarRatio), Color: "#38bdf8"},
 		{Label: "Win Rate & Trades", Value: fmt.Sprintf("%.1f%%", report.WinRate*100), Sub: fmt.Sprintf("%d Trades (%dW / %dL) | %.1fd Avg Hold", report.TotalTrades, report.WinningTrades, report.LosingTrades, report.AvgHoldingDays), Color: "#f59e0b"},
 	}
 
@@ -310,8 +310,8 @@ func FromMultiReports(title, subtitle string, results []MultiResult, benchmarkBa
 			r.Label,
 			fmt.Sprintf("$%.2f", r.Report.FinalEquity),
 			fmt.Sprintf("+$%.2f", r.Report.NetProfit),
-			fmt.Sprintf("%.2f%% / yr", r.Report.CAGR),
-			fmt.Sprintf("-%.2f%%", r.Report.MaxDrawdownPct),
+			fmt.Sprintf("%.2f%% / yr", r.Report.CAGR*100),
+			fmt.Sprintf("-%.2f%%", r.Report.MaxDrawdownPct*100),
 			fmt.Sprintf("⭐ %.2f", r.Report.CalmarRatio),
 			fmt.Sprintf("%.1f%%", r.Report.WinRate*100),
 			fmt.Sprintf("%d", r.Report.TotalTrades),
