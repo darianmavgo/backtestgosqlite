@@ -4,12 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -21,8 +21,11 @@ func main() {
 
 	targetDb := flag.String("db", defaultMarketDb, "Path to source SQLite DB containing historical market bars")
 	tableName := flag.String("table", "backtest_start", "Table name containing historical bars")
-	strategyType := flag.String("strategy", "", "Strategy ID to run, comma-separated list, or 'all' (e.g. bb-capitulation,trend-bb,rsi2)")
-	outDir := flag.String("out-dir", "reports", "Directory to write strategy-isolated SQLite database results and reports")
+	strategyType := flag.String("strategy", "", "Strategy ID to run, comma-separated list, 'all', or 'strat1+strat2' for shared account")
+	sharedAccountFlag := flag.Bool("shared-account", false, "Run strategies in a single shared cash account with priority preemption")
+	primaryFlag := flag.String("primary", "", "Primary strategy ID for shared-account execution (has capital priority)")
+	secondaryFlag := flag.String("secondary", "", "Secondary strategy ID(s) for shared-account execution (comma-separated)")
+	outDir := flag.String("out-dir", "reports", "Directory to write strategy SQLite database results and reports")
 	listFlag := flag.Bool("list", false, "List all registered Go and SQL strategies")
 	symbolFilter := flag.String("symbol", "", "Optional: Filter backtest to a specific symbol (e.g. DFEN, SOXL)")
 	capital := flag.Float64("capital", 100000.0, "Starting portfolio capital for simulation")
@@ -49,6 +52,179 @@ func main() {
 	if stratArg == "" && len(posArgs) > 0 {
 		stratArg = strings.Join(posArgs, ",")
 	}
+
+	// Detect if user requested Shared Account Mode
+	isSharedAccount := *sharedAccountFlag || *primaryFlag != "" || *secondaryFlag != "" || strings.Contains(stratArg, "+")
+
+	if isSharedAccount {
+		var primaryStrat strategy.Strategy
+		var secondaryStrats []strategy.Strategy
+
+		if *primaryFlag != "" {
+			s, exists := strategy.Get(*primaryFlag)
+			if !exists {
+				log.Fatalf("Primary strategy '%s' not found in registry.", *primaryFlag)
+			}
+			primaryStrat = s
+
+			if *secondaryFlag != "" {
+				secTokens := strings.FieldsFunc(*secondaryFlag, func(r rune) bool { return r == ',' || r == ' ' })
+				for _, tok := range secTokens {
+					sec, exists := strategy.Get(strings.TrimSpace(tok))
+					if !exists {
+						log.Fatalf("Secondary strategy '%s' not found in registry.", tok)
+					}
+					secondaryStrats = append(secondaryStrats, sec)
+				}
+			}
+		} else if strings.Contains(stratArg, "+") {
+			parts := strings.Split(stratArg, "+")
+			pID := strings.TrimSpace(parts[0])
+			pStrat, exists := strategy.Get(pID)
+			if !exists {
+				log.Fatalf("Primary strategy '%s' not found in registry.", pID)
+			}
+			primaryStrat = pStrat
+
+			for _, p := range parts[1:] {
+				sID := strings.TrimSpace(p)
+				sStrat, exists := strategy.Get(sID)
+				if !exists {
+					log.Fatalf("Secondary strategy '%s' not found in registry.", sID)
+				}
+				secondaryStrats = append(secondaryStrats, sStrat)
+			}
+		} else {
+			// Spliced from -strategy comma-separated list
+			tokens := strings.FieldsFunc(stratArg, func(r rune) bool { return r == ',' || r == ' ' })
+			if len(tokens) < 2 {
+				log.Fatalf("Shared account mode requires at least 2 strategies (primary + secondary).")
+			}
+			pStrat, exists := strategy.Get(strings.TrimSpace(tokens[0]))
+			if !exists {
+				log.Fatalf("Primary strategy '%s' not found in registry.", tokens[0])
+			}
+			primaryStrat = pStrat
+
+			for _, tok := range tokens[1:] {
+				sStrat, exists := strategy.Get(strings.TrimSpace(tok))
+				if !exists {
+					log.Fatalf("Secondary strategy '%s' not found in registry.", tok)
+				}
+				secondaryStrats = append(secondaryStrats, sStrat)
+			}
+		}
+
+		allStrats := append([]strategy.Strategy{primaryStrat}, secondaryStrats...)
+
+		// Detect missing market data and download
+		if err := runner.DetectAndDownloadMissingData(*targetDb, *tableName, allStrats, *symbolFilter, *autoDownload, *downloadYears); err != nil {
+			log.Fatalf("Market data resolution error: %v", err)
+		}
+
+		db, err := storage.OpenSQLite(*targetDb)
+		if err != nil {
+			log.Fatalf("Failed to open source DB %s: %v", *targetDb, err)
+		}
+		defer db.Close()
+
+		fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Shared-Account Simulation (Starting Capital: $%.2f)...\n", *tableName, *capital)
+		barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, *tableName)
+		if err != nil {
+			log.Fatalf("Error loading historical bars for simulation: %v", err)
+		}
+
+		sharedRes := runner.ExecuteSharedAccount(
+			primaryStrat, secondaryStrats, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb,
+		)
+		if sharedRes.Err != nil {
+			log.Fatalf("Shared account backtest failed: %v", sharedRes.Err)
+		}
+
+		runner.PrintSharedAccountTearSheet(sharedRes)
+
+		// Export HTML Report for Shared Account
+		if *htmlOutput != "" {
+			symUpper := strings.ToUpper(*symbolFilter)
+			reportTitle := fmt.Sprintf("Shared Account Multi-Strategy Report: %s + %s", primaryStrat.Name(), secondaryStrats[0].Name())
+
+			var stratReports []analytics.StrategyReportData
+			eqCurves := make(map[string][]float64)
+			ddCurves := make(map[string][]float64)
+
+			// 1. Shared Account Combined
+			stratReports = append(stratReports, analytics.StrategyReportData{
+				ID:     "SHARED_ACCOUNT",
+				Name:   "Consolidated Shared Account",
+				Type:   "Portfolio",
+				Report: sharedRes.CombinedReport,
+				Trades: sharedRes.Trades,
+			})
+			var eqSeries, ddSeries []float64
+			for _, pt := range sharedRes.EquityCurve {
+				eqSeries = append(eqSeries, pt.TotalEquity)
+				ddSeries = append(ddSeries, pt.DrawdownPct)
+			}
+			eqCurves["SHARED_ACCOUNT"] = eqSeries
+			ddCurves["SHARED_ACCOUNT"] = ddSeries
+
+			// 2. Primary Strategy Attribution
+			pRep := sharedRes.PerStrategyReports[primaryStrat.ID()]
+			var pTrades []models.Trade
+			for _, t := range sharedRes.Trades {
+				if t.StrategyID == primaryStrat.ID() {
+					pTrades = append(pTrades, t)
+				}
+			}
+			stratReports = append(stratReports, analytics.StrategyReportData{
+				ID:     primaryStrat.ID(),
+				Name:   primaryStrat.Name() + " (Primary)",
+				Type:   "Primary",
+				Report: pRep,
+				Trades: pTrades,
+			})
+
+			// 3. Secondary Strategies Attribution
+			for _, sec := range secondaryStrats {
+				sRep := sharedRes.PerStrategyReports[sec.ID()]
+				var sTrades []models.Trade
+				for _, t := range sharedRes.Trades {
+					if t.StrategyID == sec.ID() {
+						sTrades = append(sTrades, t)
+					}
+				}
+				stratReports = append(stratReports, analytics.StrategyReportData{
+					ID:     sec.ID(),
+					Name:   sec.Name() + " (Secondary)",
+					Type:   "Secondary",
+					Report: sRep,
+					Trades: sTrades,
+				})
+			}
+
+			htmlData := analytics.MultiStrategyHTMLData{
+				Title:          reportTitle,
+				Symbol:         symUpper,
+				StartDate:      sharedRes.CombinedReport.StartDate,
+				EndDate:        sharedRes.CombinedReport.EndDate,
+				TotalDays:      sharedRes.CombinedReport.TotalTradingDays,
+				TotalYears:     sharedRes.CombinedReport.TotalCalendarYears,
+				InitialCap:     *capital,
+				Strategies:     stratReports,
+				AllDates:       sortedDates,
+				EquityCurves:   eqCurves,
+				DrawdownCurves: ddCurves,
+			}
+
+			if err := analytics.GenerateComparisonHTML(*htmlOutput, htmlData); err != nil {
+				log.Printf("Warning: Failed to generate HTML report %s: %v", *htmlOutput, err)
+			} else {
+				fmt.Printf("\n✨ Interactive HTML Report generated: %s\n\n", *htmlOutput)
+			}
+		}
+		return
+	}
+
 	if stratArg == "" {
 		stratArg = "bb-capitulation"
 	}
@@ -155,7 +331,7 @@ func main() {
 		runner.PrintComparisonTable(results)
 	}
 
-	// Export HTML Report
+	// Export HTML Report for standalone/concurrent mode
 	if *htmlOutput != "" {
 		symUpper := strings.ToUpper(*symbolFilter)
 		reportTitle := "Multi-Strategy Quantitative Comparison Report"

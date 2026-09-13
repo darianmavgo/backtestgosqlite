@@ -56,6 +56,9 @@ func (s *BBCapitulationStrategy) GenerateSignals(barsBySymbol map[string][]model
 }
 
 func (s *BBCapitulationStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	if sqlStrat, exists := Get("bb_capitulation-sql"); exists {
+		sqlStrat.SetDatabases(marketDBPath, calcDBPath)
+	}
 	s.marketDBPath = marketDBPath
 	s.calcDBPath = calcDBPath
 }

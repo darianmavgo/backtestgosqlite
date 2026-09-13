@@ -501,8 +501,13 @@ func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error 
 			entryPrice = s.Close
 		}
 
+		stratID := strategyID
+		if s.StrategyID != "" {
+			stratID = s.StrategyID
+		}
+
 		_, err := stmt.Exec(
-			strategyID, s.Symbol, s.Date, typ, dir, entryPrice, s.TakeProfit, s.StopLoss, s.Regime,
+			stratID, s.Symbol, s.Date, typ, dir, entryPrice, s.TakeProfit, s.StopLoss, s.Regime,
 		)
 		if err != nil {
 			return err
@@ -592,8 +597,13 @@ func SaveTrades(db *sqlx.DB, strategyID string, trades []models.Trade) error {
 	defer stmt.Close()
 
 	for _, t := range trades {
+		stratID := strategyID
+		if t.StrategyID != "" {
+			stratID = t.StrategyID
+		}
+
 		_, err := stmt.Exec(
-			strategyID, t.Symbol, t.OrderType, t.EntryIdx, t.EntryDate, t.EntryPrice,
+			stratID, t.Symbol, t.OrderType, t.EntryIdx, t.EntryDate, t.EntryPrice,
 			t.TargetPrice, t.StopLossPrice, t.ExitDate, t.ExitPrice, string(t.ExitReason),
 			t.Shares, t.InvestedCapital, t.GrossPnL, t.NetPnL, t.ReturnPct, t.HoldDays,
 			t.CommissionPaid, t.MaxAdverseExcursion, t.MaxFavorableExcursion,

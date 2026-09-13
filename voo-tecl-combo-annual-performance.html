@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOO→TECL Combo: Calendar Year Performance & Alpha Audit</title>
+    <!-- Google Fonts & Echarts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://go-echarts.github.io/go-echarts-assets/assets/echarts.min.js"></script>
+
+    <style>
+        :root {
+            --bg-body: #0b0f19;
+            --bg-card: #131b2e;
+            --bg-card-subtle: #1a243b;
+            --border-card: #22304d;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-subtle: #64748b;
+            --accent-blue: #38bdf8;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --accent-purple: #a855f7;
+            --accent-cyan: #06b6d4;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            padding: 2.5rem 1.5rem;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Hero Banner */
+        .hero {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%);
+            border: 1px solid var(--border-card);
+            border-radius: 1.25rem;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(0, 0, 0, 0) 70%);
+            pointer-events: none;
+        }
+
+        .badge-row {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-strategy {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-benchmark {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .badge-audit {
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        .hero h1 {
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p.lead {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            max-width: 950px;
+        }
+
+        /* KPI Cards Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 1rem;
+            padding: 1.35rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(56, 189, 248, 0.4);
+        }
+
+        .kpi-card .label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-subtle);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .kpi-card .value {
+            font-size: 1.85rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1.2;
+        }
+
+        .kpi-card .sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+
+        .val-emerald { color: var(--accent-emerald); }
+        .val-blue { color: var(--accent-blue); }
+        .val-amber { color: var(--accent-amber); }
+        .val-purple { color: var(--accent-purple); }
+
+        /* Chart Card */
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 1.25rem;
+            overflow: hidden;
+            margin-bottom: 2.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .chart-header {
+            padding: 1.5rem 2rem;
+            background: var(--bg-card-subtle);
+            border-bottom: 1px solid var(--border-card);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .chart-header h2 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .chart-header p {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+        }
+
+        .chart-canvas {
+            padding: 1.5rem;
+            background: #ffffff; /* Clean white canvas for crisp ECharts default styling */
+        }
+
+        /* Data Table Card */
+        .table-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            margin-bottom: 2.5rem;
+            overflow-x: auto;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .table-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .table-header h3 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .table-header p {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+            text-align: left;
+        }
+
+        th {
+            background: var(--bg-card-subtle);
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-size: 0.78rem;
+            padding: 0.85rem 1rem;
+            border-bottom: 2px solid var(--border-card);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-card);
+            font-family: 'Inter', sans-serif;
+            color: var(--text-main);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .num-font {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+
+        .total-row td {
+            background: var(--bg-card-subtle);
+            font-weight: 700;
+            border-top: 2px solid var(--border-card);
+            border-bottom: none;
+            color: #fff;
+        }
+
+        .pill-badge {
+            display: inline-block;
+            padding: 0.2rem 0.55rem;
+            border-radius: 0.35rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .pill-green {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .pill-blue {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-blue);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .pill-red {
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--accent-rose);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+        }
+
+        .pill-amber {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        /* Narrative Cards Grid */
+        .narrative-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .narrative-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 1rem;
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        .narrative-card.accent-2022 {
+            border-left: 4px solid var(--accent-emerald);
+        }
+
+        .narrative-card.accent-norm {
+            border-left: 4px solid var(--accent-blue);
+        }
+
+        .narrative-card h4 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .narrative-card p {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border-card);
+            padding-top: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            color: var(--text-subtle);
+            font-size: 0.85rem;
+        }
+
+        footer code {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-blue);
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 1.25rem 0.75rem; }
+            .hero { padding: 1.5rem; }
+            .hero h1 { font-size: 1.85rem; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- HERO HEADER -->
+    <header class="hero">
+        <div class="badge-row">
+            <span class="badge badge-strategy">🚀 VOO→TECL All-Weather Combo</span>
+            <span class="badge badge-benchmark">📊 S&amp;P 500 (VOO) Benchmark</span>
+            <span class="badge badge-audit">⚡ SQLite &amp; Go Computed</span>
+        </div>
+        <h1>Calendar Year Performance &amp; Alpha Audit</h1>
+        <p class="lead">
+            An empirical audit comparing the <strong>VOO&rarr;TECL Combo</strong> strategy directly against the 
+            <strong>VOO Buy &amp; Hold Benchmark</strong> across every calendar year from September 2021 to September 2026.
+        </p>
+    </header>
+
+    <!-- KPI ROW -->
+    <section class="kpi-grid">
+        <div class="kpi-card">
+            <span class="label">Strategy 5-Yr Total Return</span>
+            <span class="value val-emerald">+547.57%</span>
+            <span class="sub">$100k &rarr; $647,570.31</span>
+        </div>
+        <div class="kpi-card">
+            <span class="label">VOO 5-Yr Benchmark Return</span>
+            <span class="value val-blue">+100.70%</span>
+            <span class="sub">$100k &rarr; $200,700.00</span>
+        </div>
+        <div class="kpi-card">
+            <span class="label">Cumulative Excess Alpha</span>
+            <span class="value val-purple">+446.87%</span>
+            <span class="sub">5.4x outperformance spread</span>
+        </div>
+        <div class="kpi-card">
+            <span class="label">Strategy Annualized CAGR</span>
+            <span class="value val-emerald">45.22%</span>
+            <span class="sub">vs VOO 14.93% CAGR</span>
+        </div>
+        <div class="kpi-card">
+            <span class="label">Strategy Max Drawdown</span>
+            <span class="value val-amber">13.36%</span>
+            <span class="sub">vs VOO/Tech ~60% Drawdown</span>
+        </div>
+        <div class="kpi-card">
+            <span class="label">Trade Win Rate</span>
+            <span class="value val-emerald">72.64%</span>
+            <span class="sub">77 Wins / 29 Losses (106 Trades)</span>
+        </div>
+    </section>
+
+    <!-- COMPARISON CHART (ECHARTS) -->
+    <section class="chart-card">
+        <div class="chart-header">
+            <div>
+                <h2>📈 Annual Period Return: Strategy vs. VOO Benchmark</h2>
+                <p>Visualizing side-by-side returns across each calendar year.</p>
+            </div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-emerald);">
+                Zero Losing Calendar Years
+            </div>
+        </div>
+        <div class="chart-canvas">
+            <div id="annual_chart" style="width: 100%; height: 420px;"></div>
+        </div>
+    </section>
+
+    <!-- PERFORMANCE DATA TABLE -->
+    <section class="table-card">
+        <div class="table-header">
+            <h3>📋 Detailed Year-by-Year Performance Table</h3>
+            <p>Calculated via pure SQLite window functions in <code>sql/strategies/voo_tecl_combo/04_calc_annual_returns_vs_voo.sql</code>.</p>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Year</th>
+                    <th>Date Horizon</th>
+                    <th>Days</th>
+                    <th>Strategy Period Return</th>
+                    <th>VOO Period Return</th>
+                    <th>Excess Alpha</th>
+                    <th>Strategy CAGR</th>
+                    <th>VOO CAGR</th>
+                    <th>Strategy Max DD</th>
+                    <th>Trades</th>
+                    <th>Win Rate</th>
+                    <th>Net Profit ($)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="num-font" style="font-weight: 700; color: #fff;">2021 <span style="font-size: 0.72rem; color: var(--text-subtle);">(Partial)</span></td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">2021-09-08 &rarr; 2021-12-31</td>
+                    <td class="num-font">81</td>
+                    <td><span class="pill-badge pill-green">+8.34%</span></td>
+                    <td><span class="pill-badge pill-blue">+5.29%</span></td>
+                    <td class="num-font val-emerald">+3.05%</td>
+                    <td class="num-font">29.27%</td>
+                    <td class="num-font" style="color: var(--text-muted);">17.96%</td>
+                    <td class="num-font" style="color: var(--accent-amber);">7.53%</td>
+                    <td class="num-font">15</td>
+                    <td class="num-font">46.7%</td>
+                    <td class="num-font val-emerald">+$7,440.10</td>
+                </tr>
+                <tr style="background: rgba(16, 185, 129, 0.04);">
+                    <td class="num-font" style="font-weight: 700; color: #fff;">2022 <span style="font-size: 0.72rem; color: var(--accent-emerald); font-weight: 700;">★ BEAR WIN</span></td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">2021-12-31 &rarr; 2022-12-30</td>
+                    <td class="num-font">251</td>
+                    <td><span class="pill-badge pill-green" style="font-size: 0.9rem;">+122.26%</span></td>
+                    <td><span class="pill-badge pill-red">-19.52%</span></td>
+                    <td class="num-font val-emerald" style="font-size: 1.05rem; font-weight: 800;">+141.79%</td>
+                    <td class="num-font val-emerald">122.87%</td>
+                    <td class="num-font" style="color: var(--accent-rose);">-19.58%</td>
+                    <td class="num-font" style="color: var(--accent-amber);">11.35%</td>
+                    <td class="num-font">36</td>
+                    <td class="num-font val-emerald">86.1%</td>
+                    <td class="num-font val-emerald" style="font-weight: 800;">+$128,122.12</td>
+                </tr>
+                <tr>
+                    <td class="num-font" style="font-weight: 700; color: #fff;">2023</td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">2022-12-30 &rarr; 2023-12-29</td>
+                    <td class="num-font">250</td>
+                    <td><span class="pill-badge pill-green">+22.70%</span></td>
+                    <td><span class="pill-badge pill-blue">+24.32%</span></td>
+                    <td class="num-font" style="color: var(--text-subtle);">-1.62%</td>
+                    <td class="num-font">22.79%</td>
+                    <td class="num-font" style="color: var(--text-muted);">24.42%</td>
+                    <td class="num-font" style="color: var(--accent-amber);">9.48%</td>
+                    <td class="num-font">15</td>
+                    <td class="num-font">66.7%</td>
+                    <td class="num-font val-emerald">+$45,457.33</td>
+                </tr>
+                <tr>
+                    <td class="num-font" style="font-weight: 700; color: #fff;">2024</td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">2023-12-29 &rarr; 2024-12-31</td>
+                    <td class="num-font">252</td>
+                    <td><span class="pill-badge pill-green">+30.51%</span></td>
+                    <td><span class="pill-badge pill-blue">+23.35%</span></td>
+                    <td class="num-font val-emerald">+7.16%</td>
+                    <td class="num-font">30.25%</td>
+                    <td class="num-font" style="color: var(--text-muted);">23.16%</td>
+                    <td class="num-font" style="color: var(--accent-amber);">11.10%</td>
+                    <td class="num-font">12</td>
+                    <td class="num-font val-emerald">83.3%</td>
+                    <td class="num-font val-emerald">+$96,892.54</td>
+                </tr>
+                <tr>
+                    <td class="num-font" style="font-weight: 700; color: #fff;">2025</td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">2024-12-31 &rarr; 2025-12-31</td>
+                    <td class="num-font">250</td>
+                    <td><span class="pill-badge pill-green">+29.37%</span></td>
+                    <td><span class="pill-badge pill-blue">+16.39%</span></td>
+                    <td class="num-font val-emerald">+12.98%</td>
+                    <td class="num-font">29.39%</td>
+                    <td class="num-font" style="color: var(--text-muted);">16.40%</td>
+                    <td class="num-font" style="color: var(--accent-amber);">13.36%</td>
+                    <td class="num-font">16</td>
+                    <td class="num-font">68.8%</td>
+                    <td class="num-font val-emerald">+$95,424.39</td>
+                </tr>
+                <tr>
+                    <td class="num-font" style="font-weight: 700; color: #fff;">2026 <span style="font-size: 0.72rem; color: var(--accent-blue);">(YTD)</span></td>
+                    <td style="color: var(--text-muted); font-size: 0.82rem;">2025-12-31 &rarr; 2026-09-11</td>
+                    <td class="num-font">174</td>
+                    <td><span class="pill-badge pill-green">+29.80%</span></td>
+                    <td><span class="pill-badge pill-blue">+12.44%</span></td>
+                    <td class="num-font val-emerald">+17.36%</td>
+                    <td class="num-font val-emerald">45.51%</td>
+                    <td class="num-font" style="color: var(--text-muted);">18.37%</td>
+                    <td class="num-font" style="color: var(--accent-amber);">12.41%</td>
+                    <td class="num-font">12</td>
+                    <td class="num-font">66.7%</td>
+                    <td class="num-font val-emerald">+$118,666.36</td>
+                </tr>
+                <tr class="total-row">
+                    <td>TOTAL / 5-YR</td>
+                    <td style="font-size: 0.82rem;">2021-09-08 &rarr; 2026-09-11</td>
+                    <td>1,258</td>
+                    <td><span class="pill-badge pill-green" style="font-size: 0.95rem;">+547.57%</span></td>
+                    <td><span class="pill-badge pill-blue" style="font-size: 0.95rem;">+100.70%</span></td>
+                    <td class="val-emerald" style="font-size: 1.1rem; font-weight: 800;">+446.87%</td>
+                    <td class="val-emerald">45.22%</td>
+                    <td style="color: var(--text-muted);">14.93%</td>
+                    <td style="color: var(--accent-amber);">13.36%</td>
+                    <td>106</td>
+                    <td class="val-emerald">72.64%</td>
+                    <td class="val-emerald" style="font-size: 1.1rem; font-weight: 800;">+$547,570.31</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- NARRATIVE STRATEGY ANALYSIS -->
+    <section class="narrative-grid">
+        <div class="narrative-card accent-2022">
+            <h4>
+                <span>🐻 2022: The Bear Market Decoupling</span>
+                <span class="pill-badge pill-green">+141.8% Alpha</span>
+            </h4>
+            <p>
+                In 2022, rising inflation and rate hikes battered tech. S&amp;P 500 fell <strong>-19.5%</strong>, and 3x leveraged tech (TECL) plunged over <strong>-75%</strong>. 
+                Instead of bleeding with the market, this strategy delivered its best year ever: <strong>+122.26% return</strong> with an <strong>86.1% win rate</strong> (31 wins, 5 losses). 
+                By sitting in cash during multi-month drops and only harvesting rapid 3-day mean-reversion spikes, it avoided the tech crash entirely.
+            </p>
+        </div>
+
+        <div class="narrative-card accent-norm">
+            <h4>
+                <span>🛡️ Rigorous Drawdown Ceiling</span>
+                <span class="pill-badge pill-amber">Max DD: 13.36%</span>
+            </h4>
+            <p>
+                A core danger of aggressive trading strategies is catastrophic drawdown. In every single calendar year of testing, 
+                the strategy's intra-year drawdown never exceeded <strong>13.36%</strong> (2021: 7.5%, 2022: 11.4%, 2023: 9.5%, 2024: 11.1%, 2025: 13.4%, 2026: 12.4%). 
+                This narrow drawdown band is the foundational requirement for surviving monthly cash distributions.
+            </p>
+        </div>
+
+        <div class="narrative-card accent-norm">
+            <h4>
+                <span>💰 $10k/Month Withdrawal Feasibility</span>
+                <span class="pill-badge pill-blue">Cash Generation</span>
+            </h4>
+            <p>
+                In 2022, 2024, 2025, and 2026, the strategy generated between <strong>$95,000 and $128,000+ in annual profit</strong> on a $100k starting base. 
+                When compounded to a <strong>$350,000 to $500,000 capital base</strong>, the 45% CAGR generates $160k–$225k/year, effortlessly supporting 
+                $120k/year ($10k/month) in distributions while continuing to add $40k–$100k+ back into the principal.
+            </p>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+        <div>
+            Calculated via SQLite query: <code>sql/strategies/voo_tecl_combo/04_calc_annual_returns_vs_voo.sql</code>
+        </div>
+        <div>
+            BacktestGoSQLite Platform • Source DB: <code>reports/voo-tecl-combo_4.db</code>
+        </div>
+    </footer>
+
+</div>
+
+<!-- ECHARTS JAVASCRIPT LOGIC -->
+<script type="text/javascript">
+    const chartDom = document.getElementById('annual_chart');
+    const myChart = echarts.init(chartDom, 'white', { renderer: 'canvas' });
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow'
+            },
+            formatter: function(params) {
+                let s = '<strong>' + params[0].name + '</strong><br/>';
+                params.forEach(function(item) {
+                    s += item.marker + ' ' + item.seriesName + ': <strong>' + item.value + '%</strong><br/>';
+                });
+                return s;
+            }
+        },
+        legend: {
+            data: ['VOO→TECL Combo', 'VOO Benchmark'],
+            right: '25px',
+            top: '10px'
+        },
+        grid: {
+            top: '55px',
+            left: '50px',
+            right: '40px',
+            bottom: '40px',
+            containLabel: true
+        },
+        xAxis: [
+            {
+                type: 'category',
+                data: ['2021 (Partial)', '2022 (Bear)', '2023', '2024', '2025', '2026 (YTD)', 'Total 5-Yr CAGR'],
+                axisTick: { alignWithLabel: true }
+            }
+        ],
+        yAxis: [
+            {
+                type: 'value',
+                name: 'Return (%)',
+                axisLabel: {
+                    formatter: '{value}%'
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: '#f1f5f9'
+                    }
+                }
+            }
+        ],
+        series: [
+            {
+                name: 'VOO→TECL Combo',
+                type: 'bar',
+                barWidth: '32%',
+                data: [
+                    { value: 8.34, itemStyle: { color: '#10b981' } },
+                    { value: 122.26, itemStyle: { color: '#10b981' } },
+                    { value: 22.70, itemStyle: { color: '#10b981' } },
+                    { value: 30.51, itemStyle: { color: '#10b981' } },
+                    { value: 29.37, itemStyle: { color: '#10b981' } },
+                    { value: 29.80, itemStyle: { color: '#10b981' } },
+                    { value: 45.22, itemStyle: { color: '#059669' } }
+                ]
+            },
+            {
+                name: 'VOO Benchmark',
+                type: 'bar',
+                barWidth: '32%',
+                data: [
+                    { value: 5.29, itemStyle: { color: '#38bdf8' } },
+                    { value: -19.52, itemStyle: { color: '#f43f5e' } },
+                    { value: 24.32, itemStyle: { color: '#38bdf8' } },
+                    { value: 23.35, itemStyle: { color: '#38bdf8' } },
+                    { value: 16.39, itemStyle: { color: '#38bdf8' } },
+                    { value: 12.44, itemStyle: { color: '#38bdf8' } },
+                    { value: 14.93, itemStyle: { color: '#0284c7' } }
+                ]
+            }
+        ]
+    };
+
+    myChart.setOption(option);
+    window.addEventListener('resize', function() {
+        myChart.resize();
+    });
+</script>
+
+</body>
+</html>

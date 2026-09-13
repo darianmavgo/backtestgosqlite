@@ -53,6 +53,12 @@ type Signal struct {
 	// for this specific signal. Used by multi-leg strategies with different
 	// hold periods per leg (e.g. long=8 days, short=2 days).
 	HoldDaysOverride int `db:"hold_days_override" json:"hold_days_override,omitempty"`
+
+	// StrategyID identifies the strategy that generated this signal (e.g. "voo-tecl-combo", "bb-capitulation").
+	StrategyID string `db:"strategy_id" json:"strategy_id,omitempty"`
+
+	// Priority denotes the execution priority tier (0 = primary, 1 = secondary, etc.).
+	Priority int `db:"priority" json:"priority"`
 }
 
 // ExitReason represents the trigger that closed a trade.
@@ -65,11 +71,13 @@ const (
 	ExitReasonATRStop      ExitReason = "ATR_STOP"
 	ExitReasonTimeUp       ExitReason = "TIME_UP"
 	ExitReasonEndBacktest  ExitReason = "END_OF_DATA"
+	ExitReasonPreempted    ExitReason = "PREEMPTED_BY_PRIMARY"
 )
 
 // Trade represents an executed trade with full lifecycle metrics.
 type Trade struct {
 	ID                    int        `json:"id"`
+	StrategyID            string     `json:"strategy_id,omitempty"`
 	Symbol                string     `json:"symbol"`
 	OrderType             string     `json:"order_type,omitempty"`
 	EntryIdx              int        `json:"entry_idx"`
@@ -93,6 +101,8 @@ type Trade struct {
 
 // Position tracks currently held active assets in the portfolio.
 type Position struct {
+	StrategyID        string  `json:"strategy_id,omitempty"`
+	Priority          int     `json:"priority"`
 	Symbol            string  `json:"symbol"`
 	Shares            int     `json:"shares"`
 	OrderType         string  `json:"order_type,omitempty"`
