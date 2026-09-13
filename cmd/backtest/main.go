@@ -280,8 +280,16 @@ func main() {
 		fmt.Printf("\n========================================================================================\n")
 		fmt.Printf("🎯 STRATEGY SELECTED: %s (ID: %s)\n", strat.Name(), strat.ID())
 		fmt.Printf("   Description:  %s\n", strat.Description())
+		tpPct := cfg.TakeProfitPct * 100
+		if tpPct == 0 && cfg.TargetPct > 1.0 {
+			tpPct = (cfg.TargetPct - 1.0) * 100
+		}
+		slPct := cfg.StopLossPct * 100
+		if slPct > 50 {
+			slPct = (1.0 - cfg.StopLossPct) * 100
+		}
 		fmt.Printf("   Target:       +%.1f%% | Stop-Loss: -%.1f%% | Max Hold: %d days | Max Positions: %d\n",
-			(cfg.TargetPct-1)*100, (1-cfg.StopLossPct)*100, cfg.HoldingWindow, cfg.PositionCap)
+			tpPct, slPct, cfg.HoldingWindow, cfg.PositionCap)
 		fmt.Printf("========================================================================================\n")
 
 		res := runner.ExecuteStrategy(strat, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb)
