@@ -11,7 +11,7 @@ WITH diffs AS (
         volume,
         LAG(close, 1) OVER (PARTITION BY symbol ORDER BY Date) AS prev_close
     FROM backtest_start
-    WHERE symbol = 'GLD'
+    WHERE symbol = 'GLD' AND length(Date) = 10
 ),
 streaks AS (
     SELECT

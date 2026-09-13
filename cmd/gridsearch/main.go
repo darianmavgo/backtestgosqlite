@@ -19,6 +19,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -409,7 +410,14 @@ func main() {
 		if err := charting.GenerateHTML(reportFile, view); err != nil {
 			log.Printf("Warning: Failed to save HTML report: %v", err)
 		} else {
-			fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n\n", reportFile)
+			fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n", reportFile)
+			baseName := filepath.Base(reportFile)
+			if filepath.Dir(reportFile) != "." && baseName != "" {
+				_ = charting.GenerateHTML(baseName, view)
+				fmt.Printf("✨ Root copy also generated: %s\n\n", baseName)
+			} else {
+				fmt.Println()
+			}
 		}
 	}
 }

@@ -17,7 +17,7 @@ SELECT
     t.close * 1.05 AS take_profit,
     0.0 AS stop_loss
 FROM voo_streaks_slice v
-JOIN backtest_start t ON v.date = substr(t.Date, 1, 10) AND t.symbol = 'TECL'
+JOIN backtest_start t ON v.date = substr(t.Date, 1, 10) AND t.symbol = 'TECL' AND length(t.Date) = 10
 WHERE v.down_streak >= 3;
 
 -- SHORT SPXU when VOO up 3 days AND VOO < SMA200
@@ -40,7 +40,7 @@ SELECT
     s.close * 1.06 AS take_profit,
     s.close * 0.95 AS stop_loss
 FROM voo_streaks_slice v
-JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU'
+JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU' AND length(s.Date) = 10
 WHERE v.up_streak >= 3
   AND (v.sma200 <= 0 OR v.close < v.sma200)
   AND NOT EXISTS (

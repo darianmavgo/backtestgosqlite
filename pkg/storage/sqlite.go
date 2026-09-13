@@ -259,7 +259,7 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 		AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
 		AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 49 PRECEDING AND CURRENT ROW)  AS sma50
 		FROM %s
-		WHERE 1=1
+		WHERE length(Date) = 10
 	`, tableName)
 
 	var args []interface{}
@@ -316,7 +316,7 @@ func FetchRecentBars(db *sqlx.DB, tableName string, symbols []string, limitPerSy
 		limitPerSymbol = 250
 	}
 
-	whereClause := "WHERE 1=1"
+	whereClause := "WHERE length(Date) = 10"
 	var args []interface{}
 	if len(symbols) > 0 {
 		placeholders := make([]string, len(symbols))
