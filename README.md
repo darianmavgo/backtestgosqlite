@@ -87,7 +87,7 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 * **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
 * **`rsi2`**: Connors RSI(2) deep pullback strategy.
 * **`wc` / `wc-4d`**: Whitings Creek short-term capitulation mean-reversion.
-* **`buy-and-hold`**: Benchmark buy-and-hold baseline for computing active Alpha & Beta.
+* **`voo-buy-hold`**: Passive VOO (S&P 500) buy-and-hold baseline for computing active Alpha & Beta. (Formerly `buy-and-hold` — renamed after it was found to buy an arbitrary basket of symbols rather than VOO once the ETF universe grew past a few hundred symbols; still resolvable under the old ID via alias.)
 
 ---
 

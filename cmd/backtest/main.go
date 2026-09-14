@@ -164,8 +164,8 @@ func main() {
 
 			// 1. Shared Account Combined
 			stratReports = append(stratReports, analytics.StrategyReportData{
-				ID:     "SHARED_ACCOUNT",
-				Name:   "Consolidated Shared Account",
+				ID:     sharedRes.CombinedID,
+				Name:   fmt.Sprintf("Consolidated Shared Account (%s + %s)", primaryStrat.Name(), secondaryStrats[0].Name()),
 				Type:   "Portfolio",
 				Report: sharedRes.CombinedReport,
 				Trades: sharedRes.Trades,
@@ -175,8 +175,8 @@ func main() {
 				eqSeries = append(eqSeries, pt.TotalEquity)
 				ddSeries = append(ddSeries, pt.DrawdownPct)
 			}
-			eqCurves["SHARED_ACCOUNT"] = eqSeries
-			ddCurves["SHARED_ACCOUNT"] = ddSeries
+			eqCurves[sharedRes.CombinedID] = eqSeries
+			ddCurves[sharedRes.CombinedID] = ddSeries
 
 			// 2. Primary Strategy Attribution
 			pRep := sharedRes.PerStrategyReports[primaryStrat.ID()]

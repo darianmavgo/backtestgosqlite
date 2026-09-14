@@ -19,6 +19,18 @@ import (
 //go:embed template.html
 var htmlTemplate string
 
+// resolveCombinedID identifies the shared account's consolidated-portfolio
+// strategy_id (see the identical helper and its full rationale in
+// cmd/audit_shared/main.go). Falls back to the legacy "SHARED_ACCOUNT" literal
+// for older databases if the lookup comes up empty.
+func resolveCombinedID(db *sqlx.DB) string {
+	var id string
+	if err := db.Get(&id, `SELECT strategy_id FROM equity_curve LIMIT 1`); err == nil && id != "" {
+		return id
+	}
+	return "SHARED_ACCOUNT"
+}
+
 type AnnualComparisonRow struct {
 	Year                  string  `db:"year" json:"year"`
 	Horizon               string  `db:"horizon" json:"horizon"`
@@ -211,6 +223,14 @@ func main() {
 		ORDER BY year ASC;
 	`
 
+	// The combined-portfolio strategy_id used to be the generic literal
+	// "SHARED_ACCOUNT"; it's now runner.SharedAccountID(primary, secondaries)
+	// (e.g. "voo-tecl-combo+mara_tree") so it's visible directly in reports.
+	// Resolve it the same way cmd/audit_shared does (the combined row is the
+	// only one with equity_curve entries) and substitute it into the query.
+	combinedID := resolveCombinedID(db)
+	query = strings.ReplaceAll(query, "'SHARED_ACCOUNT'", "'"+combinedID+"'")
+
 	var rows []AnnualComparisonRow
 	if err := db.Select(&rows, query); err != nil {
 		log.Fatalf("Failed to execute comparison query: %v", err)
@@ -236,7 +256,7 @@ func main() {
 
 	// 3. Load daily curves for visual charting
 	var sharedCurve []DailyPoint
-	_ = db.Select(&sharedCurve, "SELECT date, total_equity, cash FROM equity_curve WHERE strategy_id = 'SHARED_ACCOUNT' ORDER BY date ASC")
+	_ = db.Select(&sharedCurve, "SELECT date, total_equity, cash FROM equity_curve WHERE strategy_id = ? ORDER BY date ASC", combinedID)
 
 	var standaloneCurve []DailyPoint
 	_ = db.Select(&standaloneCurve, "SELECT date, total_equity, cash FROM standalone.equity_curve ORDER BY date ASC")

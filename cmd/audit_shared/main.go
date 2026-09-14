@@ -46,6 +46,8 @@ func main() {
 	}
 	defer db.Close()
 
+	combinedID := resolveCombinedID(db)
+
 	// 1. Quantitative Breakdown by Strategy & Exit Reason
 	runStrategyExitReasonAudit(db)
 
@@ -53,10 +55,26 @@ func main() {
 	runPreemptedPositionsAudit(db)
 
 	// 3. Performance Summary
-	runPerformanceSummaryAudit(db)
+	runPerformanceSummaryAudit(db, combinedID)
 
 	// 4. Calendar Year Performance
-	runCalendarYearAudit(db)
+	runCalendarYearAudit(db, combinedID)
+}
+
+// resolveCombinedID identifies the shared account's consolidated-portfolio
+// strategy_id. Per-strategy attribution rows only ever get written to
+// performance_summary (see pkg/runner.ExecuteSharedAccount); only the combined
+// row also has entries in equity_curve, trades, and signals — so that's the
+// reliable way to find it regardless of what it's named. Older databases used
+// the generic literal "SHARED_ACCOUNT"; newer ones use
+// runner.SharedAccountID(primary, secondaries) (e.g. "voo-tecl-combo+mara_tree").
+// Falls back to the legacy literal if the lookup comes up empty.
+func resolveCombinedID(db *sqlx.DB) string {
+	var id string
+	if err := db.Get(&id, `SELECT strategy_id FROM equity_curve LIMIT 1`); err == nil && id != "" {
+		return id
+	}
+	return "SHARED_ACCOUNT"
 }
 
 func runStrategyExitReasonAudit(db *sqlx.DB) {
@@ -193,7 +211,7 @@ func runPreemptedPositionsAudit(db *sqlx.DB) {
 	fmt.Println()
 }
 
-func runPerformanceSummaryAudit(db *sqlx.DB) {
+func runPerformanceSummaryAudit(db *sqlx.DB, combinedID string) {
 	query := `
 		SELECT
 			strategy_id,
@@ -209,7 +227,7 @@ func runPerformanceSummaryAudit(db *sqlx.DB) {
 			ROUND(win_rate * 100, 1) AS win_rate_pct,
 			ROUND(profit_factor, 2) AS profit_factor
 		FROM performance_summary
-		ORDER BY CASE WHEN strategy_id = 'SHARED_ACCOUNT' THEN 0 ELSE 1 END, net_profit DESC;
+		ORDER BY CASE WHEN strategy_id = ? THEN 0 ELSE 1 END, net_profit DESC;
 	`
 	type Row struct {
 		StrategyID     string  `db:"strategy_id"`
@@ -227,7 +245,7 @@ func runPerformanceSummaryAudit(db *sqlx.DB) {
 	}
 
 	var rows []Row
-	if err := db.Select(&rows, query); err != nil {
+	if err := db.Select(&rows, query, combinedID); err != nil {
 		log.Printf("Error running performance summary query: %v", err)
 		return
 	}
@@ -243,8 +261,8 @@ func runPerformanceSummaryAudit(db *sqlx.DB) {
 
 	for _, r := range rows {
 		name := r.StrategyID
-		if name == "SHARED_ACCOUNT" {
-			name = "🏛️ SHARED_ACCOUNT (Combined)"
+		if name == combinedID {
+			name = "🏛️ " + name + " (Combined)"
 		} else if strings.Contains(name, "voo-tecl") {
 			name = "⭐ " + name + " (Primary)"
 		} else {
@@ -269,7 +287,7 @@ func runPerformanceSummaryAudit(db *sqlx.DB) {
 	fmt.Println()
 }
 
-func runCalendarYearAudit(db *sqlx.DB) {
+func runCalendarYearAudit(db *sqlx.DB, combinedID string) {
 	query := `
 		WITH daily_ranks AS (
 			SELECT
@@ -282,7 +300,7 @@ func runCalendarYearAudit(db *sqlx.DB) {
 				ROW_NUMBER() OVER (PARTITION BY strftime('%Y', date) ORDER BY date ASC) AS rn_start,
 				ROW_NUMBER() OVER (PARTITION BY strftime('%Y', date) ORDER BY date DESC) AS rn_end
 			FROM equity_curve
-			WHERE strategy_id = 'SHARED_ACCOUNT'
+			WHERE strategy_id = ?
 		),
 		year_bounds AS (
 			SELECT
@@ -302,7 +320,7 @@ func runCalendarYearAudit(db *sqlx.DB) {
 				AVG(cash / total_equity) AS avg_cash_pct,
 				COUNT(*) AS trading_days
 			FROM equity_curve
-			WHERE strategy_id = 'SHARED_ACCOUNT'
+			WHERE strategy_id = ?
 			GROUP BY strftime('%Y', date)
 		)
 		SELECT
@@ -334,7 +352,7 @@ func runCalendarYearAudit(db *sqlx.DB) {
 	}
 
 	var rows []Row
-	if err := db.Select(&rows, query); err != nil {
+	if err := db.Select(&rows, query, combinedID, combinedID); err != nil {
 		log.Printf("Error running calendar year query: %v", err)
 		return
 	}

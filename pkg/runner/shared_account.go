@@ -18,6 +18,7 @@ import (
 type SharedRunResult struct {
 	Primary            strategy.Strategy
 	Secondaries        []strategy.Strategy
+	CombinedID         string // e.g. "voo-tecl-combo+mara_tree" — see SharedAccountID
 	CombinedReport     models.PerformanceReport
 	PerStrategyReports map[string]models.PerformanceReport
 	Trades             []models.Trade
@@ -26,6 +27,20 @@ type SharedRunResult struct {
 	DbPath             string
 	PreemptedCount     int
 	Err                error
+}
+
+// SharedAccountID builds the combined-portfolio strategy_id used to persist and
+// look up a shared account's consolidated rows (performance_summary, trades,
+// equity_curve, signals). Previously this was the generic literal
+// "SHARED_ACCOUNT" regardless of which strategies were actually combined — this
+// makes the underlying strategy names visible directly in the ID, matching the
+// output DB's own filename convention (shared_<primary>_<secondaries...>.db).
+func SharedAccountID(primary strategy.Strategy, secondaries []strategy.Strategy) string {
+	id := primary.ID()
+	for _, sec := range secondaries {
+		id += "+" + sec.ID()
+	}
+	return id
 }
 
 // ExecuteSharedAccount runs a multi-strategy backtest in a single shared cash account with priority preemption.
@@ -128,6 +143,7 @@ func ExecuteSharedAccount(
 	}
 
 	combinedReport, perStratReports, trades, equityCurve := sim.Run(allSignals, barsBySymbol, sortedDates)
+	combinedID := SharedAccountID(primary, secondaries)
 
 	// 6. Persist results to the shared SQLite database
 	db, err := storage.OpenSQLite(outDBPath)
@@ -136,16 +152,16 @@ func ExecuteSharedAccount(
 	} else {
 		defer db.Close()
 
-		if err := storage.SaveSignals(db, "SHARED_ACCOUNT", allSignals); err != nil {
+		if err := storage.SaveSignals(db, combinedID, allSignals); err != nil {
 			log.Printf("Warning: Failed to save signals to %s: %v", outDBPath, err)
 		}
-		if err := storage.SaveTrades(db, "SHARED_ACCOUNT", trades); err != nil {
+		if err := storage.SaveTrades(db, combinedID, trades); err != nil {
 			log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
 		}
-		if err := storage.SaveEquityCurve(db, "SHARED_ACCOUNT", equityCurve); err != nil {
+		if err := storage.SaveEquityCurve(db, combinedID, equityCurve); err != nil {
 			log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
 		}
-		if err := storage.SavePerformanceReport(db, "SHARED_ACCOUNT", combinedReport); err != nil {
+		if err := storage.SavePerformanceReport(db, combinedID, combinedReport); err != nil {
 			log.Printf("Warning: Failed to save combined performance summary to %s: %v", outDBPath, err)
 		}
 
@@ -159,6 +175,7 @@ func ExecuteSharedAccount(
 	return SharedRunResult{
 		Primary:            primary,
 		Secondaries:        secondaries,
+		CombinedID:         combinedID,
 		CombinedReport:     combinedReport,
 		PerStrategyReports: perStratReports,
 		Trades:             trades,

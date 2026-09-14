@@ -30,7 +30,7 @@ Performance across all 12 registered strategies on a $100,000 starting base over
 | 🥇 | **`voo-tecl-combo`** | **VOO→TECL All-Weather Combo** | **45.38%** | **+547.57%** | **1.77** | **13.36%** | **72.64%** | **3.12** | 🟢 **Primary Contender** |
 | 🥈 | **`voo-tecl-spxu-combo`** | **VOO→TECL/SPXU All-Weather Combo** | **32.16%** | **+302.22%** | **1.58** | **13.36%** | **71.95%** | **2.60** | 🟢 **Robust Alternative** |
 | 🥉 | **`millwharf`** | **Millwharf Weekly Consistent Decline** | **15.31%** | **+103.63%** | **1.37** | **10.09%** | **59.31%** | **1.85** | 🟡 **Capital Preserver** |
-| 4 | `buy-and-hold` | Buy and Hold (Passive Baseline) | 17.36% | +122.36% | 0.60 | **59.58%** | N/A | N/A | 🔴 **Fails** (Drawdown risk) |
+| 4 | `voo-buy-hold` | VOO Buy & Hold (Passive S&P 500 Benchmark) | 17.36% | +122.36% | 0.60 | **59.58%** | N/A | N/A | 🔴 **Fails** (Drawdown risk) |
 | 5 | `trend-bb` | Trend-Gated Bollinger Oversold | 13.07% | +84.63% | 0.82 | 23.54% | 42.97% | 1.45 | 🔴 **Sub-optimal** |
 | 6 | `macd-crossover` | MACD Signal Line Crossover | 20.92% | +158.15% | 0.83 | 31.41% | 35.84% | 1.25 | 🔴 **Excessive drawdowns** |
 | 7 | `bb-capitulation` | BB-Capitulation + Reversal Bounce | 9.87% | +60.01% | 0.45 | 48.65% | 41.54% | 1.15 | 🔴 **Fails** |
