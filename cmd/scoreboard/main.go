@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +16,9 @@ import (
 )
 
 func main() {
+	concurrency := flag.Int("concurrency", 8, "Max concurrent strategies (bounds memory use with hundreds of registered strategies)")
+	flag.Parse()
+
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
 	targetDb := "data/market_history.db"
@@ -50,23 +54,36 @@ func main() {
 		log.Fatalf("Error loading bars: %v", err)
 	}
 
-	// 3. Execute all strategies concurrently
-	results := make([]runner.RunResult, len(allStrategies))
-	var wg sync.WaitGroup
+	// 3. Execute all strategies with a bounded worker pool. Unbounded one-goroutine-
+	// per-strategy here OOM-kills the process once there are hundreds of registered
+	// strategies (the full shared bar map plus every in-flight simulator/equity curve
+	// at once) — see the same fix in cmd/backtest.
+	fmt.Printf("   Concurrency: %d workers across %d strategies\n\n", *concurrency, len(allStrategies))
 
-	for i, strat := range allStrategies {
+	results := make([]runner.RunResult, len(allStrategies))
+	jobs := make(chan int, len(allStrategies))
+	for i := range allStrategies {
+		jobs <- i
+	}
+	close(jobs)
+
+	var wg sync.WaitGroup
+	for w := 0; w < *concurrency; w++ {
 		wg.Add(1)
-		go func(idx int, s strategy.Strategy) {
+		go func() {
 			defer wg.Done()
-			cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
-			res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
-			results[idx] = res
-			if res.Err != nil {
-				log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
-			} else {
-				log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
+			for idx := range jobs {
+				s := allStrategies[idx]
+				cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
+				res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
+				results[idx] = res
+				if res.Err != nil {
+					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
+				} else {
+					log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
+				}
 			}
-		}(i, strat)
+		}()
 	}
 	wg.Wait()
 
