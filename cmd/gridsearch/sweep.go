@@ -54,6 +54,21 @@ type sweepContext struct {
 	StartedAt   time.Time
 }
 
+// estimatePerms computes a strategy's generic parameter grid size without
+// fetching any bars — cheap enough to call before deciding whether a strategy
+// is worth sweeping at all in batch mode (see -max-perms).
+func estimatePerms(strat strategy.Strategy, opts sweepOptions) int {
+	paramSpace := strategy.AssessParameterSpace(strat)
+	if opts.AllocOverride != nil {
+		paramSpace.Allocations = []float64{*opts.AllocOverride}
+	}
+	if opts.SymbolOverride != "" {
+		paramSpace.Symbols = []string{opts.SymbolOverride}
+	}
+	return len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
+		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
+}
+
 // prepareSweep resolves a strategy's parameter space, fetches the bars it needs,
 // and builds the full list of tasks to evaluate — but evaluates nothing. This is
 // the part of a sweep that's cheap (I/O, not simulation), so both single-strategy

@@ -256,7 +256,7 @@ type flatTask struct {
 // shared pool keeps every core busy on whatever work remains, cheap or
 // expensive, for the whole batch. Strategies already marked 'done' in the
 // pipeline DB are skipped unless force.
-func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOptions, concurrency int, force, noHTML bool, gridDBPath string) {
+func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOptions, concurrency int, force, noHTML bool, gridDBPath string, maxPerms int) {
 	var toRun []strategy.Strategy
 	for _, s := range targets {
 		if !force && isStrategyDone(gdb, s.ID()) {
@@ -285,8 +285,19 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 	// block the rest of the batch.
 	states := make([]*batchStratState, 0, len(toRun))
 	var stateTasks [][]sweepTask
-	var totalTasks int
+	var totalTasks, skippedTooLarge int
 	for _, strat := range toRun {
+		if maxPerms > 0 {
+			if perms := estimatePerms(strat, opts); perms > maxPerms {
+				skipErr := fmt.Errorf("generic parameter grid is %d permutations, exceeds -max-perms=%d (its RequiredSymbols list is probably being used as the grid's symbol dimension — check with -list, or run it alone / raise -max-perms if you really want the full sweep)", perms, maxPerms)
+				recordRunStart(gdb, strat, perms)
+				recordRun(gdb, strat, sweepOutcome{Strat: strat}, skipErr)
+				fmt.Printf("⏭️  [%s] skipped — %v\n", strat.ID(), skipErr)
+				skippedTooLarge++
+				continue
+			}
+		}
+
 		ctx, tasks, err := prepareSweep(db, strat, opts)
 		if err != nil {
 			recordRunStart(gdb, strat, 0)
@@ -298,6 +309,9 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 		states = append(states, &batchStratState{strat: strat, ctx: ctx, remaining: int32(len(tasks))})
 		stateTasks = append(stateTasks, tasks)
 		totalTasks += len(tasks)
+	}
+	if skippedTooLarge > 0 {
+		fmt.Printf("   %d strategies skipped for exceeding -max-perms (0 to disable the cap)\n", skippedTooLarge)
 	}
 
 	fmt.Printf("   %d strategies ready, %d total configurations queued, %d shared workers\n\n", len(states), totalTasks, concurrency)

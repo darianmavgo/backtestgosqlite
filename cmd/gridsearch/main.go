@@ -95,6 +95,7 @@ func main() {
 	force := flag.Bool("force", false, "Redo strategies that already have a completed sweep in reports/gridsearch.db")
 	includeDT := flag.Bool("include-dt", false, "Include dt_* (auto-generated per-ETF decision tree) strategies in -strategy all — they already have their own dedicated sweep via cmd/etf_decision_trees, so excluded by default")
 	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
+	maxPerms := flag.Int("max-perms", 20000, "Multi-strategy mode: skip a strategy whose generic parameter grid exceeds this many permutations (e.g. genetic-momentum's 50-symbol RequiredSymbols list balloons its generic grid to 210,000+ combos, none of which even exercise its real Python-driven signal logic). 0 disables the cap. Single-strategy mode ignores this.")
 	flag.Parse()
 
 	// Track which flags were explicitly set by the user
@@ -252,7 +253,7 @@ func main() {
 	}
 
 	// --- Multiple strategies: outer bounded pool across strategies, persisted. ---
-	runBatchSweep(db, gdb, targets, sweepOpts, *concurrency, *force, *noHTML, *gridDBPath)
+	runBatchSweep(db, gdb, targets, sweepOpts, *concurrency, *force, *noHTML, *gridDBPath, *maxPerms)
 }
 
 func defaultReportPath(strat strategy.Strategy, override string) string {
