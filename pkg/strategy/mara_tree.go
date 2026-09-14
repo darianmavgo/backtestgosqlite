@@ -97,7 +97,19 @@ func (s *MARATreeStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar)
 		}
 	}
 
-	if !ok || len(bars) < 201 {
+	if !ok {
+		return nil
+	}
+
+	return TreeBounceSignals("MARA", bars, 0.05, 0.08, 1)
+}
+
+// TreeBounceSignals evaluates the "Precision 200-SMA Re-test Bounce" decision tree
+// (originally discovered for MARA via CloudForest) against an arbitrary symbol's bars.
+// Entry fires on either a volatility compression coil (day's range <= 0.45 * ATR14) or
+// a 200-SMA re-test bounce (price -0.68% to +3.38% vs SMA200).
+func TreeBounceSignals(symbol string, bars []models.Bar, tpPct, slPct float64, holdDays int) []models.Signal {
+	if len(bars) < 201 {
 		return nil
 	}
 
@@ -150,9 +162,16 @@ func (s *MARATreeStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar)
 				d = d[:10]
 			}
 			closePrice := curr.Close
+			var takeProfit, stopLoss float64
+			if tpPct > 0 {
+				takeProfit = closePrice * (1.0 + tpPct)
+			}
+			if slPct > 0 {
+				stopLoss = closePrice * (1.0 - slPct)
+			}
 			signals = append(signals, models.Signal{
 				Idx:              curr.Idx,
-				Symbol:           "MARA",
+				Symbol:           symbol,
 				Date:             d,
 				Open:             curr.Open,
 				High:             curr.High,
@@ -164,11 +183,11 @@ func (s *MARATreeStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar)
 				OrderType:        "limit",
 				Direction:        "LONG",
 				Regime:           "All Regimes",
-				TakeProfit:       closePrice * 1.05, // +5% take-profit
-				StopLoss:         closePrice * 0.92, // -8% stop-loss
-				HoldDaysOverride: 1,                 // 1 trading day hold
+				TakeProfit:       takeProfit,
+				StopLoss:         stopLoss,
+				HoldDaysOverride: holdDays,
 				AssetClass:       "equity",
-				StrategyID:       s.ID(),
+				StrategyID:       "tree_bounce",
 				Priority:         0,
 				Metadata: map[string]float64{
 					"price_vs_sma200": priceVsSma200,

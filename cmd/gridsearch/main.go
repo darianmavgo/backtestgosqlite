@@ -41,6 +41,14 @@ type gridResult struct {
 	IsBaseline bool
 }
 
+// resilienceScore rewards high CAGR while penalizing both the depth (MaxDrawdownPct)
+// and duration (MaxDrawdownDuration, in trading days) of the worst drawdown. A strategy
+// with the same CAGR but a shallower or briefer drawdown scores higher.
+func resilienceScore(r models.PerformanceReport) float64 {
+	durationYears := float64(r.MaxDrawdownDuration) / 365.0
+	return r.CAGR / ((1.0 + r.MaxDrawdownPct) * (1.0 + durationYears))
+}
+
 func formatPercents(vals []float64) []string {
 	res := make([]string, len(vals))
 	for i, v := range vals {
@@ -408,6 +416,30 @@ func main() {
 			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.CalmarRatio, r.Report.WinRate*100, r.Report.TotalTrades, comp)
 	}
 
+	// Rank by Resilience Score (high CAGR, shallow + brief drawdowns)
+	sort.Slice(results, func(i, j int) bool {
+		return resilienceScore(results[i].Report) > resilienceScore(results[j].Report)
+	})
+	topResilience := results
+	if len(topResilience) > *topN {
+		topResilience = topResilience[:*topN]
+	}
+	fmt.Printf("\n🛡️  TOP %d BY RESILIENCE (High CAGR, Shallow & Brief Drawdowns):\n", len(topResilience))
+	var baselineScore float64
+	if baselineRes != nil {
+		baselineScore = resilienceScore(baselineRes.Report)
+	}
+	for i, r := range topResilience {
+		comp := ""
+		score := resilienceScore(r.Report)
+		if baselineRes != nil && baselineScore > 0 {
+			diff := (score - baselineScore) / baselineScore * 100.0
+			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
+		}
+		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  DDdays=%d  Score=%.4f  Trades=%d%s\n",
+			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.MaxDrawdownDuration, score, r.Report.TotalTrades, comp)
+	}
+
 	// Rank by Net Profit
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Report.NetProfit > results[j].Report.NetProfit
@@ -436,6 +468,13 @@ func main() {
 				DailyCurve: baselineRes.Curve,
 			})
 		}
+		for _, r := range topResilience {
+			multiResults = append(multiResults, charting.MultiResult{
+				Label:      "🛡️ " + r.Label,
+				Report:     r.Report,
+				DailyCurve: r.Curve,
+			})
+		}
 		for _, r := range topCalmar {
 			multiResults = append(multiResults, charting.MultiResult{
 				Label:      r.Label,
@@ -446,7 +485,7 @@ func main() {
 
 		view := charting.FromMultiReports(
 			fmt.Sprintf("Grid Search Optimization: %s", strat.Name()),
-			fmt.Sprintf("Parameter sweep centered on baked-in defaults — top %d by Calmar Ratio", len(topCalmar)),
+			fmt.Sprintf("Parameter sweep centered on baked-in defaults — top %d by Resilience Score, top %d by Calmar Ratio", len(topResilience), len(topCalmar)),
 			multiResults, signalBars, *capital,
 		)
 		if err := charting.GenerateHTML(reportFile, view); err != nil {
