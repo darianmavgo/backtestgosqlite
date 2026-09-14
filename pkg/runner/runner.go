@@ -340,22 +340,17 @@ func ExecuteStrategy(
 	}
 }
 
-func DetectAndDownloadMissingData(
-	targetDb string,
-	tableName string,
-	strategies []strategy.Strategy,
-	symbolFilter string,
-	autoDownload bool,
-	downloadYears int,
-) error {
+// RequiredSymbolsFor computes the union of every symbol a set of strategies
+// actually needs — each strategy's RequiredSymbols() (if implemented) plus its
+// DefaultConfig().Benchmark — optionally including an extra symbolFilter. Used
+// to scope a bar fetch to only what's needed instead of loading an entire
+// multi-thousand-symbol database for a strategy that trades one symbol.
+func RequiredSymbolsFor(strategies []strategy.Strategy, symbolFilter string) []string {
 	requiredSet := make(map[string]struct{})
 
-	// 1. If explicit symbol filter requested
 	if sym := strings.ToUpper(strings.TrimSpace(symbolFilter)); sym != "" {
 		requiredSet[sym] = struct{}{}
 	}
-
-	// 2. Symbols required by chosen strategies
 	for _, s := range strategies {
 		if reqProvider, ok := s.(strategy.RequiredSymbolsProvider); ok {
 			for _, sym := range reqProvider.RequiredSymbols() {
@@ -368,6 +363,27 @@ func DetectAndDownloadMissingData(
 		if bm := strings.ToUpper(strings.TrimSpace(cfg.Benchmark)); bm != "" {
 			requiredSet[bm] = struct{}{}
 		}
+	}
+
+	out := make([]string, 0, len(requiredSet))
+	for sym := range requiredSet {
+		out = append(out, sym)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func DetectAndDownloadMissingData(
+	targetDb string,
+	tableName string,
+	strategies []strategy.Strategy,
+	symbolFilter string,
+	autoDownload bool,
+	downloadYears int,
+) error {
+	requiredSet := make(map[string]struct{})
+	for _, sym := range RequiredSymbolsFor(strategies, symbolFilter) {
+		requiredSet[sym] = struct{}{}
 	}
 
 	// 3. Open DB to check table and coverage

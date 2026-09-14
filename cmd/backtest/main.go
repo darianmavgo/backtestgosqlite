@@ -138,8 +138,12 @@ func main() {
 		}
 		defer db.Close()
 
-		fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Shared-Account Simulation (Starting Capital: $%.2f)...\n", *tableName, *capital)
-		barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, *tableName)
+		// Always include SPY: ExecuteSharedAccount falls back to it as the
+		// benchmark when a strategy's own DefaultConfig().Benchmark is empty,
+		// and RequiredSymbolsFor only picks up non-empty benchmarks.
+		reqSymbols := append(runner.RequiredSymbolsFor(allStrats, *symbolFilter), "SPY")
+		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Shared-Account Simulation (Starting Capital: $%.2f)...\n", reqSymbols, *tableName, *capital)
+		barsBySymbol, sortedDates, err := storage.FetchBars(db, *tableName, reqSymbols, "", "")
 		if err != nil {
 			log.Fatalf("Error loading historical bars for simulation: %v", err)
 		}
@@ -312,10 +316,30 @@ func main() {
 	}
 	defer db.Close()
 
-	fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", *tableName, *capital)
-	barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, *tableName)
-	if err != nil {
-		log.Fatalf("Error loading historical bars for simulation: %v", err)
+	var barsBySymbol map[string][]models.Bar
+	var sortedDates []string
+	if len(selectedStrategies) == 1 {
+		// Single strategy: fetch only the symbols it actually needs instead of
+		// the entire multi-thousand-symbol database. Loading everything here
+		// was a fixed ~20-30s tax paid on every single-strategy invocation
+		// regardless of that strategy's own data footprint — e.g. `dt_fxr`
+		// looked slow/wasteful because of its 19-year history, but the real
+		// cost was this unconditional full-DB load, not FXR's own (correctly
+		// scoped, 4866-row) simulation.
+		reqSymbols := runner.RequiredSymbolsFor([]strategy.Strategy{toRun[0]}, *symbolFilter)
+		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", reqSymbols, *tableName, *capital)
+		var fetchErr error
+		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, *tableName, reqSymbols, "", "")
+		if fetchErr != nil {
+			log.Fatalf("Error loading historical bars for simulation: %v", fetchErr)
+		}
+	} else {
+		fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", *tableName, *capital)
+		var fetchErr error
+		barsBySymbol, sortedDates, fetchErr = storage.FetchAllBarsChronological(db, *tableName)
+		if fetchErr != nil {
+			log.Fatalf("Error loading historical bars for simulation: %v", fetchErr)
+		}
 	}
 
 	if len(selectedStrategies) == 1 {
