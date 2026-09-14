@@ -86,8 +86,9 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 * **`donchian-breakout`**: Turtle-style 20-day high momentum breakout with trailing stop.
 * **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
 * **`rsi2`**: Connors RSI(2) deep pullback strategy.
-* **`wc` / `wc-4d`**: Whitings Creek short-term capitulation mean-reversion.
 * **`voo-buy-hold`**: Passive VOO (S&P 500) buy-and-hold baseline for computing active Alpha & Beta. (Formerly `buy-and-hold` — renamed after it was found to buy an arbitrary basket of symbols rather than VOO once the ETF universe grew past a few hundred symbols; still resolvable under the old ID via alias.)
+
+> `wc` / `wc-4d` / `whitings_creek-sql` (Whitings Creek short-term capitulation mean-reversion) were archived — unregistered and moved to [`_archive/`](file:///Users/darianhickman/Documents/backtestgosqlite/_archive) (excluded from the Go build via the leading underscore). They converged to the exact same generic-fallback gridsearch result as several other strategies with no real distinguishing signal, while taking 2-4 minutes per sweep. See `_archive/README.md` to restore.
 
 ---
 
@@ -369,7 +370,6 @@ backtestgosqlite/
 │   │   ├── bb_capitulation.go        # Bollinger Band Capitulation Strategy
 │   │   ├── macd_crossover.go         # MACD Bullish Crossover Strategy
 │   │   ├── donchian_breakout.go      # Donchian 20-Day Momentum Breakout
-│   │   ├── whitings_creek.go         # Whitings Creek Baseline Strategy
 │   │   ├── trend_bb.go               # Trend-Gated Bollinger Strategy
 │   │   └── rsi2_trend.go             # Connors RSI(2) Strategy
 │   ├── simulator/                    # Portfolio ledger, execution models & sizing
@@ -383,8 +383,7 @@ backtestgosqlite/
 │
 ├── sql/                              # SQL Pipeline Strategies
 │   └── strategies/                   # Auto-discovered SQL strategy pipelines
-│       ├── README.md                 # SQL strategy authoring guide
-│       └── whitings_creek/           # 25-stage relational pipeline
+│       └── README.md                 # SQL strategy authoring guide
 │
 ├── docs/                             # In-Depth Guides & Strategy Specs
 │   └── strategies/                   # Strategy documentation & tutorial

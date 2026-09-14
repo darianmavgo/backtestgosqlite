@@ -10,18 +10,18 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
 var sqlPipelineMu sync.Mutex
 
 // SQLPipelineStrategy adapts any directory of sequential SQL scripts into a runnable Strategy.
 type SQLPipelineStrategy struct {
-	id          string
-	name        string
-	description string
+	id           string
+	name         string
+	description  string
 	pipelineDir  string
 	marketDBPath string
 	calcDBPath   string
@@ -190,8 +190,6 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 		cleanID + "_signals",
 		baseDir + "_signals",
 		"rsi_oversold_signals",
-		"wc_backtest_details",
-		"wc_buy_signal_slice",
 		"entry",
 		"signals",
 	}

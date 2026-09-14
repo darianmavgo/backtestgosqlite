@@ -11,10 +11,6 @@ To create a new SQL-based strategy:
 
 ```
 sql/strategies/
-├── whitings_creek/
-│   ├── 01_calc_minlow_all.sql
-│   ├── 02_wc_calc_trailing_minlow.sql
-│   └── ...
 ├── rsi_oversold/
 │   ├── 01_schema.sql
 │   └── 02_calc_rsi_signals.sql
@@ -23,15 +19,16 @@ sql/strategies/
     └── 02_signals.sql
 ```
 
+(A prior example strategy here, `whitings_creek/`, was archived — see `_archive/README.md` at the repo root for why and how to restore it.)
+
 ## Contract & Signal Extraction
 
 The backtester looks for an output table containing trade triggers:
 - Any table with columns: `idx, symbol, date, open, high, low, close, volume, buylimit, entry`.
 - Rows where `entry = 1` are treated as entry signals and routed into the Tier 2 chronological portfolio simulator.
 - Standard signal table names checked:
+  - `<strategy_id>_signals`
   - `rsi_oversold_signals`
-  - `wc_backtest_details`
-  - `wc_buy_signal_slice`
   - `entry`
 
 ## Running Your SQL Strategy
@@ -41,5 +38,5 @@ The backtester looks for an output table containing trade triggers:
 ./bin/backtest -list
 
 # Execute your SQL strategy
-./bin/backtest -strategy whitings_creek-sql -capital 100000
+./bin/backtest -strategy your_strategy_name-sql -capital 100000
 ```

@@ -8,9 +8,10 @@ import (
 )
 
 func TestEvaluateTradeOutcome(t *testing.T) {
-	strat, _ := strategy.Get("wc")
-	config := strat.DefaultConfig()
-	// Target is 1.20 (+20%), Stop is 0.93 (-7%)
+	// Target +20% / Stop -7% — arbitrary fixture values, not tied to any
+	// particular registered strategy's config (previously borrowed "wc"'s
+	// DefaultConfig(), which broke when that strategy was archived).
+	config := strategy.StrategyConfig{TargetPct: 1.20, StopLossPct: 0.93}
 
 	futureBarsWinning := []models.Bar{
 		{Date: "2023-01-02", Open: 100, High: 105, Low: 98, Close: 104},

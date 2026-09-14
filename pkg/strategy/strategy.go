@@ -6,7 +6,7 @@ import (
 
 // Strategy is the unified interface implemented by all trading strategies in Go or SQL.
 type Strategy interface {
-	// ID returns the unique CLI / programmatic identifier (e.g. "bb-capitulation", "wc", "rsi2", "wc-sql").
+	// ID returns the unique CLI / programmatic identifier (e.g. "bb-capitulation", "rsi2", "mara_tree").
 	ID() string
 
 	// Name returns the human-readable display name.
