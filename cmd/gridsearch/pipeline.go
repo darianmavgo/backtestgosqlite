@@ -5,6 +5,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -223,15 +224,39 @@ func printCachedResults(gdb *sqlx.DB, strat strategy.Strategy) {
 	}
 }
 
-// runBatchSweep sweeps every strategy in targets, bounded to `concurrency`
-// strategies in flight at once. Each strategy's own inner sweep runs with a
-// small fixed worker count (rather than `concurrency`) since the outer pool
-// already saturates available cores — oversubscribing both dimensions at once
-// is what OOM-killed cmd/backtest -strategy all earlier in this project.
-// Strategies already marked 'done' in the pipeline DB are skipped unless force.
-func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOptions, concurrency int, force, noHTML bool, gridDBPath string) {
-	const innerWorkersInBatchMode = 2
+// batchStratState tracks one strategy's in-progress accumulation within the
+// shared flattened worker pool: its context (for evaluating its own tasks),
+// results collected so far, and an atomic countdown of remaining tasks so
+// whichever worker processes its last task can finalize/record/print it.
+type batchStratState struct {
+	strat       strategy.Strategy
+	ctx         *sweepContext
+	mu          sync.Mutex
+	results     []gridResult
+	baselineRes *gridResult
+	remaining   int32
+}
 
+// flatTask is one task tagged with which strategy it belongs to, for the shared
+// cross-strategy work queue.
+type flatTask struct {
+	stratIdx int
+	task     sweepTask
+}
+
+// runBatchSweep sweeps every strategy in targets using ONE shared worker pool
+// (sized by `concurrency`, default all CPU cores) across every task from every
+// strategy combined, rather than splitting concurrency into a fixed per-strategy
+// share. That two-level split (outer pool across strategies, small fixed inner
+// pool per strategy) sounds reasonable but starves whichever strategy happens to
+// be far more expensive per-task than the rest — measured here at ~100x
+// (bb-capitulation's generic signal generator vs. gld-decline's): with a fixed
+// inner pool of 2, a 100x-more-expensive strategy runs at roughly 2x speed while
+// most of the machine's cores sit idle once the cheap strategies finish. A single
+// shared pool keeps every core busy on whatever work remains, cheap or
+// expensive, for the whole batch. Strategies already marked 'done' in the
+// pipeline DB are skipped unless force.
+func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOptions, concurrency int, force, noHTML bool, gridDBPath string) {
 	var toRun []strategy.Strategy
 	for _, s := range targets {
 		if !force && isStrategyDone(gdb, s.ID()) {
@@ -243,7 +268,6 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 	fmt.Printf("\n=======================================================================================================================\n")
 	fmt.Printf("⚡ BATCH GRID SEARCH — %d strategies selected, %d already done in %s (skipped), %d to sweep\n",
 		len(targets), len(targets)-len(toRun), gridDBPath, len(toRun))
-	fmt.Printf("   Concurrency: %d strategies in flight, %d inner workers each\n", concurrency, innerWorkersInBatchMode)
 	fmt.Printf("=======================================================================================================================\n\n")
 
 	if len(toRun) == 0 {
@@ -255,53 +279,82 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 	if concurrency < 1 {
 		concurrency = 1
 	}
-	jobs := make(chan strategy.Strategy, len(toRun))
-	for _, s := range toRun {
-		jobs <- s
+
+	// Setup phase: fetch bars and build each strategy's task list up front (I/O,
+	// not simulation — cheap). Failures here are recorded immediately and don't
+	// block the rest of the batch.
+	states := make([]*batchStratState, 0, len(toRun))
+	var stateTasks [][]sweepTask
+	var totalTasks int
+	for _, strat := range toRun {
+		ctx, tasks, err := prepareSweep(db, strat, opts)
+		if err != nil {
+			recordRunStart(gdb, strat, 0)
+			recordRun(gdb, strat, sweepOutcome{Strat: strat}, err)
+			fmt.Printf("❌ [%s] %v\n", strat.ID(), err)
+			continue
+		}
+		recordRunStart(gdb, strat, ctx.TotalPerms)
+		states = append(states, &batchStratState{strat: strat, ctx: ctx, remaining: int32(len(tasks))})
+		stateTasks = append(stateTasks, tasks)
+		totalTasks += len(tasks)
+	}
+
+	fmt.Printf("   %d strategies ready, %d total configurations queued, %d shared workers\n\n", len(states), totalTasks, concurrency)
+
+	jobs := make(chan flatTask, totalTasks)
+	for idx, tasks := range stateTasks {
+		for _, t := range tasks {
+			jobs <- flatTask{stratIdx: idx, task: t}
+		}
 	}
 	close(jobs)
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var printMu sync.Mutex
 	completed, failed := 0, 0
 
 	for w := 0; w < concurrency; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for strat := range jobs {
-				stratOpts := opts
-				stratOpts.InnerWorkers = innerWorkersInBatchMode
+			for ft := range jobs {
+				st := states[ft.stratIdx]
+				res, ok := evaluateTask(st.ctx, ft.task, opts)
 
-				paramSpace := strategy.AssessParameterSpace(strat)
-				totalPerms := len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
-					len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
-				recordRunStart(gdb, strat, totalPerms)
-
-				outcome, err := runSweep(db, strat, stratOpts)
-				recordRun(gdb, strat, outcome, err)
-
-				mu.Lock()
-				if err != nil || len(outcome.Results) == 0 {
-					failed++
-					reason := "no configs met the minimum trade filter"
-					if err != nil {
-						reason = err.Error()
+				st.mu.Lock()
+				if ok {
+					st.results = append(st.results, res)
+					if ft.task.isBaseline {
+						bCopy := res
+						st.baselineRes = &bCopy
 					}
-					fmt.Printf("❌ [%s] %s\n", strat.ID(), reason)
-				} else {
-					completed++
-					best := outcome.TopResilience[0]
-					fmt.Printf("✅ [%s] %d configs evaluated in %v — best: %s (CAGR=%.2f%% Score=%.4f)\n",
-						strat.ID(), len(outcome.Results), outcome.Elapsed.Round(time.Millisecond), best.Label, best.Report.CAGR*100, resilienceScore(best.Report))
-					if !noHTML {
-						reportFile := defaultReportPath(strat, "")
-						if err := exportSweepHTML(strat, outcome, reportFile, opts.Capital); err != nil {
-							log.Printf("Warning: HTML export failed for %s: %v", strat.ID(), err)
+				}
+				st.mu.Unlock()
+
+				if atomic.AddInt32(&st.remaining, -1) == 0 {
+					outcome := finalizeSweep(st.ctx, st.results, st.baselineRes, opts)
+					recordRun(gdb, st.strat, outcome, nil)
+
+					printMu.Lock()
+					if len(outcome.Results) == 0 {
+						failed++
+						fmt.Printf("❌ [%s] no configs met the minimum trade filter\n", st.strat.ID())
+					} else {
+						completed++
+						best := outcome.TopResilience[0]
+						fmt.Printf("✅ [%s] %d configs evaluated in %v — best: %s (CAGR=%.2f%% Score=%.4f)\n",
+							st.strat.ID(), len(outcome.Results), outcome.Elapsed.Round(time.Millisecond), best.Label, best.Report.CAGR*100, resilienceScore(best.Report))
+					}
+					printMu.Unlock()
+
+					if len(outcome.Results) > 0 && !noHTML {
+						reportFile := defaultReportPath(st.strat, "")
+						if err := exportSweepHTML(st.strat, outcome, reportFile, opts.Capital); err != nil {
+							log.Printf("Warning: HTML export failed for %s: %v", st.strat.ID(), err)
 						}
 					}
 				}
-				mu.Unlock()
 			}
 		}()
 	}

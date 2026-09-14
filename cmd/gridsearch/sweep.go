@@ -24,17 +24,41 @@ type sweepOptions struct {
 	Capital           float64
 	MinTrades         int
 	TopN              int
-	InnerWorkers      int // concurrency WITHIN this one strategy's sweep
+	InnerWorkers      int // single-strategy mode only: workers within this one sweep
 }
 
-// runSweep executes the full baked-in parameter grid search for one strategy:
-// fetches the bars it needs, builds every (signal-days, hold, TP, SL, regime,
-// allocation) permutation, evaluates them with a bounded worker pool sized by
-// opts.InnerWorkers, and ranks the results three ways (Calmar, resilience, net
-// profit). It performs no I/O beyond fetching market bars — printing and
-// persistence are the caller's job, so this is reusable from both the rich
-// single-strategy CLI path and the concurrent multi-strategy batch path.
-func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOutcome, error) {
+// sweepTask is one (signal-days, hold, TP, SL, regime, allocation, symbol)
+// permutation to evaluate.
+type sweepTask struct {
+	sym        string
+	sigDays    int
+	hold       int
+	tp         float64
+	sl         float64
+	regime     string
+	alloc      float64
+	tradeBars  []models.Bar
+	isBaseline bool
+}
+
+// sweepContext holds everything about one strategy's parameter space needed to
+// evaluate its tasks, computed once up front (bar fetches, tree-bounce base
+// signals) and then reused across every task.
+type sweepContext struct {
+	Strat       strategy.Strategy
+	ParamSpace  strategy.ParameterSpace
+	SignalBars  []models.Bar
+	BaseSignals []models.Signal // precomputed once for tree_bounce strategies
+	SortedDates []string
+	TotalPerms  int
+	StartedAt   time.Time
+}
+
+// prepareSweep resolves a strategy's parameter space, fetches the bars it needs,
+// and builds the full list of tasks to evaluate — but evaluates nothing. This is
+// the part of a sweep that's cheap (I/O, not simulation), so both single-strategy
+// mode and the batch flattened pool call it once per strategy up front.
+func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*sweepContext, []sweepTask, error) {
 	paramSpace := strategy.AssessParameterSpace(strat)
 	if opts.AllocOverride != nil {
 		paramSpace.Allocations = []float64{*opts.AllocOverride}
@@ -51,11 +75,11 @@ func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOut
 
 	barMap, _, err := storage.FetchBars(db, "backtest_start", []string{paramSpace.SignalSymbol}, "", "")
 	if err != nil {
-		return sweepOutcome{}, fmt.Errorf("failed to fetch %s bars: %w", paramSpace.SignalSymbol, err)
+		return nil, nil, fmt.Errorf("failed to fetch %s bars: %w", paramSpace.SignalSymbol, err)
 	}
 	signalBars := barMap[paramSpace.SignalSymbol]
 	if len(signalBars) == 0 {
-		return sweepOutcome{}, fmt.Errorf("no price bars found for signal symbol %s", paramSpace.SignalSymbol)
+		return nil, nil, fmt.Errorf("no price bars found for signal symbol %s", paramSpace.SignalSymbol)
 	}
 
 	tradeBarsMap := make(map[string][]models.Bar, len(paramSpace.Symbols))
@@ -85,113 +109,22 @@ func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOut
 	totalPerms := len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
 		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
 
-	start := time.Now()
-
-	type task struct {
-		sym        string
-		sigDays    int
-		hold       int
-		tp         float64
-		sl         float64
-		regime     string
-		alloc      float64
-		tradeBars  []models.Bar
-		isBaseline bool
-	}
-
-	tasks := make(chan task, 5000)
-	var results []gridResult
-	var baselineRes *gridResult
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
 	var baseSignals []models.Signal
 	if paramSpace.Direction == "tree_bounce" {
 		baseSignals = strat.GenerateSignals(map[string][]models.Bar{paramSpace.SignalSymbol: signalBars})
 	}
 
-	workers := opts.InnerWorkers
-	if workers < 1 {
-		workers = 1
-	}
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for t := range tasks {
-				barsBySymbol := map[string][]models.Bar{
-					paramSpace.SignalSymbol: signalBars,
-					t.sym:                   t.tradeBars,
-				}
-
-				cfg := strategy.StrategyConfig{
-					AllocationPct:   t.alloc,
-					TakeProfitPct:   t.tp,
-					StopLossPct:     t.sl,
-					HoldingWindow:   t.hold,
-					PositionCap:     1,
-					CashYieldAnnual: paramSpace.CashYield,
-				}
-
-				var sigs []models.Signal
-				if paramSpace.Direction == "tree_bounce" {
-					sigs = make([]models.Signal, len(baseSignals))
-					for idx, bs := range baseSignals {
-						sCopy := bs
-						sCopy.HoldDaysOverride = t.hold
-						if t.tp > 0 {
-							sCopy.TakeProfit = bs.Close * (1.0 + t.tp)
-						} else {
-							sCopy.TakeProfit = 0
-						}
-						if t.sl > 0 {
-							sCopy.StopLoss = bs.Close * (1.0 - t.sl)
-						} else {
-							sCopy.StopLoss = 0
-						}
-						sigs[idx] = sCopy
-					}
-				} else {
-					sigs = buildSignals(signalBars, t.tradeBars, t.sigDays, paramSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym)
-				}
-
-				if len(sigs) < opts.MinTrades {
-					continue
-				}
-
-				sim := simulator.NewPortfolioSimulator(cfg, opts.Capital)
-				report, trades, curve := sim.Run(sigs, barsBySymbol, sortedDates)
-
-				if report.TotalTrades < opts.MinTrades {
-					continue
-				}
-
-				label := ""
-				if paramSpace.Direction == "tree_bounce" {
-					label = fmt.Sprintf("%s/Hold-%dd/TP+%.0f%%/SL-%.0f%%", t.sym, t.hold, t.tp*100, t.sl*100)
-				} else {
-					label = fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
-				}
-
-				res := gridResult{
-					Label:      label,
-					Report:     report,
-					Trades:     trades,
-					Curve:      curve,
-					IsBaseline: t.isBaseline,
-				}
-
-				mu.Lock()
-				results = append(results, res)
-				if t.isBaseline {
-					bCopy := res
-					baselineRes = &bCopy
-				}
-				mu.Unlock()
-			}
-		}()
+	ctx := &sweepContext{
+		Strat:       strat,
+		ParamSpace:  paramSpace,
+		SignalBars:  signalBars,
+		BaseSignals: baseSignals,
+		SortedDates: sortedDates,
+		TotalPerms:  totalPerms,
+		StartedAt:   time.Now(),
 	}
 
+	var tasks []sweepTask
 	for _, sym := range paramSpace.Symbols {
 		tBars, ok := tradeBarsMap[sym]
 		if !ok {
@@ -215,11 +148,10 @@ func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOut
 										math.Abs(sl-paramSpace.Baseline.StopLoss) < 1e-4 &&
 										regime == paramSpace.Baseline.Regime)
 								}
-
-								tasks <- task{
+								tasks = append(tasks, sweepTask{
 									sym: sym, sigDays: sigDays, hold: hold, tp: tp, sl: sl,
 									regime: regime, alloc: alloc, tradeBars: tBars, isBaseline: isBase,
-								}
+								})
 							}
 						}
 					}
@@ -227,20 +159,92 @@ func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOut
 			}
 		}
 	}
-	close(tasks)
-	wg.Wait()
 
+	return ctx, tasks, nil
+}
+
+// evaluateTask runs the simulation for a single task and returns the result. ok
+// is false when the task was filtered out by the minimum trade count (either by
+// raw signal count or by the simulator's actual fill count) and should not be
+// counted as a result.
+func evaluateTask(ctx *sweepContext, t sweepTask, opts sweepOptions) (gridResult, bool) {
+	barsBySymbol := map[string][]models.Bar{
+		ctx.ParamSpace.SignalSymbol: ctx.SignalBars,
+		t.sym:                       t.tradeBars,
+	}
+
+	cfg := strategy.StrategyConfig{
+		AllocationPct:   t.alloc,
+		TakeProfitPct:   t.tp,
+		StopLossPct:     t.sl,
+		HoldingWindow:   t.hold,
+		PositionCap:     1,
+		CashYieldAnnual: ctx.ParamSpace.CashYield,
+	}
+
+	var sigs []models.Signal
+	if ctx.ParamSpace.Direction == "tree_bounce" {
+		sigs = make([]models.Signal, len(ctx.BaseSignals))
+		for idx, bs := range ctx.BaseSignals {
+			sCopy := bs
+			sCopy.HoldDaysOverride = t.hold
+			if t.tp > 0 {
+				sCopy.TakeProfit = bs.Close * (1.0 + t.tp)
+			} else {
+				sCopy.TakeProfit = 0
+			}
+			if t.sl > 0 {
+				sCopy.StopLoss = bs.Close * (1.0 - t.sl)
+			} else {
+				sCopy.StopLoss = 0
+			}
+			sigs[idx] = sCopy
+		}
+	} else {
+		sigs = buildSignals(ctx.SignalBars, t.tradeBars, t.sigDays, ctx.ParamSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym)
+	}
+
+	if len(sigs) < opts.MinTrades {
+		return gridResult{}, false
+	}
+
+	sim := simulator.NewPortfolioSimulator(cfg, opts.Capital)
+	report, trades, curve := sim.Run(sigs, barsBySymbol, ctx.SortedDates)
+
+	if report.TotalTrades < opts.MinTrades {
+		return gridResult{}, false
+	}
+
+	label := ""
+	if ctx.ParamSpace.Direction == "tree_bounce" {
+		label = fmt.Sprintf("%s/Hold-%dd/TP+%.0f%%/SL-%.0f%%", t.sym, t.hold, t.tp*100, t.sl*100)
+	} else {
+		label = fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
+	}
+
+	return gridResult{
+		Label:      label,
+		Report:     report,
+		Trades:     trades,
+		Curve:      curve,
+		IsBaseline: t.isBaseline,
+	}, true
+}
+
+// finalizeSweep ranks a strategy's completed results three ways and packages
+// everything into a sweepOutcome.
+func finalizeSweep(ctx *sweepContext, results []gridResult, baselineRes *gridResult, opts sweepOptions) sweepOutcome {
 	outcome := sweepOutcome{
-		Strat:       strat,
-		ParamSpace:  paramSpace,
-		SignalBars:  signalBars,
-		TotalPerms:  totalPerms,
+		Strat:       ctx.Strat,
+		ParamSpace:  ctx.ParamSpace,
+		SignalBars:  ctx.SignalBars,
+		TotalPerms:  ctx.TotalPerms,
 		Results:     results,
 		BaselineRes: baselineRes,
-		Elapsed:     time.Since(start),
+		Elapsed:     time.Since(ctx.StartedAt),
 	}
 	if len(results) == 0 {
-		return outcome, nil
+		return outcome
 	}
 
 	topN := opts.TopN
@@ -271,5 +275,55 @@ func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOut
 	}
 	outcome.TopProfit = byProfit
 
-	return outcome, nil
+	return outcome
+}
+
+// runSweep executes the full baked-in parameter grid search for one strategy
+// using a local worker pool sized by opts.InnerWorkers. This is the
+// single-strategy CLI path — batch mode uses prepareSweep/evaluateTask directly
+// against one shared pool instead (see runBatchSweepFlat) so slow strategies
+// aren't stuck with a small fixed inner-worker count while other cores idle.
+func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOutcome, error) {
+	ctx, tasks, err := prepareSweep(db, strat, opts)
+	if err != nil {
+		return sweepOutcome{}, err
+	}
+
+	taskCh := make(chan sweepTask, len(tasks))
+	for _, t := range tasks {
+		taskCh <- t
+	}
+	close(taskCh)
+
+	var results []gridResult
+	var baselineRes *gridResult
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	workers := opts.InnerWorkers
+	if workers < 1 {
+		workers = 1
+	}
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range taskCh {
+				res, ok := evaluateTask(ctx, t, opts)
+				if !ok {
+					continue
+				}
+				mu.Lock()
+				results = append(results, res)
+				if t.isBaseline {
+					bCopy := res
+					baselineRes = &bCopy
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	return finalizeSweep(ctx, results, baselineRes, opts), nil
 }

@@ -91,7 +91,7 @@ func main() {
 	topN := flag.Int("top", 10, "Top N results to display per strategy")
 	htmlOutput := flag.String("html", "", "Path to export HTML comparison report (single-strategy mode; defaults to reports/<strategy>_gridsearch.html)")
 	noHTML := flag.Bool("no-html", false, "Skip per-strategy HTML export (batch mode; speeds up large sweeps)")
-	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Single-strategy mode: worker goroutines within the sweep. Multi-strategy mode: strategies swept concurrently. Defaults to all CPU cores.")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Worker goroutines. Single-strategy mode: workers within that one sweep. Multi-strategy mode: total workers shared across every strategy's tasks combined (not per-strategy — a few expensive strategies get proportionally more of the pool once cheap ones finish). Defaults to all CPU cores.")
 	force := flag.Bool("force", false, "Redo strategies that already have a completed sweep in reports/gridsearch.db")
 	includeDT := flag.Bool("include-dt", false, "Include dt_* (auto-generated per-ETF decision tree) strategies in -strategy all — they already have their own dedicated sweep via cmd/etf_decision_trees, so excluded by default")
 	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
