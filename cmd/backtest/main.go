@@ -38,6 +38,7 @@ func main() {
 	htmlOutput := flag.String("html", "reports/backtest_report.html", "Path to export interactive HTML dashboard report")
 	autoDownload := flag.Bool("auto-download", true, "Automatically detect missing market data and run download")
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
+	concurrency := flag.Int("concurrency", 8, "Max concurrent strategies when running more than one (bounds memory use for large -strategy all runs)")
 	flag.Parse()
 
 	// Ensure HTML reports land in reports/ directory
@@ -324,22 +325,45 @@ func main() {
 		fmt.Printf("========================================================================================\n\n")
 
 		results = make([]runner.RunResult, len(selectedStrategies))
-		var wg sync.WaitGroup
 
-		for i, strat := range selectedStrategies {
+		// Bounded worker pool — each worker holds a full copy of the shared bar map's
+		// working set in-flight (PortfolioSimulator + signals + equity curve), and some
+		// strategies (e.g. genetic-momentum) shell out to Python. Unbounded goroutines
+		// here (one per strategy) can OOM-kill the process when there are hundreds of
+		// strategies, so cap concurrency instead.
+		workers := *concurrency
+		if workers < 1 {
+			workers = 1
+		}
+		if workers > len(selectedStrategies) {
+			workers = len(selectedStrategies)
+		}
+		fmt.Printf("   Concurrency:  %d workers\n\n", workers)
+
+		jobs := make(chan int, len(selectedStrategies))
+		for i := range selectedStrategies {
+			jobs <- i
+		}
+		close(jobs)
+
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
 			wg.Add(1)
-			go func(idx int, s strategy.Strategy) {
+			go func() {
 				defer wg.Done()
-				cfg := runner.BuildConfig(s, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
-				res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb)
-				results[idx] = res
-				if res.Err != nil {
-					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
-				} else {
-					fmt.Printf("✅ [%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
-						s.ID(), res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
+				for idx := range jobs {
+					s := selectedStrategies[idx]
+					cfg := runner.BuildConfig(s, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
+					res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb)
+					results[idx] = res
+					if res.Err != nil {
+						log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
+					} else {
+						fmt.Printf("✅ [%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
+							s.ID(), res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
+					}
 				}
-			}(i, strat)
+			}()
 		}
 
 		wg.Wait()
