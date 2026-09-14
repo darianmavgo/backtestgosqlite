@@ -245,12 +245,48 @@ func runStatus(concurrency int) {
 		strings.Join(shown, ","))
 }
 
+// saveScoreboardToSQLite writes a fresh scoreboard table to dbPath. If dbPath is
+// locked or otherwise unwritable (e.g. the user has it open in a DB browser —
+// SQLite's WAL/SHM sidecar files can be left in an inconsistent state after
+// os.Remove deletes the main file out from under another process's open handle,
+// surfacing as "disk I/O error: no such file or directory"), it falls back to
+// writing an incremented filename (scoreboard_2.db, scoreboard_3.db, ...) via
+// storage.CreateUniqueDB instead of silently dropping the write.
 func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 	os.Remove(dbPath) // Fresh scoreboard every time
+	// The WAL/SHM sidecars belong to whatever connection(s) currently have the
+	// file open (e.g. an external DB browser); removing only the main file and
+	// leaving these behind is exactly what produces the "disk I/O error" above.
+	os.Remove(dbPath + "-wal")
+	os.Remove(dbPath + "-shm")
+
+	if err := writeScoreboard(dbPath, results); err != nil {
+		dir := filepath.Dir(dbPath)
+		fallbackPath, fallbackDB, cerr := storage.CreateUniqueDB(dir, "scoreboard")
+		if cerr != nil {
+			log.Printf("Warning: Failed to write scoreboard to %s (%v), and failed to create a fallback: %v", dbPath, err, cerr)
+			return
+		}
+		fallbackDB.Close()
+		log.Printf("Warning: %s appears locked (%v) — probably open in another program (DB browser, etc). Writing to %s instead.", dbPath, err, fallbackPath)
+		if err2 := writeScoreboard(fallbackPath, results); err2 != nil {
+			log.Printf("Warning: Fallback write to %s also failed: %v", fallbackPath, err2)
+			return
+		}
+		fmt.Printf("\n💾 Scoreboard saved to SQLite: %s (fallback — %s was locked; close it and rerun to update the original)\n", fallbackPath, dbPath)
+		return
+	}
+
+	fmt.Printf("\n💾 Scoreboard saved to SQLite: %s\n", dbPath)
+}
+
+// writeScoreboard creates the scoreboard schema and writes results to dbPath,
+// returning any error encountered rather than logging-and-continuing, so the
+// caller can decide whether to fall back to a different path.
+func writeScoreboard(dbPath string, results []runner.RunResult) error {
 	db, err := storage.OpenSQLite(dbPath)
 	if err != nil {
-		log.Printf("Warning: Failed to create %s: %v", dbPath, err)
-		return
+		return fmt.Errorf("open: %w", err)
 	}
 	defer db.Close()
 
@@ -269,13 +305,12 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 		run_date TEXT
 	);`
 	if _, err := db.Exec(schema); err != nil {
-		log.Printf("Warning: Failed to create scoreboard schema: %v", err)
-		return
+		return fmt.Errorf("create schema: %w", err)
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		return
+		return fmt.Errorf("begin transaction: %w", err)
 	}
 
 	stmt, err := tx.Prepare(`
@@ -283,7 +318,8 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
-		return
+		tx.Rollback()
+		return fmt.Errorf("prepare insert: %w", err)
 	}
 	defer stmt.Close()
 
@@ -295,7 +331,7 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 		if r.Err != nil {
 			continue
 		}
-		stmt.Exec(
+		if _, err := stmt.Exec(
 			r.Strat.ID(),
 			r.Strat.Name(),
 			r.Report.CAGR,
@@ -306,9 +342,10 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 			r.Report.WinRate,
 			r.Report.TotalTrades,
 			runDate,
-		)
+		); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("insert row for %s: %w", r.Strat.ID(), err)
+		}
 	}
-	tx.Commit()
-
-	fmt.Printf("\n💾 Scoreboard saved to SQLite: %s\n", dbPath)
+	return tx.Commit()
 }
