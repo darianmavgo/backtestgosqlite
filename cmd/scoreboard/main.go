@@ -6,7 +6,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -118,10 +121,40 @@ func runAll(concurrency int) {
 	saveScoreboardToSQLite(results, filepath.Join(outDir, "scoreboard.db"))
 }
 
+// dbIncrementPattern matches storage.CreateUniqueDB's naming scheme: the first run
+// of a strategy is "<id>.db", every repeat run after that is "<id>_<n>.db" for
+// n = 2, 3, 4, .... Captures the base id and the trailing numeric suffix.
+var dbIncrementPattern = regexp.MustCompile(`^(.+)_(\d+)$`)
+
+// parseDBIncrement splits a result DB's filename into its strategy base name and
+// run increment (1 for the un-suffixed first run, 2+ for "_<n>" repeat runs).
+func parseDBIncrement(path string) (base string, increment int) {
+	stem := strings.TrimSuffix(filepath.Base(path), ".db")
+	if m := dbIncrementPattern.FindStringSubmatch(stem); m != nil {
+		if n, err := strconv.Atoi(m[2]); err == nil {
+			return m[1], n
+		}
+	}
+	return stem, 1
+}
+
+// candidate is one result DB file competing to represent its strategy in the
+// scoreboard — there's one per run increment (dt_hibl.db, dt_hibl_2.db, ...).
+type candidate struct {
+	path      string
+	increment int
+}
+
 // runCompile assumes every strategy has already been backtested (e.g. via
 // `cmd/backtest -strategy all`) and just reads each per-strategy SQLite DB's
 // performance_summary table already sitting in reports/, instead of re-running
 // anything. Much cheaper: no bar loading, no simulation, no tree fitting.
+//
+// When a strategy has been backtested more than once (dt_hibl.db, dt_hibl_2.db, ...),
+// it picks the highest-increment run first, verifies that database isn't
+// compromised (corrupt SQLite file, failed integrity check, missing/unreadable
+// performance_summary), and falls back to the next-lower increment if it is —
+// repeating down to increment 1 until a healthy database is found.
 func runCompile(concurrency int) {
 	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
 
@@ -131,46 +164,47 @@ func runCompile(concurrency int) {
 	if err != nil {
 		log.Fatalf("Failed to list %s/*.db: %v", outDir, err)
 	}
-	// Exclude the scoreboard output itself.
-	var candidates []string
+
+	// Group every candidate file by its strategy base name, tracking each one's run
+	// increment so we can try highest-first per group.
+	groups := make(map[string][]candidate)
 	for _, f := range files {
 		if filepath.Base(f) == "scoreboard.db" {
 			continue
 		}
-		candidates = append(candidates, f)
+		base, inc := parseDBIncrement(f)
+		groups[base] = append(groups[base], candidate{path: f, increment: inc})
 	}
-	if len(candidates) == 0 {
+	if len(groups) == 0 {
 		log.Fatalf("No result databases found in %s/*.db. Run backtests first (e.g. cmd/backtest -strategy all).", outDir)
 	}
+	for base := range groups {
+		sort.Slice(groups[base], func(i, j int) bool {
+			return groups[base][i].increment > groups[base][j].increment // highest increment first
+		})
+	}
 
-	// Sort by modification time ascending so that when multiple files exist for the
-	// same strategy_id (e.g. dt_hibl.db and dt_hibl_2.db from repeated runs), the
-	// most recently modified one wins when we dedupe below.
-	sort.Slice(candidates, func(i, j int) bool {
-		fi, _ := os.Stat(candidates[i])
-		fj, _ := os.Stat(candidates[j])
-		if fi == nil || fj == nil {
-			return false
-		}
-		return fi.ModTime().Before(fj.ModTime())
-	})
-
-	fmt.Printf("   Found %d result databases. Reading with %d workers...\n\n", len(candidates), concurrency)
+	fmt.Printf("   Found %d result databases across %d strategies. Validating with %d workers (highest run increment first, falling back on corruption)...\n\n",
+		len(files), len(groups), concurrency)
 
 	type compiled struct {
 		StrategyID string
 		Report     models.PerformanceReport
 		DbPath     string
-		ModTime    time.Time
+		Increment  int
 	}
 
 	var mu sync.Mutex
 	byStrategy := make(map[string]compiled)
-	var read, skippedNoTable, skippedErr int
+	var usedFallback, allCompromised int
 
-	jobs := make(chan string, len(candidates))
-	for _, f := range candidates {
-		jobs <- f
+	bases := make([]string, 0, len(groups))
+	for base := range groups {
+		bases = append(bases, base)
+	}
+	jobs := make(chan string, len(bases))
+	for _, b := range bases {
+		jobs <- b
 	}
 	close(jobs)
 
@@ -179,44 +213,50 @@ func runCompile(concurrency int) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for path := range jobs {
-				rows, err := readPerformanceSummary(path)
+			for base := range jobs {
+				cands := groups[base]
+				var rows []performanceRow
+				var chosen candidate
+				fellBack := false
+				for i, c := range cands {
+					r, err := validatePerformanceSummary(c.path)
+					if err != nil {
+						log.Printf("⚠️  [%s] run increment %d (%s) is compromised (%v)%s",
+							base, c.increment, filepath.Base(c.path), err, fallbackNote(i, cands))
+						fellBack = true
+						continue
+					}
+					rows = r
+					chosen = c
+					break
+				}
+				if rows == nil {
+					mu.Lock()
+					allCompromised++
+					mu.Unlock()
+					continue
+				}
+
 				mu.Lock()
-				if err != nil {
-					skippedErr++
-					mu.Unlock()
-					continue
-				}
-				if len(rows) == 0 {
-					skippedNoTable++
-					mu.Unlock()
-					continue
-				}
-				fi, _ := os.Stat(path)
-				modTime := time.Time{}
-				if fi != nil {
-					modTime = fi.ModTime()
+				if fellBack {
+					usedFallback++
 				}
 				for _, row := range rows {
-					existing, ok := byStrategy[row.StrategyID]
-					if !ok || modTime.After(existing.ModTime) {
-						byStrategy[row.StrategyID] = compiled{
-							StrategyID: row.StrategyID,
-							Report:     row.Report,
-							DbPath:     path,
-							ModTime:    modTime,
-						}
+					byStrategy[row.StrategyID] = compiled{
+						StrategyID: row.StrategyID,
+						Report:     row.Report,
+						DbPath:     chosen.path,
+						Increment:  chosen.increment,
 					}
 				}
-				read++
 				mu.Unlock()
 			}
 		}()
 	}
 	wg.Wait()
 
-	fmt.Printf("⚡ Read %d files (%d skipped: no performance_summary table, %d skipped: open/query error). %d unique strategies compiled.\n",
-		read, skippedNoTable, skippedErr, len(byStrategy))
+	fmt.Printf("⚡ %d strategies compiled (%d fell back to a lower run increment after finding corruption, %d had every increment compromised and were skipped).\n",
+		len(byStrategy), usedFallback, allCompromised)
 
 	if len(byStrategy) == 0 {
 		log.Fatalf("No usable performance_summary rows found.")
@@ -235,24 +275,47 @@ func runCompile(concurrency int) {
 	saveScoreboardToSQLite(results, filepath.Join(outDir, "scoreboard.db"))
 }
 
+// fallbackNote describes what happens next when a candidate fails validation.
+func fallbackNote(i int, cands []candidate) string {
+	if i+1 < len(cands) {
+		return fmt.Sprintf(" — reverting to run increment %d", cands[i+1].increment)
+	}
+	return " — no earlier run increment available, skipping this strategy"
+}
+
 type performanceRow struct {
 	StrategyID string
 	Report     models.PerformanceReport
 }
 
-// readPerformanceSummary opens a single result DB and reads every row of its
-// performance_summary table (normally exactly one, keyed by strategy_id).
-func readPerformanceSummary(path string) ([]performanceRow, error) {
+// validatePerformanceSummary opens a single result DB, confirms it isn't
+// compromised, and reads every row of its performance_summary table (normally
+// exactly one, keyed by strategy_id). "Compromised" covers everything that can go
+// wrong with one of these files in practice: the SQLite file itself is corrupt or
+// truncated (e.g. the process was killed mid-write), or it's a schema-only stub
+// with no performance_summary rows at all (e.g. from an interrupted backtest run
+// that created the file via storage.CreateUniqueDB but never got to write results).
+// Any of these return an error so the caller can fall back to the previous run
+// increment instead of silently compiling a blank/broken row.
+func validatePerformanceSummary(path string) ([]performanceRow, error) {
 	db, err := storage.OpenSQLite(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open: %w", err)
 	}
 	defer db.Close()
+
+	var integrity string
+	if err := db.QueryRow(`PRAGMA integrity_check;`).Scan(&integrity); err != nil {
+		return nil, fmt.Errorf("integrity_check query failed: %w", err)
+	}
+	if integrity != "ok" {
+		return nil, fmt.Errorf("integrity_check failed: %s", integrity)
+	}
 
 	var tableExists string
 	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='performance_summary'`).Scan(&tableExists)
 	if err != nil {
-		return nil, nil // no such table — not an error, just nothing to compile
+		return nil, fmt.Errorf("no performance_summary table (schema-only stub?)")
 	}
 
 	rows, err := db.Query(`
@@ -268,7 +331,7 @@ func readPerformanceSummary(path string) ([]performanceRow, error) {
 		FROM performance_summary
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query performance_summary: %w", err)
 	}
 	defer rows.Close()
 
@@ -287,12 +350,18 @@ func readPerformanceSummary(path string) ([]performanceRow, error) {
 			&rep.AvgTradeReturnPct, &rep.AvgWinAmount, &rep.AvgLossAmount, &rep.PayoffRatio,
 			&rep.AvgHoldingDays, &rep.AvgMAE, &rep.AvgMFE, &rep.TotalCommissionPaid,
 		); err != nil {
-			continue
+			return nil, fmt.Errorf("malformed performance_summary row: %w", err)
 		}
 		r.Report = rep
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("performance_summary table is empty")
+	}
+	return out, nil
 }
 
 // resolveStrategy looks up the live registered strategy for display purposes
