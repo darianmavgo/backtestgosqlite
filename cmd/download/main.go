@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
@@ -83,6 +84,7 @@ func main() {
 	targetTable := flag.String("target-table", "backtest_start", "Target table name in target SQLite DB")
 	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
 	seedDb := flag.String("seed-db", "data/leveraged_backtest.db", "Legacy database to seed from if target DB doesn't exist")
+	concurrency := flag.Int("concurrency", 1, "Number of symbols to fetch concurrently (network-bound; DB writes are serialized internally)")
 	flag.Parse()
 
 	// If default target DB does not exist yet, seed it from existing leveraged_backtest.db if available
@@ -213,9 +215,14 @@ func main() {
 	totalNewBars := 0
 	cachedSymbols := 0
 	updatedSymbols := 0
+	failedSymbols := 0
 
-	for idx, sym := range symbols {
+	var mu sync.Mutex // serializes all DB access and shared counters/printing (SQLite allows only one writer at a time)
+
+	processSymbol := func(idx int, sym string) {
+		mu.Lock()
 		cov, err := storage.GetSymbolDateCoverageWithTimeframe(db, *targetTable, sym, *timeframe)
+		mu.Unlock()
 		if err != nil {
 			log.Printf("[%d/%d] Error checking database coverage for %s: %v", idx+1, len(symbols), sym, err)
 		}
@@ -262,13 +269,16 @@ func main() {
 
 		// If DB already has all requested data, skip remote fetch!
 		if len(missingWindows) == 0 {
+			mu.Lock()
 			cachedSymbols++
 			fmt.Printf("[%d/%d] %-6s : ⚡ Up-to-date in %s (%d bars, %s ➔ %s). 0 missing, skipped remote fetch.\n",
 				idx+1, len(symbols), sym, filepath.Base(*targetDb), cov.BarCount, cov.MinDate, cov.MaxDate)
-			continue
+			mu.Unlock()
+			return
 		}
 
-		// Fetch only the missing window(s)
+		// Fetch only the missing window(s) — network I/O happens outside the lock so
+		// multiple symbols can be in flight concurrently.
 		symNewBars := 0
 		fetchError := false
 
@@ -284,7 +294,10 @@ func main() {
 				continue
 			}
 
-			if err := storage.UpsertBars(db, *targetTable, bars); err != nil {
+			mu.Lock()
+			err = storage.UpsertBars(db, *targetTable, bars)
+			mu.Unlock()
+			if err != nil {
 				log.Printf("[%d/%d] Error saving %s bars to DB: %v", idx+1, len(symbols), sym, err)
 				fetchError = true
 				continue
@@ -292,8 +305,12 @@ func main() {
 			symNewBars += len(bars)
 		}
 
+		mu.Lock()
+		defer mu.Unlock()
+
 		if fetchError && symNewBars == 0 && cov.BarCount == 0 {
-			continue
+			failedSymbols++
+			return
 		}
 
 		totalNewBars += symNewBars
@@ -309,10 +326,38 @@ func main() {
 			fmt.Printf("[%d/%d] %-6s : ⚡ Found %d bars in DB (%s ➔ %s). Checked %s (no new closed bars available).\n",
 				idx+1, len(symbols), sym, cov.BarCount, cov.MinDate, cov.MaxDate, primarySource.Name())
 		}
-
-		time.Sleep(120 * time.Millisecond) // rate limit
 	}
 
-	fmt.Printf("\n✨ Summary: %s is updated! (%d symbols already up-to-date, %d symbols fetched/updated, %d new bars added).\n   All %d requested symbols are now fully cached in %s.\n",
-		*targetDb, cachedSymbols, updatedSymbols, totalNewBars, len(symbols), filepath.Base(*targetDb))
+	workers := *concurrency
+	if workers < 1 {
+		workers = 1
+	}
+	if workers == 1 {
+		for idx, sym := range symbols {
+			processSymbol(idx, sym)
+			time.Sleep(120 * time.Millisecond) // gentle rate limit for serial mode
+		}
+	} else {
+		fmt.Printf("🚀 Downloading with %d concurrent workers...\n\n", workers)
+		jobs := make(chan int, len(symbols))
+		for idx := range symbols {
+			jobs <- idx
+		}
+		close(jobs)
+
+		var wg sync.WaitGroup
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for idx := range jobs {
+					processSymbol(idx, symbols[idx])
+				}
+			}()
+		}
+		wg.Wait()
+	}
+
+	fmt.Printf("\n✨ Summary: %s is updated! (%d symbols already up-to-date, %d symbols fetched/updated, %d failed, %d new bars added).\n   %d requested symbols processed against %s.\n",
+		*targetDb, cachedSymbols, updatedSymbols, failedSymbols, totalNewBars, len(symbols), filepath.Base(*targetDb))
 }

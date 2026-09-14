@@ -219,6 +219,53 @@ func BuildConfig(s strategy.Strategy, stopLoss, profitTarget float64, holdWindow
 	return cfg
 }
 
+// scopeDatesToStrategy restricts a global, DB-wide sorted date list down to the
+// dates covered by a strategy's own required symbols (+ benchmark), so CAGR and
+// drawdown-duration metrics reflect that strategy's actual trading window instead
+// of being diluted by unrelated long-history symbols that happen to share the DB.
+func scopeDatesToStrategy(
+	strat strategy.Strategy,
+	cfg strategy.StrategyConfig,
+	barsBySymbol map[string][]models.Bar,
+	sortedDates []string,
+) []string {
+	relevantSymbols := make(map[string]struct{})
+	if reqProvider, ok := strat.(strategy.RequiredSymbolsProvider); ok {
+		for _, sym := range reqProvider.RequiredSymbols() {
+			if sym = strings.ToUpper(strings.TrimSpace(sym)); sym != "" {
+				relevantSymbols[sym] = struct{}{}
+			}
+		}
+	}
+	if bm := strings.ToUpper(strings.TrimSpace(cfg.Benchmark)); bm != "" {
+		relevantSymbols[bm] = struct{}{}
+	}
+	if len(relevantSymbols) == 0 {
+		return sortedDates // no symbol info available; fall back to the full range
+	}
+
+	relevantDates := make(map[string]struct{})
+	for sym, bars := range barsBySymbol {
+		if _, ok := relevantSymbols[strings.ToUpper(sym)]; !ok {
+			continue
+		}
+		for _, b := range bars {
+			relevantDates[b.Date] = struct{}{}
+		}
+	}
+	if len(relevantDates) == 0 {
+		return sortedDates
+	}
+
+	scoped := make([]string, 0, len(relevantDates))
+	for _, d := range sortedDates {
+		if _, ok := relevantDates[d]; ok {
+			scoped = append(scoped, d)
+		}
+	}
+	return scoped
+}
+
 func ExecuteStrategy(
 	strat strategy.Strategy,
 	cfg strategy.StrategyConfig,
@@ -252,9 +299,13 @@ func ExecuteStrategy(
 		signals = filtered
 	}
 
-	// 2. Simulate portfolio
+	// 2. Simulate portfolio. Scope the simulation clock to dates relevant to this
+	// strategy's own symbols rather than the full DB-wide date list — otherwise a
+	// strategy trading a young ticker (e.g. 2021+) gets its CAGR diluted by decades
+	// of idle time from unrelated long-history symbols sharing the same database.
+	scopedDates := scopeDatesToStrategy(strat, cfg, barsBySymbol, sortedDates)
 	sim := simulator.NewPortfolioSimulator(cfg, capital)
-	report, trades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
+	report, trades, equityCurve := sim.Run(signals, barsBySymbol, scopedDates)
 
 	// 5. Persist signals, trades, equity curve, and performance summary
 	// Re-open outDB to write simulator output
