@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -38,7 +39,8 @@ func main() {
 	htmlOutput := flag.String("html", "reports/backtest_report.html", "Path to export interactive HTML dashboard report")
 	autoDownload := flag.Bool("auto-download", true, "Automatically detect missing market data and run download")
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
-	concurrency := flag.Int("concurrency", 8, "Max concurrent strategies when running more than one (bounds memory use for large -strategy all runs)")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
+	force := flag.Bool("force", false, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
 	flag.Parse()
 
 	// Ensure HTML reports land in reports/ directory
@@ -262,8 +264,44 @@ func main() {
 		log.Fatalf("No valid strategies selected. Run with -list to view available strategies.")
 	}
 
-	// Detect missing market data and download before running backtest
-	if err := runner.DetectAndDownloadMissingData(*targetDb, *tableName, selectedStrategies, *symbolFilter, *autoDownload, *downloadYears); err != nil {
+	// For bulk runs (-strategy all, or a multi-symbol comma list), avoid duplicate
+	// work by default: skip any strategy that already has a usable result in
+	// -out-dir (same highest-increment-first, skip-if-compromised check used by
+	// cmd/scoreboard). A single explicitly-named strategy always runs — that's
+	// direct intent, not a bulk sweep. Pass -force to redo everything anyway.
+	existing := map[string]runner.CompiledResult{}
+	toRun := selectedStrategies
+	if len(selectedStrategies) > 1 && !*force {
+		fmt.Println("🔎 Checking", *outDir, "for strategies that already have a usable result...")
+		existing, _, _, _, _ = runner.ScanAndValidate(*outDir, *concurrency)
+		toRun = nil
+		for _, s := range selectedStrategies {
+			if _, ok := existing[s.ID()]; !ok {
+				toRun = append(toRun, s)
+			}
+		}
+		fmt.Printf("   %d/%d strategies already have a usable result and will be skipped; %d need backtesting.\n\n",
+			len(selectedStrategies)-len(toRun), len(selectedStrategies), len(toRun))
+	}
+
+	var results []runner.RunResult
+
+	if len(toRun) == 0 {
+		// Every selected strategy already has a usable result — nothing to
+		// simulate, just report what's already there.
+		fmt.Println("✅ Nothing to backtest — every selected strategy already has a usable result. (Use -force to redo everything.)")
+		for _, s := range selectedStrategies {
+			if c, ok := existing[s.ID()]; ok {
+				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+			}
+		}
+		runner.PrintComparisonTable(results)
+		return
+	}
+
+	// Detect missing market data and download before running backtest (scoped to
+	// what we're actually about to run).
+	if err := runner.DetectAndDownloadMissingData(*targetDb, *tableName, toRun, *symbolFilter, *autoDownload, *downloadYears); err != nil {
 		log.Fatalf("Market data resolution error: %v", err)
 	}
 
@@ -280,10 +318,11 @@ func main() {
 		log.Fatalf("Error loading historical bars for simulation: %v", err)
 	}
 
-	var results []runner.RunResult
-
 	if len(selectedStrategies) == 1 {
-		strat := selectedStrategies[0]
+		// A single explicitly-named strategy always takes this detailed path
+		// (toRun == selectedStrategies here since skip-filtering only applies
+		// when more than one strategy was selected).
+		strat := toRun[0]
 		cfg := runner.BuildConfig(strat, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
 
 		fmt.Printf("\n========================================================================================\n")
@@ -319,12 +358,12 @@ func main() {
 		fmt.Printf("\n💾 Dedicated Strategy SQLite Database: %s\n", res.DbPath)
 	} else {
 		fmt.Printf("\n========================================================================================\n")
-		fmt.Printf("🚀 CONCURRENT STRATEGY BACKTESTING (%d STRATEGIES)\n", len(selectedStrategies))
+		fmt.Printf("🚀 CONCURRENT STRATEGY BACKTESTING (%d STRATEGIES TO RUN, %d TOTAL SELECTED)\n", len(toRun), len(selectedStrategies))
 		fmt.Printf("   Market Data:  %d symbols across %d dates loaded from %s\n", len(barsBySymbol), len(sortedDates), *targetDb)
 		fmt.Printf("   Output Dir:   %s/ (each strategy writes to an isolated, uniquely suffixed SQLite DB)\n", *outDir)
 		fmt.Printf("========================================================================================\n\n")
 
-		results = make([]runner.RunResult, len(selectedStrategies))
+		freshResults := make([]runner.RunResult, len(toRun))
 
 		// Bounded worker pool — each worker holds a full copy of the shared bar map's
 		// working set in-flight (PortfolioSimulator + signals + equity curve), and some
@@ -335,13 +374,13 @@ func main() {
 		if workers < 1 {
 			workers = 1
 		}
-		if workers > len(selectedStrategies) {
-			workers = len(selectedStrategies)
+		if workers > len(toRun) {
+			workers = len(toRun)
 		}
 		fmt.Printf("   Concurrency:  %d workers\n\n", workers)
 
-		jobs := make(chan int, len(selectedStrategies))
-		for i := range selectedStrategies {
+		jobs := make(chan int, len(toRun))
+		for i := range toRun {
 			jobs <- i
 		}
 		close(jobs)
@@ -352,10 +391,10 @@ func main() {
 			go func() {
 				defer wg.Done()
 				for idx := range jobs {
-					s := selectedStrategies[idx]
+					s := toRun[idx]
 					cfg := runner.BuildConfig(s, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
 					res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, *capital, *symbolFilter, *outDir, *targetDb)
-					results[idx] = res
+					freshResults[idx] = res
 					if res.Err != nil {
 						log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
 					} else {
@@ -367,6 +406,23 @@ func main() {
 		}
 
 		wg.Wait()
+
+		// Merge freshly-run results with whatever already had a usable result so
+		// the printed table/HTML export covers every selected strategy, not just
+		// the ones we actually had to run.
+		freshByID := make(map[string]runner.RunResult, len(freshResults))
+		for _, r := range freshResults {
+			freshByID[r.Strat.ID()] = r
+		}
+		for _, s := range selectedStrategies {
+			if res, ok := freshByID[s.ID()]; ok {
+				results = append(results, res)
+				continue
+			}
+			if c, ok := existing[s.ID()]; ok {
+				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+			}
+		}
 
 		runner.PrintComparisonTable(results)
 	}
