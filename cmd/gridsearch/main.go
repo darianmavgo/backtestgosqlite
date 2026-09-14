@@ -262,6 +262,7 @@ func main() {
 	if workers < 1 {
 		workers = 1
 	}
+	fmt.Printf("⚙️  Concurrency: %d workers\n", workers)
 	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
