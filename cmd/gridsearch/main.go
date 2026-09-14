@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -75,6 +76,7 @@ func main() {
 	minTrades := flag.Int("min-trades", 5, "Minimum trade count filter")
 	topN := flag.Int("top", 10, "Top N results to display")
 	htmlOutput := flag.String("html", "", "Path to export HTML comparison report (defaults to reports/<strategy>_gridsearch.html)")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Number of parallel worker goroutines for the parameter sweep. Defaults to all CPU cores.")
 	flag.Parse()
 
 	// Track which flags were explicitly set by the user
@@ -255,8 +257,12 @@ func main() {
 		baseSignals = strat.GenerateSignals(map[string][]models.Bar{paramSpace.SignalSymbol: signalBars})
 	}
 
-	// 16 parallel worker goroutines
-	for w := 0; w < 16; w++ {
+	// Parallel worker goroutines (bounded, defaults to all CPU cores)
+	workers := *concurrency
+	if workers < 1 {
+		workers = 1
+	}
+	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

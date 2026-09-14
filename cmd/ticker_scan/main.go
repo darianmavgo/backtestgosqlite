@@ -12,8 +12,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
@@ -74,6 +76,7 @@ func main() {
 	cashYield := flag.Float64("yield", 0.045, "Idle cash yield (annualized)")
 	minTrades := flag.Int("min-trades", 10, "Minimum trade count filter")
 	optimizeTop := flag.Int("optimize-top", 3, "Sweep TP/SL/hold for this many top-ranked candidates (0 disables)")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent symbol workers. Defaults to all CPU cores.")
 	flag.Parse()
 
 	var candidates []string
@@ -105,52 +108,79 @@ func main() {
 	fmt.Printf("Params: TP=+%.1f%% SL=-%.1f%% Hold=%dd Alloc=%.0f%% Yield=%.1f%% MinTrades=%d\n\n",
 		*tp*100, *sl*100, *hold, *alloc*100, *cashYield*100, *minTrades)
 
-	var results []scanResult
-	for _, sym := range candidates {
-		barMap, _, err := storage.FetchBars(db, "backtest_start", []string{sym}, "", "")
-		if err != nil {
-			fmt.Printf("  ⚠️  %-6s  fetch error: %v\n", sym, err)
-			continue
-		}
-		bars := barMap[sym]
-		if len(bars) < 201 {
-			fmt.Printf("  ⚠️  %-6s  insufficient history (%d bars, need >=201)\n", sym, len(bars))
-			continue
-		}
-
-		sigs := strategy.TreeBounceSignals(sym, bars, *tp, *sl, *hold)
-		if len(sigs) < *minTrades {
-			fmt.Printf("  ⚠️  %-6s  too few signals (%d, need >=%d)\n", sym, len(sigs), *minTrades)
-			continue
-		}
-
-		dates := make([]string, len(bars))
-		for i, b := range bars {
-			dates[i] = b.Date
-		}
-
-		cfg := strategy.StrategyConfig{
-			AllocationPct:      *alloc,
-			PositionCap:        1,
-			CashYieldAnnual:    *cashYield,
-			SlippagePct:        0.0005,
-			CommissionPerShare: 0.0001,
-		}
-		sim := simulator.NewPortfolioSimulator(cfg, *capital)
-		report, _, _ := sim.Run(sigs, map[string][]models.Bar{sym: bars}, dates)
-
-		if report.TotalTrades < *minTrades {
-			fmt.Printf("  ⚠️  %-6s  too few filled trades (%d, need >=%d)\n", sym, report.TotalTrades, *minTrades)
-			continue
-		}
-
-		results = append(results, scanResult{
-			Symbol:  sym,
-			Report:  report,
-			Score:   resilienceScore(report),
-			NumBars: len(bars),
-		})
+	// Bounded worker pool across candidate symbols (each does its own DB fetch +
+	// tree-signal generation + simulation — independent, CPU/IO-bound work).
+	workers := *concurrency
+	if workers < 1 {
+		workers = 1
 	}
+	if workers > len(candidates) {
+		workers = len(candidates)
+	}
+	fmt.Printf("Scanning %d candidates with %d workers...\n\n", len(candidates), workers)
+
+	jobs := make(chan string, len(candidates))
+	for _, sym := range candidates {
+		jobs <- sym
+	}
+	close(jobs)
+
+	var mu sync.Mutex
+	var results []scanResult
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for sym := range jobs {
+				barMap, _, err := storage.FetchBars(db, "backtest_start", []string{sym}, "", "")
+				if err != nil {
+					mu.Lock()
+					fmt.Printf("  ⚠️  %-6s  fetch error: %v\n", sym, err)
+					mu.Unlock()
+					continue
+				}
+				bars := barMap[sym]
+				if len(bars) < 201 {
+					continue
+				}
+
+				sigs := strategy.TreeBounceSignals(sym, bars, *tp, *sl, *hold)
+				if len(sigs) < *minTrades {
+					continue
+				}
+
+				dates := make([]string, len(bars))
+				for i, b := range bars {
+					dates[i] = b.Date
+				}
+
+				cfg := strategy.StrategyConfig{
+					AllocationPct:      *alloc,
+					PositionCap:        1,
+					CashYieldAnnual:    *cashYield,
+					SlippagePct:        0.0005,
+					CommissionPerShare: 0.0001,
+				}
+				sim := simulator.NewPortfolioSimulator(cfg, *capital)
+				report, _, _ := sim.Run(sigs, map[string][]models.Bar{sym: bars}, dates)
+
+				if report.TotalTrades < *minTrades {
+					continue
+				}
+
+				mu.Lock()
+				results = append(results, scanResult{
+					Symbol:  sym,
+					Report:  report,
+					Score:   resilienceScore(report),
+					NumBars: len(bars),
+				})
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
 
 	if len(results) == 0 {
 		fmt.Println("\nNo candidates produced enough trades to evaluate.")

@@ -7,15 +7,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/olekukonko/tablewriter"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/olekukonko/tablewriter"
 )
 
 type liveSignalAction struct {
@@ -136,6 +137,7 @@ func main() {
 	saveFlag := flag.Bool("save", false, "Persist scanned signals to SQLite database (default: reports/livescan_signals.db)")
 	saveDbPath := flag.String("save-db", "", "Optional custom path to SQLite DB to persist scanned signals")
 	jsonOutput := flag.Bool("json", false, "Output actionable signals as JSON")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent strategy signal-generation workers. Defaults to all CPU cores.")
 
 	posArgs := parseArgsWithPositional()
 
@@ -251,16 +253,35 @@ func main() {
 	}
 
 	resultsChan := make(chan stratScanResult, len(selectedStrategies))
-	var wg sync.WaitGroup
 
+	// Bounded worker pool — unbounded one-goroutine-per-strategy here can strain
+	// the machine once there are hundreds of registered strategies (some, like
+	// genetic-momentum, shell out to Python; the dt_* ones each fit a fresh
+	// CloudForest decision tree). See the same fix in cmd/backtest/cmd/scoreboard.
+	workers := *concurrency
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(selectedStrategies) {
+		workers = len(selectedStrategies)
+	}
+	jobs := make(chan strategy.Strategy, len(selectedStrategies))
 	for _, s := range selectedStrategies {
+		jobs <- s
+	}
+	close(jobs)
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
 		wg.Add(1)
-		go func(strat strategy.Strategy) {
+		go func() {
 			defer wg.Done()
-			cfg := buildConfig(strat, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
-			sigs := strat.GenerateSignals(barsBySymbol)
-			resultsChan <- stratScanResult{strat: strat, cfg: cfg, signals: sigs}
-		}(s)
+			for strat := range jobs {
+				cfg := buildConfig(strat, *stopLoss, *profitTarget, *holdWindow, *maxPositions)
+				sigs := strat.GenerateSignals(barsBySymbol)
+				resultsChan <- stratScanResult{strat: strat, cfg: cfg, signals: sigs}
+			}
+		}()
 	}
 
 	wg.Wait()
@@ -385,11 +406,11 @@ func main() {
 	if *jsonOutput {
 		payload := map[string]interface{}{
 			"latest_market_date": latestDate,
-			"previous_date":     previousDate,
-			"symbols_monitored": len(barsBySymbol),
-			"capital":           *capital,
-			"actionable_today":  actionableToday,
-			"recent_setups":     recentSignals,
+			"previous_date":      previousDate,
+			"symbols_monitored":  len(barsBySymbol),
+			"capital":            *capital,
+			"actionable_today":   actionableToday,
+			"recent_setups":      recentSignals,
 		}
 		bytes, err := json.MarshalIndent(payload, "", "  ")
 		if err != nil {

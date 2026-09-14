@@ -19,6 +19,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +65,49 @@ func readSymbols(path string) ([]string, error) {
 	return out, scanner.Err()
 }
 
+// readExistingResults loads a previously-written output CSV (if any) so a rerun
+// can skip re-fitting a tree + re-sweeping TP/SL/hold for symbols that already
+// have a usable result — the same "don't redo finished work by default" as
+// cmd/backtest/cmd/scoreboard, applied here to CloudForest fits instead of
+// full backtests.
+func readExistingResults(path string) map[string]dtResult {
+	out := make(map[string]dtResult)
+	f, err := os.Open(path)
+	if err != nil {
+		return out // no prior run — nothing to skip, that's fine
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "symbol,") {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 10 {
+			continue
+		}
+		tp, e1 := strconv.ParseFloat(parts[1], 64)
+		sl, e2 := strconv.ParseFloat(parts[2], 64)
+		hold, e3 := strconv.Atoi(parts[3])
+		cagr, e4 := strconv.ParseFloat(parts[4], 64)
+		maxDD, e5 := strconv.ParseFloat(parts[5], 64)
+		maxDDDays, e6 := strconv.Atoi(parts[6])
+		trades, e7 := strconv.Atoi(parts[7])
+		winRate, e8 := strconv.ParseFloat(parts[8], 64)
+		score, e9 := strconv.ParseFloat(parts[9], 64)
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || e7 != nil || e8 != nil || e9 != nil {
+			continue
+		}
+		out[strings.ToUpper(parts[0])] = dtResult{
+			Symbol: strings.ToUpper(parts[0]), TP: tp, SL: sl, Hold: hold,
+			CAGR: cagr, MaxDD: maxDD, MaxDDDays: maxDDDays, Trades: trades, WinRate: winRate, Score: score,
+		}
+	}
+	return out
+}
+
 func main() {
 	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
 	symbolsFile := flag.String("symbols-file", "data/etf_universe_6yr.txt", "File with one ETF symbol per line")
@@ -74,11 +118,23 @@ func main() {
 	capital := flag.Float64("capital", 100000.0, "Starting cash ($)")
 	alloc := flag.Float64("alloc", 0.65, "Allocation percentage per position")
 	cashYield := flag.Float64("yield", 0.045, "Idle cash yield (annualized)")
+	force := flag.Bool("force", false, "Refit every symbol even if -out already has a usable result for it")
 	flag.Parse()
 
-	symbols, err := readSymbols(*symbolsFile)
+	allSymbols, err := readSymbols(*symbolsFile)
 	if err != nil {
 		log.Fatalf("Failed to read symbols file %s: %v", *symbolsFile, err)
+	}
+
+	existing := map[string]dtResult{}
+	if !*force {
+		existing = readExistingResults(*outCSV)
+	}
+	var symbols []string
+	for _, s := range allSymbols {
+		if _, ok := existing[s]; !ok {
+			symbols = append(symbols, s)
+		}
 	}
 
 	db, err := storage.OpenSQLite(*dbPath)
@@ -89,8 +145,19 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("=======================================================================================================================")
-	fmt.Printf("🌲 ETF DECISION TREE GENERATOR — fitting %d symbols with %d workers\n", len(symbols), *workers)
+	if *force {
+		fmt.Printf("🌲 ETF DECISION TREE GENERATOR — -force set: refitting all %d symbols with %d workers\n", len(allSymbols), *workers)
+	} else {
+		fmt.Printf("🌲 ETF DECISION TREE GENERATOR — %d/%d symbols already have a usable result and will be skipped; fitting %d with %d workers\n",
+			len(existing), len(allSymbols), len(symbols), *workers)
+	}
 	fmt.Println("=======================================================================================================================")
+
+	if len(symbols) == 0 {
+		fmt.Println("\n✅ Nothing to fit — every symbol already has a usable result. (Use -force to refit everything.)")
+		printAndWriteResults(existing, *outCSV, *topN)
+		return
+	}
 
 	tpGrid := []float64{0.03, 0.05, 0.08, 0.12}
 	slGrid := []float64{0.04, 0.06, 0.08}
@@ -191,14 +258,36 @@ func main() {
 	fmt.Printf("\n⚡ Done in %s: %d symbols fitted a usable tree+config, %d had too few +-5%% extreme days to fit a tree, %d fit a tree but no TP/SL/hold combo cleared %d min trades.\n",
 		time.Since(start).Round(time.Second), fitted, skippedNoTree, skippedNoTrades, *minTrades)
 
-	if len(results) == 0 {
+	// Merge freshly-fitted results with whatever was already valid so the output
+	// CSV (and the strategy registry that reads it) still covers every symbol
+	// ever successfully fitted, not just the ones fitted this run.
+	merged := existing
+	if merged == nil {
+		merged = map[string]dtResult{}
+	}
+	for _, r := range results {
+		merged[r.Symbol] = r
+	}
+
+	if len(merged) == 0 {
 		fmt.Println("No usable decision trees found.")
 		return
 	}
 
+	printAndWriteResults(merged, *outCSV, *topN)
+}
+
+// printAndWriteResults prints the top-N ranked results and writes the full set
+// to outCSV. Shared between the normal fit-then-report path and the
+// nothing-to-fit (everything already existed) early-return path.
+func printAndWriteResults(bySymbol map[string]dtResult, outCSV string, topN int) {
+	results := make([]dtResult, 0, len(bySymbol))
+	for _, r := range bySymbol {
+		results = append(results, r)
+	}
 	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
 
-	n := *topN
+	n := topN
 	if n > len(results) {
 		n = len(results)
 	}
@@ -208,9 +297,9 @@ func main() {
 			i+1, r.Symbol, r.TP*100, r.SL*100, r.Hold, r.CAGR*100, r.MaxDD*100, r.MaxDDDays, r.WinRate*100, r.Trades, r.Score)
 	}
 
-	f, err := os.Create(*outCSV)
+	f, err := os.Create(outCSV)
 	if err != nil {
-		log.Fatalf("Failed to create output CSV %s: %v", *outCSV, err)
+		log.Fatalf("Failed to create output CSV %s: %v", outCSV, err)
 	}
 	defer f.Close()
 	fmt.Fprintln(f, "symbol,tp,sl,hold,cagr,max_dd,max_dd_days,trades,win_rate,score")
@@ -218,5 +307,5 @@ func main() {
 		fmt.Fprintf(f, "%s,%.4f,%.4f,%d,%.4f,%.4f,%d,%d,%.4f,%.6f\n",
 			r.Symbol, r.TP, r.SL, r.Hold, r.CAGR, r.MaxDD, r.MaxDDDays, r.Trades, r.WinRate, r.Score)
 	}
-	fmt.Printf("\n✨ Wrote %d symbol configs to %s\n   Run any of them: go run cmd/backtest/main.go -strategy dt_<symbol>\n", len(results), *outCSV)
+	fmt.Printf("\n✨ Wrote %d symbol configs to %s\n   Run any of them: go run cmd/backtest/main.go -strategy dt_<symbol>\n", len(results), outCSV)
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -84,7 +85,7 @@ func main() {
 	targetTable := flag.String("target-table", "backtest_start", "Target table name in target SQLite DB")
 	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
 	seedDb := flag.String("seed-db", "data/leveraged_backtest.db", "Legacy database to seed from if target DB doesn't exist")
-	concurrency := flag.Int("concurrency", 1, "Number of symbols to fetch concurrently (network-bound; DB writes are serialized internally)")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Number of symbols to fetch concurrently (network-bound; DB writes are serialized internally). Defaults to all CPU cores.")
 	flag.Parse()
 
 	// If default target DB does not exist yet, seed it from existing leveraged_backtest.db if available
