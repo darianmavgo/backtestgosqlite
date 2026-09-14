@@ -30,10 +30,11 @@ const (
 
 func main() {
 	concurrency := flag.Int("concurrency", 8, "Max concurrent workers (bounds memory/IO use with hundreds of strategies)")
+	force := flag.Bool("force", false, "(default mode only) redo every strategy's backtest even if a usable result already exists")
 
 	// Subcommand dispatch:
-	//   scoreboard          -> run every registered strategy's backtest, then compile (original behavior)
-	//   scoreboard compile  -> skip backtests, compile from result DBs already in reports/
+	//   scoreboard          -> skip strategies that already have a usable result, backtest what's missing, then compile
+	//   scoreboard compile  -> skip backtests entirely, compile from result DBs already in reports/
 	//   scoreboard status   -> like compile, but just report whether all compute is done (no table, no save)
 	mode := "run"
 	if len(os.Args) > 1 && (os.Args[1] == "compile" || os.Args[1] == "status") {
@@ -52,13 +53,18 @@ func main() {
 	case "status":
 		runStatus(*concurrency)
 	default:
-		runAll(*concurrency)
+		runAll(*concurrency, *force)
 	}
 }
 
-// runAll executes every registered strategy end-to-end (the original scoreboard
-// behavior) and compiles the results.
-func runAll(concurrency int) {
+// runAll ensures every registered strategy has a usable backtest result. Unlike
+// the old behavior, it does NOT blindly redo everything: it first checks
+// reports/ (the same highest-increment-first, skip-if-compromised validation
+// used by `compile`/`status`) and only actually backtests strategies that are
+// missing a usable result. Pass -force to ignore existing results and redo
+// everything anyway. The final table/scoreboard.db always covers every
+// strategy — freshly run ones plus whatever was already valid.
+func runAll(concurrency int, force bool) {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
 	allStrategies := strategy.List()
@@ -66,60 +72,101 @@ func runAll(concurrency int) {
 		log.Fatalf("No strategies registered.")
 	}
 
-	// 1. Detect and Download missing data for all strategies
-	if err := runner.DetectAndDownloadMissingData(targetDb, tableName, allStrategies, "", true, downloadYears); err != nil {
-		log.Fatalf("Market data resolution error: %v", err)
+	existing := map[string]compiledResult{}
+	if !force {
+		fmt.Println("🔎 Checking reports/ for strategies that already have a usable result...")
+		existing, _, _, _, _ = scanAndValidate(concurrency)
 	}
 
-	// 2. Open market DB
-	db, err := storage.OpenSQLite(targetDb)
-	if err != nil {
-		log.Fatalf("Failed to open market DB: %v", err)
-	}
-	defer db.Close()
-
-	fmt.Printf("\n⚙️ Loading chronological bars from '%s'...\n", tableName)
-	barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, tableName)
-	if err != nil {
-		log.Fatalf("Error loading bars: %v", err)
+	var toRun []strategy.Strategy
+	for _, s := range allStrategies {
+		if _, ok := existing[s.ID()]; !ok {
+			toRun = append(toRun, s)
+		}
 	}
 
-	// 3. Execute all strategies with a bounded worker pool. Unbounded one-goroutine-
-	// per-strategy here OOM-kills the process once there are hundreds of registered
-	// strategies (the full shared bar map plus every in-flight simulator/equity curve
-	// at once) — see the same fix in cmd/backtest.
-	fmt.Printf("   Concurrency: %d workers across %d strategies\n\n", concurrency, len(allStrategies))
-
-	results := make([]runner.RunResult, len(allStrategies))
-	jobs := make(chan int, len(allStrategies))
-	for i := range allStrategies {
-		jobs <- i
+	if force {
+		fmt.Printf("   -force set: redoing all %d strategies regardless of existing results.\n\n", len(allStrategies))
+	} else {
+		fmt.Printf("   %d/%d strategies already have a usable result and will be skipped; %d need backtesting.\n\n",
+			len(allStrategies)-len(toRun), len(allStrategies), len(toRun))
 	}
-	close(jobs)
 
-	var wg sync.WaitGroup
-	for w := 0; w < concurrency; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				s := allStrategies[idx]
-				cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
-				res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
-				results[idx] = res
-				if res.Err != nil {
-					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
-				} else {
-					log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
+	freshResults := make(map[string]runner.RunResult)
+	if len(toRun) > 0 {
+		// 1. Detect and Download missing data for the strategies we're actually running.
+		if err := runner.DetectAndDownloadMissingData(targetDb, tableName, toRun, "", true, downloadYears); err != nil {
+			log.Fatalf("Market data resolution error: %v", err)
+		}
+
+		// 2. Open market DB
+		db, err := storage.OpenSQLite(targetDb)
+		if err != nil {
+			log.Fatalf("Failed to open market DB: %v", err)
+		}
+		defer db.Close()
+
+		fmt.Printf("\n⚙️ Loading chronological bars from '%s'...\n", tableName)
+		barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, tableName)
+		if err != nil {
+			log.Fatalf("Error loading bars: %v", err)
+		}
+
+		// 3. Execute only the missing strategies with a bounded worker pool.
+		// Unbounded one-goroutine-per-strategy here OOM-kills the process once
+		// there are hundreds of registered strategies (the full shared bar map
+		// plus every in-flight simulator/equity curve at once) — see the same
+		// fix in cmd/backtest.
+		fmt.Printf("   Concurrency: %d workers across %d strategies to run\n\n", concurrency, len(toRun))
+
+		resultsSlice := make([]runner.RunResult, len(toRun))
+		jobs := make(chan int, len(toRun))
+		for i := range toRun {
+			jobs <- i
+		}
+		close(jobs)
+
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for w := 0; w < concurrency; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for idx := range jobs {
+					s := toRun[idx]
+					cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
+					res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
+					resultsSlice[idx] = res
+					if res.Err != nil {
+						log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
+					} else {
+						log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
+					}
+					mu.Lock()
+					freshResults[s.ID()] = res
+					mu.Unlock()
 				}
-			}
-		}()
+			}()
+		}
+		wg.Wait()
+	} else {
+		fmt.Println("✅ Nothing to backtest — every registered strategy already has a usable result. (Use -force to redo everything.)")
 	}
-	wg.Wait()
 
-	// 4. Print and capture scoreboard
-	// The runner.PrintComparisonTable will sort the slice internally, so when we save to SQLite
-	// it will be naturally ordered by CAGR.
+	// 4. Merge freshly-run results with whatever was already valid so the final
+	// table/scoreboard.db covers every registered strategy, not just the ones we
+	// just ran.
+	results := make([]runner.RunResult, 0, len(allStrategies))
+	for _, s := range allStrategies {
+		if res, ok := freshResults[s.ID()]; ok {
+			results = append(results, res)
+			continue
+		}
+		if c, ok := existing[s.ID()]; ok {
+			results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+		}
+	}
+
 	runner.PrintComparisonTable(results)
 	saveScoreboardToSQLite(results, filepath.Join(outDir, "scoreboard.db"))
 }
