@@ -69,6 +69,11 @@ func main() {
 	htmlOut := flag.String("html", "reports/annual_comparison_standalone_vs_shared.html", "Path to export HTML comparison report")
 	flag.Parse()
 
+	// Ensure HTML report lands in reports/ directory
+	if *htmlOut != "" && !filepath.IsAbs(*htmlOut) && !strings.HasPrefix(*htmlOut, "reports/") && !strings.HasPrefix(*htmlOut, "reports"+string(filepath.Separator)) {
+		*htmlOut = filepath.Join("reports", *htmlOut)
+	}
+
 	fmt.Println("\n========================================================================================================================")
 	fmt.Println("⚖️ ANNUAL PERFORMANCE COMPARISON: VOO-TECL COMBO vs. 2-STRATEGY SHARED ACCOUNT")
 	fmt.Printf("   Shared DB:     %s\n", *sharedDBPath)
@@ -246,10 +251,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to generate HTML report: %v", err)
 		}
-		// Also write to root directory for easy opening
-		rootPath := filepath.Base(*htmlOut)
-		_ = generateHTMLReport(rootPath, rows, sharedCurve, standaloneCurve, preempted)
-		fmt.Printf("✨ Interactive HTML Report saved to: %s (and ./%s)\n\n", *htmlOut, rootPath)
+		fmt.Printf("✨ Interactive HTML Report saved to: %s\n\n", *htmlOut)
 	}
 }
 

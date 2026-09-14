@@ -151,6 +151,9 @@ func main() {
 	reportFile := fmt.Sprintf("reports/%s_gridsearch.html", cleanID)
 	if *htmlOutput != "" {
 		reportFile = *htmlOutput
+		if !filepath.IsAbs(reportFile) && !strings.HasPrefix(reportFile, "reports/") && !strings.HasPrefix(reportFile, "reports"+string(filepath.Separator)) {
+			reportFile = filepath.Join("reports", reportFile)
+		}
 	}
 
 	db, err := storage.OpenSQLite(*dbPath)
@@ -239,6 +242,11 @@ func main() {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
+	var baseSignals []models.Signal
+	if paramSpace.Direction == "tree_bounce" {
+		baseSignals = strat.GenerateSignals(map[string][]models.Bar{paramSpace.SignalSymbol: signalBars})
+	}
+
 	// 16 parallel worker goroutines
 	for w := 0; w < 16; w++ {
 		wg.Add(1)
@@ -259,7 +267,28 @@ func main() {
 					CashYieldAnnual: paramSpace.CashYield,
 				}
 
-				sigs := buildSignals(signalBars, t.tradeBars, t.sigDays, paramSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym)
+				var sigs []models.Signal
+				if paramSpace.Direction == "tree_bounce" {
+					sigs = make([]models.Signal, len(baseSignals))
+					for idx, bs := range baseSignals {
+						sCopy := bs
+						sCopy.HoldDaysOverride = t.hold
+						if t.tp > 0 {
+							sCopy.TakeProfit = bs.Close * (1.0 + t.tp)
+						} else {
+							sCopy.TakeProfit = 0
+						}
+						if t.sl > 0 {
+							sCopy.StopLoss = bs.Close * (1.0 - t.sl)
+						} else {
+							sCopy.StopLoss = 0
+						}
+						sigs[idx] = sCopy
+					}
+				} else {
+					sigs = buildSignals(signalBars, t.tradeBars, t.sigDays, paramSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym)
+				}
+
 				if len(sigs) < *minTrades {
 					continue
 				}
@@ -271,7 +300,13 @@ func main() {
 					continue
 				}
 
-				label := fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
+				label := ""
+				if paramSpace.Direction == "tree_bounce" {
+					label = fmt.Sprintf("%s/Hold-%dd/TP+%.0f%%/SL-%.0f%%", t.sym, t.hold, t.tp*100, t.sl*100)
+				} else {
+					label = fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
+				}
+
 				res := gridResult{
 					Label:      label,
 					Report:     report,
@@ -303,11 +338,18 @@ func main() {
 					for _, tp := range paramSpace.TakeProfits {
 						for _, sl := range paramSpace.StopLosses {
 							for _, alloc := range paramSpace.Allocations {
-								isBase := (sigDays == paramSpace.Baseline.SignalDays &&
-									hold == paramSpace.Baseline.HoldDays &&
-									math.Abs(tp-paramSpace.Baseline.TakeProfit) < 1e-4 &&
-									math.Abs(sl-paramSpace.Baseline.StopLoss) < 1e-4 &&
-									regime == paramSpace.Baseline.Regime)
+								isBase := false
+								if paramSpace.Direction == "tree_bounce" {
+									isBase = (hold == paramSpace.Baseline.HoldDays &&
+										math.Abs(tp-paramSpace.Baseline.TakeProfit) < 1e-4 &&
+										math.Abs(sl-paramSpace.Baseline.StopLoss) < 1e-4)
+								} else {
+									isBase = (sigDays == paramSpace.Baseline.SignalDays &&
+										hold == paramSpace.Baseline.HoldDays &&
+										math.Abs(tp-paramSpace.Baseline.TakeProfit) < 1e-4 &&
+										math.Abs(sl-paramSpace.Baseline.StopLoss) < 1e-4 &&
+										regime == paramSpace.Baseline.Regime)
+								}
 
 								tasks <- task{
 									sym:        sym,
@@ -410,14 +452,7 @@ func main() {
 		if err := charting.GenerateHTML(reportFile, view); err != nil {
 			log.Printf("Warning: Failed to save HTML report: %v", err)
 		} else {
-			fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n", reportFile)
-			baseName := filepath.Base(reportFile)
-			if filepath.Dir(reportFile) != "." && baseName != "" {
-				_ = charting.GenerateHTML(baseName, view)
-				fmt.Printf("✨ Root copy also generated: %s\n\n", baseName)
-			} else {
-				fmt.Println()
-			}
+			fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n\n", reportFile)
 		}
 	}
 }

@@ -51,6 +51,7 @@ config/config.local.json
 # Generated Reports & HTML Dashboards
 reports/*.html
 reports/
+/*.html
 
 # Logs & scratch
 logs/

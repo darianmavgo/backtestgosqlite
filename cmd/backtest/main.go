@@ -40,6 +40,11 @@ func main() {
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
 	flag.Parse()
 
+	// Ensure HTML reports land in reports/ directory
+	if *htmlOutput != "" && !filepath.IsAbs(*htmlOutput) && !strings.HasPrefix(*htmlOutput, "reports/") && !strings.HasPrefix(*htmlOutput, "reports"+string(filepath.Separator)) {
+		*htmlOutput = filepath.Join("reports", *htmlOutput)
+	}
+
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
 	strategy.AutoRegisterSQLStrategies(".", *targetDb)
 
@@ -222,15 +227,7 @@ func main() {
 			if err := analytics.GenerateComparisonHTML(*htmlOutput, htmlData); err != nil {
 				log.Printf("Warning: Failed to generate HTML report %s: %v", *htmlOutput, err)
 			} else {
-				fmt.Printf("\n✨ Interactive HTML Report generated: %s\n", *htmlOutput)
-				// Also write to root directory if htmlOutput was in a subdirectory
-				baseName := filepath.Base(*htmlOutput)
-				if filepath.Dir(*htmlOutput) != "." && baseName != "" {
-					_ = analytics.GenerateComparisonHTML(baseName, htmlData)
-					fmt.Printf("✨ Root copy also generated: %s\n\n", baseName)
-				} else {
-					fmt.Println()
-				}
+				fmt.Printf("\n✨ Interactive HTML Report generated: %s\n\n", *htmlOutput)
 			}
 		}
 		return
@@ -419,14 +416,7 @@ func main() {
 		if err != nil {
 			log.Printf("Warning: Failed to generate HTML report %s: %v", *htmlOutput, err)
 		} else {
-			fmt.Printf("\n✨ Interactive HTML Report generated: %s\n", *htmlOutput)
-			baseName := filepath.Base(*htmlOutput)
-			if filepath.Dir(*htmlOutput) != "." && baseName != "" {
-				_ = analytics.GenerateComparisonHTML(baseName, htmlData)
-				fmt.Printf("✨ Root copy also generated: %s\n\n", baseName)
-			} else {
-				fmt.Println()
-			}
+			fmt.Printf("\n✨ Interactive HTML Report generated: %s\n\n", *htmlOutput)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download livescan ui example-csv list
+.PHONY: all build clean test tidy backtest download livescan ui study example-csv list
 
 # Go Parameters
 GOCMD=go
@@ -23,6 +23,8 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/livescan ./cmd/livescan
 	@echo "Building cmd/ui..."
 	$(GOBUILD) -o $(BIN_DIR)/ui ./cmd/ui
+	@echo "Building cmd/study..."
+	$(GOBUILD) -o $(BIN_DIR)/study ./cmd/study
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
 
 tidy:
@@ -55,6 +57,10 @@ download: build
 ui: build
 	@echo "Launching UI server on http://localhost:8080..."
 	./$(BIN_DIR)/ui -port 8080 -master data/wc_master_backtest.db -settings data/settings.db
+
+study: build
+	@echo "Running Daily 5% Gain Frequency & Leveraged ETF Study..."
+	./$(BIN_DIR)/study -study gain_5pct_frequency
 
 server: build
 	@echo "Launching live trading GAE server on http://localhost:8080..."

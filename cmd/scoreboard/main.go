@@ -95,6 +95,7 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 		total_return REAL,
 		sharpe REAL,
 		max_drawdown REAL,
+		max_drawdown_days INTEGER,
 		win_rate REAL,
 		trades INTEGER,
 		run_date TEXT
@@ -110,8 +111,8 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO scoreboard (strategy_id, name, cagr, total_return, sharpe, max_drawdown, win_rate, trades, run_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO scoreboard (strategy_id, name, cagr, total_return, sharpe, max_drawdown, max_drawdown_days, win_rate, trades, run_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return
@@ -133,6 +134,7 @@ func saveScoreboardToSQLite(results []runner.RunResult, dbPath string) {
 			r.Report.TotalReturnPct,
 			r.Report.SharpeRatio,
 			r.Report.MaxDrawdownPct,
+			r.Report.MaxDrawdownDuration,
 			r.Report.WinRate,
 			r.Report.TotalTrades,
 			runDate,

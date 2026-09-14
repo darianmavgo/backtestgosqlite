@@ -191,7 +191,7 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 	fmt.Printf("========================================================================================================================\n")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Role", "Strategy ID", "Total Trades", "Wins / Losses", "Win Rate", "Preempted", "Net Realized PnL", "CAGR", "Sharpe"})
+	table.SetHeader([]string{"Role", "Strategy ID", "Total Trades", "Wins / Losses", "Win Rate", "Preempted", "Net Realized PnL", "CAGR", "Sharpe", "Max DD", "DD Duration"})
 	table.SetBorder(true)
 	table.SetAutoWrapText(false)
 
@@ -208,6 +208,8 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 		fmt.Sprintf("$%.2f", primRep.NetProfit),
 		fmt.Sprintf("%.2f%%", primRep.CAGR*100),
 		fmt.Sprintf("%.2f", primRep.SharpeRatio),
+		fmt.Sprintf("%.2f%%", primRep.MaxDrawdownPct*100),
+		fmt.Sprintf("%dd", primRep.MaxDrawdownDuration),
 	})
 
 	// Secondaries
@@ -232,6 +234,8 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 			fmt.Sprintf("$%.2f", secRep.NetProfit),
 			fmt.Sprintf("%.2f%%", secRep.CAGR*100),
 			fmt.Sprintf("%.2f", secRep.SharpeRatio),
+			fmt.Sprintf("%.2f%%", secRep.MaxDrawdownPct*100),
+			fmt.Sprintf("%dd", secRep.MaxDrawdownDuration),
 		})
 	}
 

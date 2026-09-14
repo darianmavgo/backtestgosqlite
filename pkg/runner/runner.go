@@ -77,7 +77,12 @@ func PrintPerformanceTearSheet(strategyName string, report models.PerformanceRep
 	table.Append([]string{
 		"🔴 MAX DRAWDOWN DATES",
 		fmt.Sprintf("%s ➔ %s", report.MaxDrawdownPeakDate, report.MaxDrawdownTroughDate),
-		fmt.Sprintf("Longest drawdown duration: %d days", report.MaxDrawdownDuration),
+		fmt.Sprintf("Peak equity to trough equity dates"),
+	})
+	table.Append([]string{
+		"🔴 MAX DRAWDOWN DURATION",
+		fmt.Sprintf("%d days", report.MaxDrawdownDuration),
+		fmt.Sprintf("Longest underwater period without new ATH"),
 	})
 
 	// Trade-Level Performance
@@ -172,13 +177,13 @@ func PrintComparisonTable(results []RunResult) {
 	fmt.Printf("========================================================================================================================\n")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Strategy ID", "Name", "Total Return", "CAGR", "Sharpe", "Max Drawdown", "Win Rate", "Trades", "SQLite Results File"})
+	table.SetHeader([]string{"Strategy ID", "Name", "Total Return", "CAGR", "Sharpe", "Max DD %", "🔴 DD Duration", "Win Rate", "Trades", "SQLite Results File"})
 	table.SetBorder(true)
 	table.SetAutoWrapText(false)
 
 	for _, r := range results {
 		if r.Err != nil {
-			table.Append([]string{r.Strat.ID(), r.Strat.Name(), "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "0", "N/A"})
+			table.Append([]string{r.Strat.ID(), r.Strat.Name(), "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "0", "N/A"})
 			continue
 		}
 		table.Append([]string{
@@ -188,6 +193,7 @@ func PrintComparisonTable(results []RunResult) {
 			fmt.Sprintf("%.2f%%", r.Report.CAGR*100),
 			fmt.Sprintf("%.2f", r.Report.SharpeRatio),
 			fmt.Sprintf("%.2f%%", r.Report.MaxDrawdownPct*100),
+			fmt.Sprintf("%d days", r.Report.MaxDrawdownDuration),
 			fmt.Sprintf("%.2f%%", r.Report.WinRate*100),
 			fmt.Sprintf("%d", r.Report.TotalTrades),
 			r.DbPath,

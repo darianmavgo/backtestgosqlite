@@ -8,11 +8,14 @@ require (
 )
 
 require (
-	github.com/go-echarts/go-echarts/v2 v2.7.2 // indirect
 	github.com/lib/pq v1.10.2 // indirect
 	github.com/mattn/go-runewidth v0.0.2 // indirect
+	github.com/ryanbressler/CloudForest v0.0.0-20220205065429-8f151e494fd2 // indirect
 )
 
-require github.com/mattn/go-sqlite3 v1.14.52
+require (
+	github.com/go-echarts/go-echarts/v2 v2.7.2
+	github.com/mattn/go-sqlite3 v1.14.52
+)
 
 replace github.com/darianmavgo/schwaber => ../schwaber

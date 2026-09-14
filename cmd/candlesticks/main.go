@@ -127,6 +127,7 @@ func main() {
 	}
 
 	outPath := filepath.Join("reports", "candlesticks_go.html")
+	_ = os.MkdirAll(filepath.Dir(outPath), 0755)
 	f, err := os.Create(outPath)
 	if err != nil {
 		log.Fatalf("Failed to create output file: %v", err)

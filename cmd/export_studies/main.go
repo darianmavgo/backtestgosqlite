@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -287,20 +285,10 @@ func main() {
 	fmt.Println("✅ Populated all_weather_combo_trades & summary")
 
 	// ------------------------------------------------------------------
-	// 6. Copy HTML reports adjacent to SQLite databases.
+	// 6. Master study catalog in reports/
 	// ------------------------------------------------------------------
-	reportFiles, _ := filepath.Glob("reports/*.html")
-	for _, rFile := range reportFiles {
-		baseName := filepath.Base(rFile)
-		dest := filepath.Join("data", baseName)
-		copyFile(rFile, dest)
-	}
-	fmt.Printf("✅ Copied %d HTML study reports into data/\n", len(reportFiles))
-
-	// 7. Master catalog.
-	generateMasterCatalog("data/index.html")
 	generateMasterCatalog("reports/index.html")
-	fmt.Println("✅ Generated Master Study Catalog: data/index.html & reports/index.html")
+	fmt.Println("✅ Generated Master Study Catalog: reports/index.html")
 }
 
 // buildSignals generates []models.Signal for a single dip/rally leg.
@@ -384,20 +372,6 @@ func sortedDatesFrom(barSlices ...[]models.Bar) []string {
 	}
 	sort.Strings(dates)
 	return dates
-}
-
-func copyFile(src, dst string) {
-	in, err := os.Open(src)
-	if err != nil {
-		return
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return
-	}
-	defer out.Close()
-	_, _ = io.Copy(out, in)
 }
 
 func generateMasterCatalog(outputPath string) {
