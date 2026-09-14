@@ -31,13 +31,13 @@ const (
 func main() {
 	concurrency := flag.Int("concurrency", 8, "Max concurrent workers (bounds memory/IO use with hundreds of strategies)")
 
-	// Subcommand dispatch: `scoreboard compile` skips running backtests and just
-	// compiles the scoreboard from the per-strategy result DBs already in reports/
-	// (e.g. from a prior `cmd/backtest -strategy all` run). Any other/no first
-	// argument keeps the original "run everything" behavior.
-	compileMode := false
-	if len(os.Args) > 1 && os.Args[1] == "compile" {
-		compileMode = true
+	// Subcommand dispatch:
+	//   scoreboard          -> run every registered strategy's backtest, then compile (original behavior)
+	//   scoreboard compile  -> skip backtests, compile from result DBs already in reports/
+	//   scoreboard status   -> like compile, but just report whether all compute is done (no table, no save)
+	mode := "run"
+	if len(os.Args) > 1 && (os.Args[1] == "compile" || os.Args[1] == "status") {
+		mode = os.Args[1]
 		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
 	}
 	flag.Parse()
@@ -46,11 +46,14 @@ func main() {
 		log.Fatalf("Failed to create out dir: %v", err)
 	}
 
-	if compileMode {
+	switch mode {
+	case "compile":
 		runCompile(*concurrency)
-		return
+	case "status":
+		runStatus(*concurrency)
+	default:
+		runAll(*concurrency)
 	}
-	runAll(*concurrency)
 }
 
 // runAll executes every registered strategy end-to-end (the original scoreboard
@@ -145,21 +148,21 @@ type candidate struct {
 	increment int
 }
 
-// runCompile assumes every strategy has already been backtested (e.g. via
-// `cmd/backtest -strategy all`) and just reads each per-strategy SQLite DB's
-// performance_summary table already sitting in reports/, instead of re-running
-// anything. Much cheaper: no bar loading, no simulation, no tree fitting.
-//
-// When a strategy has been backtested more than once (dt_hibl.db, dt_hibl_2.db, ...),
-// it picks the highest-increment run first, verifies that database isn't
-// compromised (corrupt SQLite file, failed integrity check, missing/unreadable
-// performance_summary), and falls back to the next-lower increment if it is —
-// repeating down to increment 1 until a healthy database is found.
-func runCompile(concurrency int) {
-	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
+// compiledResult is the winning (highest-increment, non-compromised) result for
+// one strategy after validation.
+type compiledResult struct {
+	StrategyID string
+	Report     models.PerformanceReport
+	DbPath     string
+	Increment  int
+}
 
-	strategy.AutoRegisterSQLStrategies(".", targetDb) // so -sql strategy names/descriptions resolve too
-
+// scanAndValidate globs every result DB in reports/, groups them by strategy,
+// and for each strategy tries its run increments highest-first, skipping any
+// that are compromised (see validatePerformanceSummary), until it finds a usable
+// one or runs out. This is the shared work behind both `scoreboard compile`
+// (prints the full table) and `scoreboard status` (just reports coverage).
+func scanAndValidate(concurrency int) (byStrategy map[string]compiledResult, totalFiles, totalGroups, usedFallback, allCompromised int) {
 	files, err := filepath.Glob(filepath.Join(outDir, "*.db"))
 	if err != nil {
 		log.Fatalf("Failed to list %s/*.db: %v", outDir, err)
@@ -175,8 +178,10 @@ func runCompile(concurrency int) {
 		base, inc := parseDBIncrement(f)
 		groups[base] = append(groups[base], candidate{path: f, increment: inc})
 	}
-	if len(groups) == 0 {
-		log.Fatalf("No result databases found in %s/*.db. Run backtests first (e.g. cmd/backtest -strategy all).", outDir)
+	totalFiles = len(files)
+	totalGroups = len(groups)
+	if totalGroups == 0 {
+		return map[string]compiledResult{}, totalFiles, totalGroups, 0, 0
 	}
 	for base := range groups {
 		sort.Slice(groups[base], func(i, j int) bool {
@@ -185,18 +190,10 @@ func runCompile(concurrency int) {
 	}
 
 	fmt.Printf("   Found %d result databases across %d strategies. Validating with %d workers (highest run increment first, falling back on corruption)...\n\n",
-		len(files), len(groups), concurrency)
-
-	type compiled struct {
-		StrategyID string
-		Report     models.PerformanceReport
-		DbPath     string
-		Increment  int
-	}
+		totalFiles, totalGroups, concurrency)
 
 	var mu sync.Mutex
-	byStrategy := make(map[string]compiled)
-	var usedFallback, allCompromised int
+	byStrategy = make(map[string]compiledResult)
 
 	bases := make([]string, 0, len(groups))
 	for base := range groups {
@@ -242,7 +239,7 @@ func runCompile(concurrency int) {
 					usedFallback++
 				}
 				for _, row := range rows {
-					byStrategy[row.StrategyID] = compiled{
+					byStrategy[row.StrategyID] = compiledResult{
 						StrategyID: row.StrategyID,
 						Report:     row.Report,
 						DbPath:     chosen.path,
@@ -255,8 +252,53 @@ func runCompile(concurrency int) {
 	}
 	wg.Wait()
 
+	return byStrategy, totalFiles, totalGroups, usedFallback, allCompromised
+}
+
+// missingStrategies returns the IDs of every currently-registered strategy that
+// has no usable (non-compromised) entry in byStrategy — i.e. it has genuinely
+// never been backtested, or every run it has was corrupted/incomplete.
+func missingStrategies(byStrategy map[string]compiledResult) []string {
+	var missing []string
+	for _, s := range strategy.List() {
+		if _, ok := byStrategy[s.ID()]; !ok {
+			missing = append(missing, s.ID())
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// runCompile assumes every strategy has already been backtested (e.g. via
+// `cmd/backtest -strategy all`) and just reads each per-strategy SQLite DB's
+// performance_summary table already sitting in reports/, instead of re-running
+// anything. Much cheaper: no bar loading, no simulation, no tree fitting.
+//
+// When a strategy has been backtested more than once (dt_hibl.db, dt_hibl_2.db, ...),
+// it picks the highest-increment run first, verifies that database isn't
+// compromised (corrupt SQLite file, failed integrity check, missing/unreadable
+// performance_summary), and falls back to the next-lower increment if it is —
+// repeating down to increment 1 until a healthy database is found.
+func runCompile(concurrency int) {
+	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
+
+	strategy.AutoRegisterSQLStrategies(".", targetDb) // so -sql strategy names/descriptions resolve too
+
+	byStrategy, _, totalGroups, usedFallback, allCompromised := scanAndValidate(concurrency)
+	if totalGroups == 0 {
+		log.Fatalf("No result databases found in %s/*.db. Run backtests first (e.g. cmd/backtest -strategy all).", outDir)
+	}
+
 	fmt.Printf("⚡ %d strategies compiled (%d fell back to a lower run increment after finding corruption, %d had every increment compromised and were skipped).\n",
 		len(byStrategy), usedFallback, allCompromised)
+
+	if missing := missingStrategies(byStrategy); len(missing) > 0 {
+		fmt.Printf("⚠️  %d currently-registered strategies have NO usable result at all (never backtested, or every run compromised) — compute is NOT fully done:\n",
+			len(missing))
+		printStrategyList(missing)
+	} else {
+		fmt.Println("✅ Every currently-registered strategy has a usable result. Compute is fully done.")
+	}
 
 	if len(byStrategy) == 0 {
 		log.Fatalf("No usable performance_summary rows found.")
@@ -273,6 +315,50 @@ func runCompile(concurrency int) {
 
 	runner.PrintComparisonTable(results)
 	saveScoreboardToSQLite(results, filepath.Join(outDir, "scoreboard.db"))
+}
+
+// runStatus answers "is all the necessary compute already done?" without
+// printing the full comparison table or touching scoreboard.db — it just
+// validates every existing result DB (same as compile) and reports which
+// currently-registered strategies are covered vs. missing/compromised.
+func runStatus(concurrency int) {
+	fmt.Println("🔎 SCOREBOARD STATUS — checking whether every registered strategy has a usable backtest result")
+
+	strategy.AutoRegisterSQLStrategies(".", targetDb)
+
+	total := len(strategy.List())
+	byStrategy, _, totalGroups, usedFallback, allCompromised := scanAndValidate(concurrency)
+
+	fmt.Printf("\n📋 %d strategies currently registered.\n", total)
+	fmt.Printf("   %d result-DB groups found in %s/, %d validated successfully (%d needed a fallback to an older run increment).\n",
+		totalGroups, outDir, len(byStrategy), usedFallback)
+	if allCompromised > 0 {
+		fmt.Printf("   %d strategies have result files but every increment is compromised.\n", allCompromised)
+	}
+
+	missing := missingStrategies(byStrategy)
+	if len(missing) == 0 {
+		fmt.Println("\n✅ All necessary compute is done — every registered strategy has a usable result. Safe to run `scoreboard compile`.")
+		return
+	}
+
+	fmt.Printf("\n❌ Compute is NOT done — %d of %d registered strategies have no usable result:\n", len(missing), total)
+	printStrategyList(missing)
+	fmt.Printf("\nRun backtests for these (e.g. `go run cmd/backtest/main.go -strategy %s` or `-strategy all`) before compiling.\n",
+		strings.Join(missing[:min(3, len(missing))], ","))
+}
+
+// printStrategyList prints IDs one per line, capped so a status/compile run
+// against hundreds of missing strategies doesn't flood the terminal.
+func printStrategyList(ids []string) {
+	const maxShown = 25
+	for i, id := range ids {
+		if i >= maxShown {
+			fmt.Printf("   ... and %d more\n", len(ids)-maxShown)
+			break
+		}
+		fmt.Printf("   - %s\n", id)
+	}
 }
 
 // fallbackNote describes what happens next when a candidate fails validation.
