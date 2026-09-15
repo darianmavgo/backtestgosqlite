@@ -13,8 +13,8 @@ SELECT
     1 AS entry,
     'LONG' AS direction,
     'All Regimes' AS regime,
-    12 AS hold_days_override,
-    close * 1.08 AS take_profit,
-    close * 0.98 AS stop_loss
+    __HOLD_DAYS__ AS hold_days_override,
+    close * __TAKE_PROFIT_MULT__ AS take_profit,
+    close * __STOP_LOSS_MULT__ AS stop_loss
 FROM gld_streaks_slice
 WHERE down_streak >= __DECLINE_DAYS__;

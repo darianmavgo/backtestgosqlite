@@ -63,10 +63,21 @@ type StrategyConfig struct {
 	// up-closes) required in the signal symbol before a decline/rally-streak
 	// strategy enters. Only meaningful for strategies whose entry is defined by
 	// a consecutive-day streak (e.g. gld-decline, voo-tecl-combo,
-	// voo-tecl-spxu-combo, millwharf); substituted into their SQL pipeline via
-	// the __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted for
+	// voo-tecl-spxu-combo); substituted into their SQL pipeline via the
+	// __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted for
 	// every other strategy.
 	DeclineDays int `json:"decline_days,omitempty"`
+
+	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow mirror
+	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg
+	// (e.g. voo-tecl-combo's/voo-tecl-spxu-combo's SPXU short), since a single
+	// StrategyConfig can't otherwise represent two different exit rules for
+	// one strategy's two legs. Substituted via __SHORT_TAKE_PROFIT_MULT__ /
+	// __SHORT_STOP_LOSS_MULT__ / __SHORT_HOLD_DAYS__. Zero/omitted for
+	// single-leg strategies.
+	ShortTakeProfitPct float64 `json:"short_take_profit_pct,omitempty"`
+	ShortStopLossPct   float64 `json:"short_stop_loss_pct,omitempty"`
+	ShortHoldingWindow int     `json:"short_holding_window,omitempty"`
 
 	// CashYieldAnnual is the annualized T-bill / money-market yield accrued on idle cash
 	// each trading day the portfolio holds no open positions. Set 0.045 for 4.5% APY.

@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -29,6 +30,24 @@ func resolveCombinedID(db *sqlx.DB) string {
 		return id
 	}
 	return "SHARED_ACCOUNT"
+}
+
+// initialCapitalOf reads a run's actual starting capital from its
+// performance_summary table — the same column cmd/audit_shared already
+// trusts for this. Standalone and shared-account runs are meant to be
+// compared on a level footing, but that only holds if we normalize every
+// return/CAGR by each run's own actual starting capital rather than
+// assuming both used the default $100,000; a run backtested with a
+// different -capital would otherwise silently get a wrong (and unfair)
+// comparison. Falls back to $100,000 only if the column is missing (e.g. an
+// older result DB predating this column).
+func initialCapitalOf(db *sqlx.DB, table string) float64 {
+	var capital float64
+	if err := db.Get(&capital, fmt.Sprintf("SELECT initial_capital FROM %s LIMIT 1", table)); err != nil || capital <= 0 {
+		log.Printf("Warning: could not read initial_capital from %s (%v) — defaulting to $100,000", table, err)
+		return 100000.0
+	}
+	return capital
 }
 
 type AnnualComparisonRow struct {
@@ -231,6 +250,15 @@ func main() {
 	combinedID := resolveCombinedID(db)
 	query = strings.ReplaceAll(query, "'SHARED_ACCOUNT'", "'"+combinedID+"'")
 
+	// Substitute each run's actual starting capital in place of the
+	// hardcoded $100,000 fallback (see initialCapitalOf) so year-1 return/
+	// CAGR stays correct even when a run wasn't backtested with -capital
+	// 100000.
+	sharedInitialCapital := initialCapitalOf(db, "performance_summary")
+	standaloneInitialCapital := initialCapitalOf(db, "standalone.performance_summary")
+	query = strings.ReplaceAll(query, "COALESCE(e_start.total_equity, 100000.0)", "COALESCE(e_start.total_equity, "+strconv.FormatFloat(sharedInitialCapital, 'f', 2, 64)+")")
+	query = strings.ReplaceAll(query, "COALESCE(s_start.total_equity, 100000.0)", "COALESCE(s_start.total_equity, "+strconv.FormatFloat(standaloneInitialCapital, 'f', 2, 64)+")")
+
 	var rows []AnnualComparisonRow
 	if err := db.Select(&rows, query); err != nil {
 		log.Fatalf("Failed to execute comparison query: %v", err)
@@ -267,7 +295,7 @@ func main() {
 
 	// 5. Generate publication-grade HTML report
 	if *htmlOut != "" {
-		err := generateHTMLReport(*htmlOut, rows, sharedCurve, standaloneCurve, preempted)
+		err := generateHTMLReport(*htmlOut, rows, sharedCurve, standaloneCurve, preempted, standaloneInitialCapital, sharedInitialCapital)
 		if err != nil {
 			log.Fatalf("Failed to generate HTML report: %v", err)
 		}
@@ -309,23 +337,40 @@ func generateHTMLReport(
 	rows []AnnualComparisonRow,
 	sharedCurve, standaloneCurve []DailyPoint,
 	preempted []PreemptedTrade,
+	standaloneInitialCapital, sharedInitialCapital float64,
 ) error {
 	rowsJSON, _ := json.Marshal(rows)
 	sharedCurveJSON, _ := json.Marshal(sharedCurve)
 	standaloneCurveJSON, _ := json.Marshal(standaloneCurve)
 	preemptedJSON, _ := json.Marshal(preempted)
 
-	// Compute overall stats
+	// Compute overall stats. Normalized by each run's own actual starting
+	// capital (not a hardcoded $100,000) and the actual elapsed window (not
+	// a hardcoded 5 years) — see initialCapitalOf for why this matters for a
+	// fair standalone-vs-shared comparison.
 	finalStand := 0.0
 	finalShared := 0.0
+	totalTradingDays := 0
+	elapsedCalendarDays := 0.0
 	if len(rows) > 0 {
 		finalStand = rows[len(rows)-1].StandaloneEndEq
 		finalShared = rows[len(rows)-1].SharedEndEq
+		for _, r := range rows {
+			totalTradingDays += r.TradingDays
+			elapsedCalendarDays += r.CalendarDays
+		}
 	}
-	totalStandRet := (finalStand - 100000.0) / 1000.0
-	totalSharedRet := (finalShared - 100000.0) / 1000.0
-	standCAGR := (math.Pow(finalStand/100000.0, 1.0/5.0) - 1.0) * 100.0
-	sharedCAGR := (math.Pow(finalShared/100000.0, 1.0/5.0) - 1.0) * 100.0
+	elapsedYears := elapsedCalendarDays / 365.25
+	if elapsedYears <= 0 {
+		elapsedYears = 1
+	}
+
+	totalStandRet := (finalStand - standaloneInitialCapital) / standaloneInitialCapital * 100.0
+	totalSharedRet := (finalShared - sharedInitialCapital) / sharedInitialCapital * 100.0
+	standCAGR := (math.Pow(finalStand/standaloneInitialCapital, 1.0/elapsedYears) - 1.0) * 100.0
+	sharedCAGR := (math.Pow(finalShared/sharedInitialCapital, 1.0/elapsedYears) - 1.0) * 100.0
+
+	windowLabel := fmt.Sprintf("%.1f-Year", elapsedYears)
 
 	content := htmlTemplate
 	content = strings.ReplaceAll(content, "${FINAL_STANDALONE}", fmt.Sprintf("%.2f", finalStand))
@@ -335,6 +380,8 @@ func generateHTMLReport(
 	content = strings.ReplaceAll(content, "${TOTAL_RET_SHARED}", fmt.Sprintf("%.1f", totalSharedRet))
 	content = strings.ReplaceAll(content, "${CAGR_SHARED}", fmt.Sprintf("%.2f", sharedCAGR))
 	content = strings.ReplaceAll(content, "${PREEMPTED_COUNT}", fmt.Sprintf("%d", len(preempted)))
+	content = strings.ReplaceAll(content, "${WINDOW_LABEL}", windowLabel)
+	content = strings.ReplaceAll(content, "${TOTAL_TRADING_DAYS}", fmt.Sprintf("%d", totalTradingDays))
 	content = strings.ReplaceAll(content, "${ROWS_JSON}", string(rowsJSON))
 	content = strings.ReplaceAll(content, "${SHARED_POINTS_JSON}", string(sharedCurveJSON))
 	content = strings.ReplaceAll(content, "${STANDALONE_POINTS_JSON}", string(standaloneCurveJSON))

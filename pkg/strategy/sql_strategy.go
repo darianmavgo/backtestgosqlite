@@ -16,11 +16,62 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// declineDaysPlaceholder is substituted with config.DeclineDays in any
-// pipeline SQL file that needs its consecutive decline/rally-day window to be
-// a real, tunable parameter instead of a hardcoded literal (e.g.
-// sql/strategies/gld_decline, voo_tecl_combo, voo_tecl_spxu_combo, millwharf).
-const declineDaysPlaceholder = "__DECLINE_DAYS__"
+// Placeholders substituted with the strategy's own StrategyConfig values in
+// any pipeline SQL file, so a strategy's take-profit/stop-loss/hold-days
+// (and, for two-leg combos, its short-leg equivalents) are real tunable
+// parameters instead of hardcoded literals baked into the .sql file — the
+// same problem __DECLINE_DAYS__ solves for the consecutive decline/rally-day
+// window (e.g. sql/strategies/gld_decline, voo_tecl_combo, voo_tecl_spxu_combo).
+const (
+	declineDaysPlaceholder         = "__DECLINE_DAYS__"
+	takeProfitMultPlaceholder      = "__TAKE_PROFIT_MULT__"
+	stopLossMultPlaceholder        = "__STOP_LOSS_MULT__"
+	holdDaysPlaceholder            = "__HOLD_DAYS__"
+	shortTakeProfitMultPlaceholder = "__SHORT_TAKE_PROFIT_MULT__"
+	shortStopLossMultPlaceholder   = "__SHORT_STOP_LOSS_MULT__"
+	shortHoldDaysPlaceholder       = "__SHORT_HOLD_DAYS__"
+)
+
+// takeProfitMultiplier/stopLossMultiplier convert a StrategyConfig's
+// fractional TP/SL offset into the multiplier a SQL pipeline should apply to
+// an entry price, preserving the 0.0 "no per-signal override" sentinel the
+// simulator checks for (pkg/simulator/portfolio.go: `if sig.TakeProfit > 0` /
+// `if sig.StopLoss > 0`, falling back to the config-level TargetPct/
+// StopLossPct) when a strategy hasn't set that side at all.
+func takeProfitMultiplier(pct float64) float64 {
+	if pct <= 0 {
+		return 0.0
+	}
+	return 1.0 + pct
+}
+
+func stopLossMultiplier(pct float64) float64 {
+	if pct <= 0 {
+		return 0.0
+	}
+	return 1.0 - pct
+}
+
+// substitutePlaceholders replaces every strategy-config placeholder present
+// in sqlText. Only __DECLINE_DAYS__ has a failure mode worth warning about —
+// 0.0 is a legitimate "no override" value for every TP/SL/hold placeholder,
+// but a decline/rally window of 0 days produces a broken WHERE clause.
+func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) string {
+	if strings.Contains(sqlText, declineDaysPlaceholder) {
+		if cfg.DeclineDays <= 0 {
+			log.Printf("[sql_strategy %s] %s references %s but config.DeclineDays is unset — leaving query unsubstituted, it will fail", id, fileName, declineDaysPlaceholder)
+		} else {
+			sqlText = strings.ReplaceAll(sqlText, declineDaysPlaceholder, strconv.Itoa(cfg.DeclineDays))
+		}
+	}
+	sqlText = strings.ReplaceAll(sqlText, takeProfitMultPlaceholder, strconv.FormatFloat(takeProfitMultiplier(cfg.TakeProfitPct), 'f', 6, 64))
+	sqlText = strings.ReplaceAll(sqlText, stopLossMultPlaceholder, strconv.FormatFloat(stopLossMultiplier(cfg.StopLossPct), 'f', 6, 64))
+	sqlText = strings.ReplaceAll(sqlText, holdDaysPlaceholder, strconv.Itoa(cfg.HoldingWindow))
+	sqlText = strings.ReplaceAll(sqlText, shortTakeProfitMultPlaceholder, strconv.FormatFloat(takeProfitMultiplier(cfg.ShortTakeProfitPct), 'f', 6, 64))
+	sqlText = strings.ReplaceAll(sqlText, shortStopLossMultPlaceholder, strconv.FormatFloat(stopLossMultiplier(cfg.ShortStopLossPct), 'f', 6, 64))
+	sqlText = strings.ReplaceAll(sqlText, shortHoldDaysPlaceholder, strconv.Itoa(cfg.ShortHoldingWindow))
+	return sqlText
+}
 
 var sqlPipelineMu sync.Mutex
 
@@ -187,14 +238,7 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 				log.Printf("[sql_strategy %s] failed to read %s: %v", s.id, sqlFile, err)
 				continue
 			}
-			sqlText := string(content)
-			if strings.Contains(sqlText, declineDaysPlaceholder) {
-				if s.config.DeclineDays <= 0 {
-					log.Printf("[sql_strategy %s] %s references %s but config.DeclineDays is unset — leaving query unsubstituted, it will fail", s.id, filepath.Base(sqlFile), declineDaysPlaceholder)
-				} else {
-					sqlText = strings.ReplaceAll(sqlText, declineDaysPlaceholder, strconv.Itoa(s.config.DeclineDays))
-				}
-			}
+			sqlText := substitutePlaceholders(string(content), s.id, filepath.Base(sqlFile), s.config)
 			queries := strings.Split(sqlText, ";")
 			for _, q := range queries {
 				trimmed := strings.TrimSpace(q)
@@ -316,11 +360,6 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.TargetPct = 1.15
 				cfg.StopLossPct = 0.95
 				cfg.HoldingWindow = 12
-			case "millwharf":
-				cfg.TargetPct = 1.15
-				cfg.StopLossPct = 0.93
-				cfg.HoldingWindow = 10
-				cfg.DeclineDays = 5 // matches MillwharfStrategy's default MinStreak
 			case "gld_decline":
 				cfg.Benchmark = "GLD"
 				cfg.AllocationPct = 0.65

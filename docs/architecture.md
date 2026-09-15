@@ -26,7 +26,7 @@
 │ ONLY place    │ │   (SQL file path  │ │     barrier exits     │
 │ where raw DB  │ │    → signals)     │ │                       │
 │ queries live  │ │                   │ │ Returns:              │
-│               │ │ millwharf.go      │ │   PerformanceReport   │
+│               │ │ gld_decline.go    │ │   PerformanceReport   │
 │               │ │   (other strats)  │ │   []Trade             │
 │               │ │                   │ │   []DailyEquityPoint  │
 └───────────────┘ └───────────────────┘ └──────────────────────┘

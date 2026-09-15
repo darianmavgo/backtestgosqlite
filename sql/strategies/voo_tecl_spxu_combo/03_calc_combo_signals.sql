@@ -13,9 +13,9 @@ SELECT
     1 AS entry,
     'LONG' AS direction,
     'All Regimes' AS regime,
-    8 AS hold_days_override,
-    t.close * 1.05 AS take_profit,
-    0.0 AS stop_loss
+    __HOLD_DAYS__ AS hold_days_override,
+    t.close * __TAKE_PROFIT_MULT__ AS take_profit,
+    t.close * __STOP_LOSS_MULT__ AS stop_loss
 FROM voo_tecl_streaks_slice v
 JOIN voo_tecl_streaks_slice t ON v.date = t.date AND t.symbol = 'TECL'
 WHERE v.symbol = 'VOO'
@@ -38,9 +38,9 @@ SELECT
     1 AS entry,
     'SHORT' AS direction,
     CASE WHEN v.sma200 > 0 THEN 'VOO<SMA200' ELSE 'All Regimes' END AS regime,
-    2 AS hold_days_override,
-    s.close * 1.06 AS take_profit,
-    s.close * 0.95 AS stop_loss
+    __SHORT_HOLD_DAYS__ AS hold_days_override,
+    s.close * __SHORT_TAKE_PROFIT_MULT__ AS take_profit,
+    s.close * __SHORT_STOP_LOSS_MULT__ AS stop_loss
 FROM voo_tecl_streaks_slice v
 JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU'
 WHERE v.symbol = 'VOO'
