@@ -348,6 +348,13 @@ Cache-first OHLCV downloader; see [Quickstart §3](#3-download--cache-market-dat
 ./bin/backtest stale
 ```
 
+**`backtest optimized` subcommand**: runs every selected strategy (default: all registered) with the best config a prior `gridsearch` sweep found for it (ranked by resilience score), instead of the strategy's own hardcoded baseline — then `./bin/scoreboard compile` reads whatever's newest in `reports/` to build a leaderboard reflecting each strategy's *tuned* performance rather than default performance, without needing to know anything changed. Flags: `-strategy` (same selection syntax as the default mode), `-gridsearch-db` (`reports/gridsearch.db`), plus the usual `-db`/`-table`/`-out-dir`/`-capital`/`-symbol`/`-auto-download`/`-download-years`/`-concurrency`. A strategy with no sweep on record runs with its baseline `DefaultConfig()` instead — there's no "optimized" params to apply — and is called out explicitly rather than silently blending in. A winning config whose regime filter isn't "All Regimes" gets a caveat too: gridsearch's regime axis is a proxy-model-only concept (see the `params` subcommand above) with no equivalent in most strategies' real signal logic, so it can't be applied — the rest of that config still is. Requires the strategy's SQL pipeline decline-day window / TP / SL / hold to actually be wired to `StrategyConfig` (see `DeclineDaysConfigurable`) to take effect; strategies whose gridsearch row predates the `signal_days`/`hold_days`/`take_profit_pct`/`stop_loss_pct`/`regime` columns (added when this subcommand shipped) are treated as unswept until re-swept with `-force`.
+```bash
+./bin/gridsearch -strategy all -force   # populate/refresh reports/gridsearch.db first
+./bin/backtest optimized                # apply each strategy's best sweep result
+./bin/scoreboard compile                # leaderboard over the now-optimized results
+```
+
 #### `cmd/livescan` — Today/tomorrow signal scanner
 Same strategy/override flags as `backtest` (`-db`, `-table`, `-strategy`, `-symbol`, `-capital`, `-max-positions`, `-stoploss`, `-target`, `-hold`, `-list`, `-concurrency`), plus:
 | Flag | Default | Meaning |
