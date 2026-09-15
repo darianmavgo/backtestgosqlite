@@ -59,6 +59,15 @@ type StrategyConfig struct {
 	SlippagePct        float64 `json:"slippage_pct"`                  // Estimated slippage per fill (e.g. 0.0005 for 0.05%)
 	CommissionPerShare float64 `json:"commission_per_share"`          // Broker/exchange commission per share (e.g. 0.0001)
 
+	// DeclineDays is the number of consecutive down-closes (or, for a short leg,
+	// up-closes) required in the signal symbol before a decline/rally-streak
+	// strategy enters. Only meaningful for strategies whose entry is defined by
+	// a consecutive-day streak (e.g. gld-decline, voo-tecl-combo,
+	// voo-tecl-spxu-combo, millwharf); substituted into their SQL pipeline via
+	// the __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted for
+	// every other strategy.
+	DeclineDays int `json:"decline_days,omitempty"`
+
 	// CashYieldAnnual is the annualized T-bill / money-market yield accrued on idle cash
 	// each trading day the portfolio holds no open positions. Set 0.045 for 4.5% APY.
 	// Applied universally by PortfolioSimulator.

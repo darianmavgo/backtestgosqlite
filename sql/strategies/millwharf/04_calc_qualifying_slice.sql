@@ -18,4 +18,4 @@ SELECT
       ORDER BY streak DESC, (close - peak_close) / peak_close ASC, date ASC
     ) AS weekly_rank
 FROM streaks_slice
-WHERE streak >= 5;
+WHERE streak >= __DECLINE_DAYS__;

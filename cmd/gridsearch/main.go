@@ -14,6 +14,11 @@
 //
 //	# List all optimizable strategies:
 //	go run cmd/gridsearch/main.go -list
+//
+//	# Print the resolved parameter grid for a strategy (or 'all') without
+//	# running any backtests — no DB access required:
+//	go run cmd/gridsearch/main.go params gld_decline
+//	go run cmd/gridsearch/main.go params all
 package main
 
 import (
@@ -96,6 +101,18 @@ func main() {
 	includeDT := flag.Bool("include-dt", false, "Include dt_* (auto-generated per-ETF decision tree) strategies in -strategy all — they already have their own dedicated sweep via cmd/etf_decision_trees, so excluded by default")
 	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
 	maxPerms := flag.Int("max-perms", 20000, "Multi-strategy mode: skip a strategy whose generic parameter grid exceeds this many permutations (e.g. genetic-momentum's 50-symbol RequiredSymbols list balloons its generic grid to 210,000+ combos, none of which even exercise its real Python-driven signal logic). 0 disables the cap. Single-strategy mode ignores this.")
+
+	// Subcommand dispatch:
+	//   gridsearch <strategy>        -> run the sweep (default)
+	//   gridsearch params <strategy> -> print the resolved parameter grid (incl.
+	//                                   the consecutive decline/rally-day axis)
+	//                                   for one strategy or 'all', with no DB
+	//                                   access and no backtests run
+	paramsMode := false
+	if len(os.Args) > 1 && os.Args[1] == "params" {
+		paramsMode = true
+		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
+	}
 	flag.Parse()
 
 	// Track which flags were explicitly set by the user
@@ -152,6 +169,10 @@ func main() {
 		fmt.Println("Run with -list to view all available strategies:")
 		fmt.Println("         go run cmd/gridsearch/main.go -list")
 		fmt.Println()
+		fmt.Println("Run with the 'params' subcommand to print the parameter grid without sweeping:")
+		fmt.Println("         go run cmd/gridsearch/main.go params <strategy_id>")
+		fmt.Println("         go run cmd/gridsearch/main.go params all")
+		fmt.Println()
 		os.Exit(1)
 	}
 
@@ -180,21 +201,6 @@ func main() {
 		log.Fatalf("No valid strategies selected.")
 	}
 
-	db, err := storage.OpenSQLite(*dbPath)
-	if err != nil {
-		log.Fatalf("Failed to open DB: %v", err)
-	}
-	defer db.Close()
-
-	gdb, err := storage.OpenSQLite(*gridDBPath)
-	if err != nil {
-		log.Fatalf("Failed to open gridsearch pipeline DB %s: %v", *gridDBPath, err)
-	}
-	defer gdb.Close()
-	if err := ensureGridSearchSchema(gdb); err != nil {
-		log.Fatalf("Failed to initialize gridsearch pipeline schema: %v", err)
-	}
-
 	sweepOpts := sweepOptions{
 		Capital:   *capital,
 		MinTrades: *minTrades,
@@ -215,6 +221,28 @@ func main() {
 	}
 	if userPassedFlags["signal"] && *signalSym != "" {
 		sweepOpts.SignalOverride = *signalSym
+	}
+
+	// `params` subcommand: just print the resolved parameter grid for each
+	// target strategy and exit — no DB access, no backtests.
+	if paramsMode {
+		printParamsCommand(targets, sweepOpts)
+		return
+	}
+
+	db, err := storage.OpenSQLite(*dbPath)
+	if err != nil {
+		log.Fatalf("Failed to open DB: %v", err)
+	}
+	defer db.Close()
+
+	gdb, err := storage.OpenSQLite(*gridDBPath)
+	if err != nil {
+		log.Fatalf("Failed to open gridsearch pipeline DB %s: %v", *gridDBPath, err)
+	}
+	defer gdb.Close()
+	if err := ensureGridSearchSchema(gdb); err != nil {
+		log.Fatalf("Failed to initialize gridsearch pipeline schema: %v", err)
 	}
 
 	// --- Single strategy: preserve the original rich, single-target CLI experience. ---

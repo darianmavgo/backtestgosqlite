@@ -91,6 +91,8 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 
 > `wc` / `wc-4d` / `whitings_creek-sql` (Whitings Creek short-term capitulation mean-reversion) were archived — unregistered and moved to [`_archive/`](file:///Users/darianhickman/Documents/backtestgosqlite/_archive) (excluded from the Go build via the leading underscore). They converged to the exact same generic-fallback gridsearch result as several other strategies with no real distinguishing signal, while taking 2-4 minutes per sweep. See `_archive/README.md` to restore.
 
+**Decline-window as a real parameter**: `gld-decline`, `voo-tecl-combo`, `voo-tecl-spxu-combo`, and `millwharf` all enter on a consecutive-day price decline (or, for a short leg, rally) streak. The streak length is a genuine config field on each strategy struct — `DeclineDays` (`GLDDeclineStrategy`, `VOOTECLCombo`, `VOOTECLSPXUCombo`, default 2/3/3) or `MinStreak` (`MillwharfStrategy`, default 5) — flowing through `StrategyConfig.DeclineDays` into an `__DECLINE_DAYS__` placeholder that `SQLPipelineStrategy` substitutes into the strategy's SQL pipeline at run time, rather than being a hardcoded literal buried in the `.sql` file. Set the field before calling `GenerateSignals`/`SetDatabases` (e.g. `s := strategy.NewGLDDeclineStrategy(); s.DeclineDays = 4`) to backtest a different decline window.
+
 ### 6. Research, Optimization & Diagnostic Tools
 Beyond the core backtest/download/livescan loop, the platform includes a set of standalone CLIs for universe discovery, parameter search, and results auditing — see the [Full Command Reference](#-full-command-reference) for every flag:
 * **`cmd/gridsearch`**: Multi-core TP/SL/hold/allocation parameter sweep per strategy (or all strategies), with a shared worker pool and a persistent `reports/gridsearch.db` so repeat runs skip strategies already swept.
@@ -374,6 +376,12 @@ Same strategy/override flags as `backtest` (`-db`, `-table`, `-strategy`, `-symb
 | `-max-perms` | `20000` | Skip a strategy in batch mode if its generic grid exceeds this many permutations (`0` disables) |
 
 Example: `./bin/gridsearch -strategy bb-capitulation` (single) or `./bin/gridsearch -strategy all -force` (batch, redo everything).
+
+**`gridsearch params <strategy|all>` subcommand**: prints the resolved parameter grid for one strategy (or every strategy) and exits — no DB connection, no backtests run. Every non-`tree_bounce` strategy enters on a consecutive-day decline (or rally) streak in its signal symbol, and gridsearch varies that streak length (`ParameterSpace.SignalDays`, default `[2 3 4 5]`) as one of the swept axes; `params` calls this out explicitly per strategy (`✅ searched — N values [...]` vs. `⚠️ NOT being searched` if it ever collapsed to one value) so it's easy to confirm the decline-day count is actually part of the search rather than silently fixed. `tree_bounce` strategies (`mara_tree`, `nvdl_tree`, `pdd_tree`) are the deliberate exception — their entries come from a fitted decision tree, not a streak count, so the axis is fixed at `[1]` and reported `n/a`.
+```bash
+./bin/gridsearch params gld_decline     # one strategy, full grid + relevance check
+./bin/gridsearch params all             # every registered strategy, plus a rollup warning
+```
 
 #### `cmd/scoreboard` — Cross-strategy leaderboard
 Subcommands (default `run`): `./bin/scoreboard` backtests every registered strategy against the full universe (skipping ones with a usable result already, unless `-force`) then compiles a leaderboard; `./bin/scoreboard compile` re-aggregates from existing `reports/*.db` files without backtesting; `./bin/scoreboard status` just reports whether all compute is done. Flags: `-concurrency` (all CPU cores), `-force` (`false`, default mode only). Output: `reports/scoreboard.db`.

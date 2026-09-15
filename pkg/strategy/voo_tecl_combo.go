@@ -19,13 +19,18 @@ import (
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual
 // and applied by the PortfolioSimulator.
 type VOOTECLCombo struct{
+	// DeclineDays is the number of consecutive VOO down-closes (long leg) or
+	// up-closes (short leg) required to enter (default: 3). The single source
+	// of truth for the streak length — flows into DefaultConfig().DeclineDays,
+	// which SQLPipelineStrategy substitutes into the SQL pipeline.
+	DeclineDays  int
 	marketDBPath string
 	calcDBPath   string
 }
 
 // NewVOOTECLCombo constructs and auto-registers the strategy.
 func NewVOOTECLCombo() *VOOTECLCombo {
-	s := &VOOTECLCombo{}
+	s := &VOOTECLCombo{DeclineDays: 3}
 	Register(s)
 	RegisterAlias("voo-tecl-combo", s)
 	RegisterAlias("vooteclcombo", s)
@@ -55,6 +60,10 @@ func (s *VOOTECLCombo) RequiredSymbols() []string {
 
 // DefaultConfig returns the canonical VOO-TECL combo parameters.
 func (s *VOOTECLCombo) DefaultConfig() StrategyConfig {
+	declineDays := s.DeclineDays
+	if declineDays <= 0 {
+		declineDays = 3
+	}
 	return StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
@@ -68,6 +77,7 @@ func (s *VOOTECLCombo) DefaultConfig() StrategyConfig {
 		CashYieldAnnual:    0.045,
 		SlippagePct:        0.0,
 		CommissionPerShare: 0.0,
+		DeclineDays:        declineDays,
 	}
 }
 
@@ -80,11 +90,20 @@ func (s *VOOTECLCombo) SetDatabases(marketDBPath, calcDBPath string) {
 }
 
 func (s *VOOTECLCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	// Delegate signal generation directly to the canonical SQLite pipeline
+	// Run the canonical SQLite pipeline with this instance's own config, so a
+	// non-default s.DeclineDays actually takes effect. Built fresh (not the
+	// registered "voo_tecl_combo-sql" singleton, which always uses its own
+	// AutoRegisterSQLStrategies default) but reusing that singleton's already
+	// -resolved pipeline dir when it's registered, since the literal
+	// "sql/strategies/voo_tecl_combo" only resolves correctly when the
+	// process's working directory is the repo root.
+	dir := "sql/strategies/voo_tecl_combo"
 	if sqlStrat, exists := Get("voo_tecl_combo-sql"); exists {
-		return sqlStrat.GenerateSignals(barsBySymbol)
+		if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+			dir = sp.PipelineDir()
+		}
 	}
-	pipe := NewSQLPipelineStrategy("voo_tecl_combo-pipeline", s.Name(), s.Description(), "sql/strategies/voo_tecl_combo", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("voo_tecl_combo-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
 	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
 }
@@ -107,7 +126,7 @@ func (s *VOOTECLCombo) ParameterSpace() ParameterSpace {
 		Allocations:  []float64{cfg.AllocationPct},
 		CashYield:    cfg.CashYieldAnnual,
 		Baseline: BaselineParams{
-			SignalDays: 3,
+			SignalDays: cfg.DeclineDays,
 			HoldDays:   cfg.HoldingWindow,
 			TakeProfit: cfg.TakeProfitPct,
 			StopLoss:   cfg.StopLossPct,

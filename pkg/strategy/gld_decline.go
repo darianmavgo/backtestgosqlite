@@ -14,13 +14,18 @@ import (
 //
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual (4.5%).
 type GLDDeclineStrategy struct {
+	// DeclineDays is the number of consecutive GLD down-closes required to
+	// enter (default: 2). The single source of truth for the streak length —
+	// flows into DefaultConfig().DeclineDays, which SQLPipelineStrategy
+	// substitutes into the SQL pipeline, and into the pure-Go fallback below.
+	DeclineDays  int
 	marketDBPath string
 	calcDBPath   string
 }
 
 // NewGLDDeclineStrategy constructs and auto-registers the strategy.
 func NewGLDDeclineStrategy() *GLDDeclineStrategy {
-	s := &GLDDeclineStrategy{}
+	s := &GLDDeclineStrategy{DeclineDays: 2}
 	Register(s)
 	RegisterAlias("gld-decline", s)
 	RegisterAlias("gld_decline", s)
@@ -49,6 +54,10 @@ func (s *GLDDeclineStrategy) RequiredSymbols() []string {
 
 // DefaultConfig returns the canonical GLD decline parameters.
 func (s *GLDDeclineStrategy) DefaultConfig() StrategyConfig {
+	declineDays := s.DeclineDays
+	if declineDays <= 0 {
+		declineDays = 2
+	}
 	return StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
@@ -62,6 +71,7 @@ func (s *GLDDeclineStrategy) DefaultConfig() StrategyConfig {
 		CashYieldAnnual:    0.045, // 4.5% idle cash APY
 		SlippagePct:        0.0,
 		CommissionPerShare: 0.0,
+		DeclineDays:        declineDays,
 	}
 }
 
@@ -74,12 +84,22 @@ func (s *GLDDeclineStrategy) SetDatabases(marketDBPath, calcDBPath string) {
 }
 
 func (s *GLDDeclineStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	// 1. Delegate signal generation directly to the canonical SQLite pipeline if registered
-	if sqlStrat, exists := Get("gld_decline-sql"); exists {
-		return sqlStrat.GenerateSignals(barsBySymbol)
-	}
+	// 1. Run the canonical SQLite pipeline with this instance's own config, so
+	// a non-default s.DeclineDays actually takes effect. Built fresh (not the
+	// registered "gld_decline-sql" singleton, which always uses its own
+	// AutoRegisterSQLStrategies default) but reusing that singleton's already
+	// -resolved pipeline dir when it's registered, since the literal
+	// "sql/strategies/gld_decline" only resolves correctly when the process's
+	// working directory is the repo root (true for the compiled binaries, not
+	// for `go test` run from this package's directory).
 	if s.calcDBPath != "" && s.marketDBPath != "" {
-		pipe := NewSQLPipelineStrategy("gld_decline-pipeline", s.Name(), s.Description(), "sql/strategies/gld_decline", s.DefaultConfig())
+		dir := "sql/strategies/gld_decline"
+		if sqlStrat, exists := Get("gld_decline-sql"); exists {
+			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+				dir = sp.PipelineDir()
+			}
+		}
+		pipe := NewSQLPipelineStrategy("gld_decline-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
 		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 		return pipe.GenerateSignals(barsBySymbol)
 	}
@@ -88,6 +108,11 @@ func (s *GLDDeclineStrategy) GenerateSignals(barsBySymbol map[string][]models.Ba
 	bars, ok := barsBySymbol["GLD"]
 	if !ok || len(bars) < 3 {
 		return nil
+	}
+
+	declineDays := s.DeclineDays
+	if declineDays <= 0 {
+		declineDays = 2
 	}
 
 	var signals []models.Signal
@@ -100,7 +125,7 @@ func (s *GLDDeclineStrategy) GenerateSignals(barsBySymbol map[string][]models.Ba
 			streak = 0
 		}
 
-		if streak >= 2 {
+		if streak >= declineDays {
 			d := bars[i].Date
 			if len(d) >= 10 {
 				d = d[:10]
@@ -151,7 +176,7 @@ func (s *GLDDeclineStrategy) ParameterSpace() ParameterSpace {
 		Allocations:  []float64{cfg.AllocationPct},
 		CashYield:    cfg.CashYieldAnnual,
 		Baseline: BaselineParams{
-			SignalDays: 2,
+			SignalDays: cfg.DeclineDays,
 			HoldDays:   cfg.HoldingWindow,
 			TakeProfit: cfg.TakeProfitPct,
 			StopLoss:   cfg.StopLossPct,

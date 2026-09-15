@@ -19,13 +19,19 @@ import (
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual
 // and applied by the PortfolioSimulator.
 type VOOTECLSPXUCombo struct{
+	// DeclineDays is the number of consecutive down-closes (long leg, checked
+	// on both VOO and TECL) or up-closes (short leg, VOO) required to enter
+	// (default: 3). The single source of truth for the streak length — flows
+	// into DefaultConfig().DeclineDays, which SQLPipelineStrategy substitutes
+	// into the SQL pipeline.
+	DeclineDays  int
 	marketDBPath string
 	calcDBPath   string
 }
 
 // NewVOOTECLSPXUCombo constructs and auto-registers the strategy.
 func NewVOOTECLSPXUCombo() *VOOTECLSPXUCombo {
-	s := &VOOTECLSPXUCombo{}
+	s := &VOOTECLSPXUCombo{DeclineDays: 3}
 	Register(s)
 	RegisterAlias("voo-tecl-spxu-combo", s)
 	RegisterAlias("vooteclspxucombo", s)
@@ -58,6 +64,10 @@ func (s *VOOTECLSPXUCombo) RequiredSymbols() []string {
 
 // DefaultConfig returns the canonical VOO-TECL-SPXU combo parameters.
 func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
+	declineDays := s.DeclineDays
+	if declineDays <= 0 {
+		declineDays = 3
+	}
 	return StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
@@ -71,6 +81,7 @@ func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
 		CashYieldAnnual:    0.045,
 		SlippagePct:        0.0,
 		CommissionPerShare: 0.0,
+		DeclineDays:        declineDays,
 	}
 }
 
@@ -83,11 +94,20 @@ func (s *VOOTECLSPXUCombo) SetDatabases(marketDBPath, calcDBPath string) {
 }
 
 func (s *VOOTECLSPXUCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	// Delegate signal generation directly to the canonical SQLite pipeline
+	// Run the canonical SQLite pipeline with this instance's own config, so a
+	// non-default s.DeclineDays actually takes effect. Built fresh (not the
+	// registered "voo_tecl_spxu_combo-sql" singleton, which always uses its
+	// own AutoRegisterSQLStrategies default) but reusing that singleton's
+	// already-resolved pipeline dir when it's registered, since the literal
+	// "sql/strategies/voo_tecl_spxu_combo" only resolves correctly when the
+	// process's working directory is the repo root.
+	dir := "sql/strategies/voo_tecl_spxu_combo"
 	if sqlStrat, exists := Get("voo_tecl_spxu_combo-sql"); exists {
-		return sqlStrat.GenerateSignals(barsBySymbol)
+		if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+			dir = sp.PipelineDir()
+		}
 	}
-	pipe := NewSQLPipelineStrategy("voo_tecl_spxu_combo-pipeline", s.Name(), s.Description(), "sql/strategies/voo_tecl_spxu_combo", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("voo_tecl_spxu_combo-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
 	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
 }

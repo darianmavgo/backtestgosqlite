@@ -1,4 +1,4 @@
--- LONG TECL when VOO down 3 days
+-- LONG TECL when VOO down __DECLINE_DAYS__ days
 INSERT INTO voo_tecl_combo_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
     coalesce(t.idx, t.rowid, 0) AS idx,
@@ -18,9 +18,9 @@ SELECT
     0.0 AS stop_loss
 FROM voo_streaks_slice v
 JOIN backtest_start t ON v.date = substr(t.Date, 1, 10) AND t.symbol = 'TECL' AND length(t.Date) = 10
-WHERE v.down_streak >= 3;
+WHERE v.down_streak >= __DECLINE_DAYS__;
 
--- SHORT SPXU when VOO up 3 days AND VOO < SMA200
+-- SHORT SPXU when VOO up __DECLINE_DAYS__ days AND VOO < SMA200
 -- Also ensure we don't insert a SHORT if a LONG was already inserted for that date (LONG takes priority)
 INSERT INTO voo_tecl_combo_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
@@ -41,7 +41,7 @@ SELECT
     s.close * 0.95 AS stop_loss
 FROM voo_streaks_slice v
 JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU' AND length(s.Date) = 10
-WHERE v.up_streak >= 3
+WHERE v.up_streak >= __DECLINE_DAYS__
   AND (v.sma200 <= 0 OR v.close < v.sma200)
   AND NOT EXISTS (
       SELECT 1 FROM voo_tecl_combo_signals prev

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -14,6 +15,12 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// declineDaysPlaceholder is substituted with config.DeclineDays in any
+// pipeline SQL file that needs its consecutive decline/rally-day window to be
+// a real, tunable parameter instead of a hardcoded literal (e.g.
+// sql/strategies/gld_decline, voo_tecl_combo, voo_tecl_spxu_combo, millwharf).
+const declineDaysPlaceholder = "__DECLINE_DAYS__"
 
 var sqlPipelineMu sync.Mutex
 
@@ -59,6 +66,17 @@ func (s *SQLPipelineStrategy) Description() string {
 
 func (s *SQLPipelineStrategy) DefaultConfig() StrategyConfig {
 	return s.config
+}
+
+// PipelineDir returns the directory of SQL scripts this pipeline executes,
+// resolved however it was originally constructed (e.g. AutoRegisterSQLStrategies
+// resolves it relative to a caller-supplied root, which differs between
+// production binaries run from the repo root and tests run from a package
+// directory). Lets other strategies that build their own one-off pipeline
+// instance (to inject a per-instance config) reuse the already-correct path
+// instead of hardcoding one that only works from the repo root.
+func (s *SQLPipelineStrategy) PipelineDir() string {
+	return s.pipelineDir
 }
 
 func (s *SQLPipelineStrategy) Validate() error {
@@ -169,7 +187,15 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 				log.Printf("[sql_strategy %s] failed to read %s: %v", s.id, sqlFile, err)
 				continue
 			}
-			queries := strings.Split(string(content), ";")
+			sqlText := string(content)
+			if strings.Contains(sqlText, declineDaysPlaceholder) {
+				if s.config.DeclineDays <= 0 {
+					log.Printf("[sql_strategy %s] %s references %s but config.DeclineDays is unset — leaving query unsubstituted, it will fail", s.id, filepath.Base(sqlFile), declineDaysPlaceholder)
+				} else {
+					sqlText = strings.ReplaceAll(sqlText, declineDaysPlaceholder, strconv.Itoa(s.config.DeclineDays))
+				}
+			}
+			queries := strings.Split(sqlText, ";")
 			for _, q := range queries {
 				trimmed := strings.TrimSpace(q)
 				if trimmed == "" {
@@ -294,6 +320,7 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.TargetPct = 1.15
 				cfg.StopLossPct = 0.93
 				cfg.HoldingWindow = 10
+				cfg.DeclineDays = 5 // matches MillwharfStrategy's default MinStreak
 			case "gld_decline":
 				cfg.Benchmark = "GLD"
 				cfg.AllocationPct = 0.65
@@ -302,6 +329,11 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.HoldingWindow = 8
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
+				cfg.DeclineDays = 2 // matches GLDDeclineStrategy's default DeclineDays
+			case "voo_tecl_combo":
+				cfg.DeclineDays = 3 // matches VOOTECLCombo's default DeclineDays
+			case "voo_tecl_spxu_combo":
+				cfg.DeclineDays = 3 // matches VOOTECLSPXUCombo's default DeclineDays
 			}
 
 			NewSQLPipelineStrategy(id, name, desc, pipelinePath, cfg)

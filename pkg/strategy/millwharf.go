@@ -71,6 +71,10 @@ func (s *MillwharfStrategy) Description() string {
 }
 
 func (s *MillwharfStrategy) DefaultConfig() StrategyConfig {
+	minStreak := s.MinStreak
+	if minStreak <= 0 {
+		minStreak = 5
+	}
 	return StrategyConfig{
 		ID:                 "millwharf",
 		Name:               s.Name(),
@@ -83,6 +87,7 @@ func (s *MillwharfStrategy) DefaultConfig() StrategyConfig {
 		AllocationPct:      0.20,   // 20% equity per position
 		SlippagePct:        0.0005, // 0.05% slippage
 		CommissionPerShare: 0.0001,
+		DeclineDays:        minStreak, // substituted into sql/strategies/millwharf's __DECLINE_DAYS__ placeholder
 	}
 }
 
@@ -107,11 +112,20 @@ func getISOWeekKey(dateStr string) string {
 
 // GenerateSignals evaluates historical bars and selects the longest decline candidate each week.
 func (s *MillwharfStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	// Delegate signal generation directly to the canonical SQLite pipeline
+	// Run the canonical SQLite pipeline with this instance's own config, so a
+	// non-default s.MinStreak actually takes effect. Built fresh (not the
+	// registered "millwharf-sql" singleton, which always uses its own
+	// AutoRegisterSQLStrategies default) but reusing that singleton's already
+	// -resolved pipeline dir when it's registered, since the literal
+	// "sql/strategies/millwharf" only resolves correctly when the process's
+	// working directory is the repo root.
+	dir := "sql/strategies/millwharf"
 	if sqlStrat, exists := Get("millwharf-sql"); exists {
-		return sqlStrat.GenerateSignals(barsBySymbol)
+		if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+			dir = sp.PipelineDir()
+		}
 	}
-	pipe := NewSQLPipelineStrategy("millwharf-pipeline", s.Name(), s.Description(), "sql/strategies/millwharf", s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("millwharf-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
 	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
 }
