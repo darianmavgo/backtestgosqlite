@@ -97,6 +97,9 @@ func (s *GLDDeclineStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
+// SetDeclineDays implements DeclineDaysConfigurable.
+func (s *GLDDeclineStrategy) SetDeclineDays(n int) { s.DeclineDays = n }
+
 func (s *GLDDeclineStrategy) SetDatabases(marketDBPath, calcDBPath string) {
 	if sqlStrat, exists := Get("gld_decline-sql"); exists {
 		sqlStrat.SetDatabases(marketDBPath, calcDBPath)

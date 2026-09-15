@@ -88,6 +88,17 @@ func ensureGridSearchSchema(gdb *sqlx.DB) error {
 	// runner.AssessOne) — the latest market bar date seen when this sweep
 	// ran, so a later run can tell whether more history has since appeared.
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_runs ADD COLUMN data_max_date TEXT;`)
+	// Added after the table above shipped; ignore "duplicate column" errors on
+	// a DB that already has them. Backs `backtest optimized` — the raw params
+	// behind each result's Label, as real columns instead of a string to
+	// parse, so a winning config can be read back and applied to a real
+	// backtest run.
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN symbol TEXT;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN signal_days INTEGER;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN hold_days INTEGER;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN take_profit_pct REAL;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN stop_loss_pct REAL;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN regime TEXT;`)
 	return nil
 }
 
@@ -204,8 +215,9 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 	stmt, err := tx.Prepare(`
 		INSERT INTO gridsearch_results (
 			strategy_id, label, is_baseline, net_profit, cagr, max_drawdown_pct,
-			max_drawdown_days, calmar_ratio, resilience_score, total_trades, win_rate
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			max_drawdown_days, calmar_ratio, resilience_score, total_trades, win_rate,
+			symbol, signal_days, hold_days, take_profit_pct, stop_loss_pct, regime
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		log.Printf("Warning: failed to prepare results insert for %s: %v", strat.ID(), err)
@@ -220,6 +232,7 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 		if _, err := stmt.Exec(
 			strat.ID(), r.Label, isBaseline, r.Report.NetProfit, r.Report.CAGR, r.Report.MaxDrawdownPct,
 			r.Report.MaxDrawdownDuration, r.Report.CalmarRatio, resilienceScore(r.Report), r.Report.TotalTrades, r.Report.WinRate,
+			r.Symbol, r.SignalDays, r.HoldDays, r.TakeProfit, r.StopLoss, r.Regime,
 		); err != nil {
 			log.Printf("Warning: failed to insert result row for %s: %v", strat.ID(), err)
 		}

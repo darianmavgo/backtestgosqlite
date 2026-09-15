@@ -35,6 +35,16 @@ type RequiredSymbolsProvider interface {
 	RequiredSymbols() []string
 }
 
+// DeclineDaysConfigurable is optionally implemented by strategies whose
+// consecutive decline/rally-day window is a tunable field (see
+// StrategyConfig.DeclineDays) — gld-decline, sig-voo-buy-tecl,
+// voo-tecl-spxu-combo. Lets a caller (e.g. `backtest optimized`) apply a
+// gridsearch-discovered decline-day window before running the strategy,
+// without needing to know its concrete type.
+type DeclineDaysConfigurable interface {
+	SetDeclineDays(int)
+}
+
 // StrategyConfig encapsulates the operational parameters for an algorithm.
 type StrategyConfig struct {
 	ID                 string  `json:"id"`

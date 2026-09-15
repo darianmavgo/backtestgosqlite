@@ -128,6 +128,9 @@ func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
 	}
 }
 
+// SetDeclineDays implements DeclineDaysConfigurable.
+func (s *VOOTECLSPXUCombo) SetDeclineDays(n int) { s.DeclineDays = n }
+
 func (s *VOOTECLSPXUCombo) SetDatabases(marketDBPath, calcDBPath string) {
 	if sqlStrat, exists := Get("voo_tecl_spxu_combo-sql"); exists {
 		sqlStrat.SetDatabases(marketDBPath, calcDBPath)

@@ -39,13 +39,10 @@ func runStaleCommand(gridDBPath, marketDBPath string) {
 
 	marketDB, err := storage.OpenSQLite(marketDBPath)
 	if err != nil {
-		log.Fatalf("Failed to open market DB %s: %v", marketDBPath, err)
-	}
-	defer marketDB.Close()
-	latestDataDate, err := runner.LatestMarketDate(marketDB)
-	if err != nil {
-		log.Printf("Warning: could not determine latest market data date (%v) — data-freshness checks will be skipped", err)
-		latestDataDate = ""
+		log.Printf("Warning: could not open market DB %s (%v) — data-freshness checks will be skipped", marketDBPath, err)
+		marketDB = nil
+	} else {
+		defer marketDB.Close()
 	}
 
 	swept := make(map[string]bool, len(rows))
@@ -56,7 +53,7 @@ func runStaleCommand(gridDBPath, marketDBPath string) {
 		if err != nil {
 			continue
 		}
-		entries = append(entries, runner.AssessOne(r.StrategyID, computedAt, r.DataMaxDate, latestDataDate))
+		entries = append(entries, runner.AssessOne(r.StrategyID, computedAt, r.DataMaxDate, marketDB))
 	}
 
 	var neverSwept []string

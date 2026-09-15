@@ -49,6 +49,16 @@ type gridResult struct {
 	Trades     []models.Trade
 	Curve      []models.DailyEquityPoint
 	IsBaseline bool
+
+	// Raw params behind Label, persisted as real columns (not just a
+	// formatted string) by recordRun, so `backtest optimized` has something
+	// structured to read back instead of parsing Label.
+	Symbol     string
+	SignalDays int
+	HoldDays   int
+	TakeProfit float64 // fractional offset, e.g. 0.05 for +5% (0 = tree_bounce/no-TP)
+	StopLoss   float64 // fractional offset, e.g. 0.05 for -5% (0 = no-SL)
+	Regime     string
 }
 
 // sweepOutcome is everything produced by running a full parameter sweep for one

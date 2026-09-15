@@ -22,13 +22,10 @@ func runStaleCommand(outDir, marketDBPath string, concurrency int) {
 
 	marketDB, err := storage.OpenSQLite(marketDBPath)
 	if err != nil {
-		log.Fatalf("Failed to open market DB %s: %v", marketDBPath, err)
-	}
-	defer marketDB.Close()
-	latestDataDate, err := runner.LatestMarketDate(marketDB)
-	if err != nil {
-		log.Printf("Warning: could not determine latest market data date (%v) — data-freshness checks will be skipped", err)
-		latestDataDate = ""
+		log.Printf("Warning: could not open market DB %s (%v) — data-freshness checks will be skipped", marketDBPath, err)
+		marketDB = nil
+	} else {
+		defer marketDB.Close()
 	}
 
 	var entries []runner.StaleEntry
@@ -37,7 +34,7 @@ func runStaleCommand(outDir, marketDBPath string, concurrency int) {
 		if err != nil {
 			continue
 		}
-		entries = append(entries, runner.AssessOne(id, info.ModTime(), result.Report.EndDate, latestDataDate))
+		entries = append(entries, runner.AssessOne(id, info.ModTime(), result.Report.EndDate, marketDB))
 	}
 
 	runner.PrintStalenessReport(outDir, entries, runner.MissingStrategies(byStrategy))

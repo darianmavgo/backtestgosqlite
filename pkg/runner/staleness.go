@@ -135,28 +135,57 @@ func newestSQLFile(dir string) (time.Time, string, error) {
 }
 
 // LatestMarketDate returns the most recent bar date (YYYY-MM-DD) present
-// anywhere in market_history.db's backtest_start table — a single query
-// shared across every strategy's assessment rather than one MAX(Date) query
-// per strategy's own symbols, since almost every strategy here trades in the
-// same liquid, frequently-updated symbol universe and a per-symbol query
-// would multiply cost for no practical gain in accuracy.
+// anywhere in market_history.db's backtest_start table. Used only as the
+// last-resort fallback in latestDateForStrategy, for a strategy with no
+// RequiredSymbols()/Benchmark to narrow the query to.
 func LatestMarketDate(marketDB *sqlx.DB) (string, error) {
 	var maxDate string
 	err := marketDB.Get(&maxDate, `SELECT MAX(substr(Date, 1, 10)) FROM backtest_start`)
 	return maxDate, err
 }
 
+// latestDateForStrategy returns the most recent bar date (YYYY-MM-DD) among
+// s's own required symbols (or its Benchmark, if RequiredSymbols isn't
+// implemented). Symbols genuinely differ in how current their data is — e.g.
+// MARA/PDD/TSLA lag a day behind VOO in practice — so comparing a strategy's
+// result against the wrong symbol's latest date produces a false "stale"
+// (or a false "fresh") reading. Falls back to LatestMarketDate only when the
+// strategy names no specific symbols at all.
+func latestDateForStrategy(marketDB *sqlx.DB, s strategy.Strategy) (string, error) {
+	var symbols []string
+	if rp, ok := s.(strategy.RequiredSymbolsProvider); ok {
+		symbols = rp.RequiredSymbols()
+	}
+	if len(symbols) == 0 {
+		if cfg := s.DefaultConfig(); cfg.Benchmark != "" {
+			symbols = []string{cfg.Benchmark}
+		}
+	}
+	if len(symbols) == 0 {
+		return LatestMarketDate(marketDB)
+	}
+
+	query, args, err := sqlx.In(`SELECT MAX(substr(Date, 1, 10)) FROM backtest_start WHERE symbol IN (?)`, symbols)
+	if err != nil {
+		return "", err
+	}
+	query = marketDB.Rebind(query)
+	var maxDate string
+	err = marketDB.Get(&maxDate, query, args...)
+	return maxDate, err
+}
+
 // AssessOne checks a single strategy's analysis (computed at computedAt,
-// covering data through resultEndDate) against the three staleness signals
-// described above. resultEndDate and latestDataDate are "YYYY-MM-DD"
-// strings; pass "" for either to skip the data-drift check (e.g. a
-// gridsearch sweep has no single covered end date).
-func AssessOne(strategyID string, computedAt time.Time, resultEndDate, latestDataDate string) StaleEntry {
+// covering data through resultEndDate — a "YYYY-MM-DD" string, "" to skip
+// the data-drift check, e.g. a gridsearch sweep with no data_max_date
+// recorded yet) against the three staleness signals described above.
+// marketDB may be nil to skip the data-drift check entirely (e.g. the market
+// DB couldn't be opened).
+func AssessOne(strategyID string, computedAt time.Time, resultEndDate string, marketDB *sqlx.DB) StaleEntry {
 	e := StaleEntry{
-		StrategyID:     strategyID,
-		ComputedAt:     computedAt,
-		ResultEndDate:  resultEndDate,
-		LatestDataDate: latestDataDate,
+		StrategyID:    strategyID,
+		ComputedAt:    computedAt,
+		ResultEndDate: resultEndDate,
 	}
 
 	s, registered := strategy.Get(strategyID)
@@ -165,12 +194,15 @@ func AssessOne(strategyID string, computedAt time.Time, resultEndDate, latestDat
 		return e
 	}
 
-	if resultEndDate != "" && latestDataDate != "" {
-		rt, rErr := time.Parse("2006-01-02", resultEndDate)
-		lt, lErr := time.Parse("2006-01-02", latestDataDate)
-		if rErr == nil && lErr == nil && lt.After(rt) {
-			e.DataDaysBehind = int(lt.Sub(rt).Hours() / 24)
-			e.DataStale = true
+	if resultEndDate != "" && marketDB != nil {
+		if latestDataDate, err := latestDateForStrategy(marketDB, s); err == nil && latestDataDate != "" {
+			e.LatestDataDate = latestDataDate
+			rt, rErr := time.Parse("2006-01-02", resultEndDate)
+			lt, lErr := time.Parse("2006-01-02", latestDataDate)
+			if rErr == nil && lErr == nil && lt.After(rt) {
+				e.DataDaysBehind = int(lt.Sub(rt).Hours() / 24)
+				e.DataStale = true
+			}
 		}
 	}
 

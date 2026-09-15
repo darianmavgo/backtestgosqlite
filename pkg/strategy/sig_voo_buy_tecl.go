@@ -126,6 +126,9 @@ func (s *SigVooBuyTecl) DefaultConfig() StrategyConfig {
 	}
 }
 
+// SetDeclineDays implements DeclineDaysConfigurable.
+func (s *SigVooBuyTecl) SetDeclineDays(n int) { s.DeclineDays = n }
+
 func (s *SigVooBuyTecl) SetDatabases(marketDBPath, calcDBPath string) {
 	if sqlStrat, exists := Get("sig_voo_buy_tecl-sql"); exists {
 		sqlStrat.SetDatabases(marketDBPath, calcDBPath)

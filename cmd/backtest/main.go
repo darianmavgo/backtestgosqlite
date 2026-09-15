@@ -24,14 +24,22 @@ func main() {
 	defaultMarketDb := cliutils.GetDefaultMarketDB()
 
 	// Subcommand dispatch:
-	//   backtest stale  -> assess which strategies' cached reports/*.db results
-	//                      are stale (unregistered strategy, newer market data,
-	//                      or an edited SQL pipeline since the result was made)
-	//                      and exit — no backtests run
+	//   backtest stale      -> assess which strategies' cached reports/*.db
+	//                          results are stale (unregistered strategy,
+	//                          newer market data, or an edited SQL pipeline
+	//                          since the result was made) and exit — no
+	//                          backtests run
+	//   backtest optimized  -> run every selected strategy (default: all) with
+	//                          the best config a prior `gridsearch` sweep
+	//                          found for it, instead of its baseline defaults
 	staleMode := false
+	optimizedMode := false
 	if len(os.Args) > 1 && os.Args[1] == "stale" {
 		staleMode = true
 		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
+	} else if len(os.Args) > 1 && os.Args[1] == "optimized" {
+		optimizedMode = true
+		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
 
 	targetDb := flag.String("db", defaultMarketDb, "Path to source SQLite DB containing historical market bars")
@@ -53,6 +61,7 @@ func main() {
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
 	force := flag.Bool("force", false, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
+	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
 	flag.Parse()
 
 	// Ensure HTML reports land in reports/ directory
@@ -65,6 +74,15 @@ func main() {
 
 	if staleMode {
 		runStaleCommand(*outDir, *targetDb, *concurrency)
+		return
+	}
+
+	if optimizedMode {
+		optArg := strings.TrimSpace(*strategyType)
+		if optArg == "" && len(flag.Args()) > 0 {
+			optArg = strings.Join(flag.Args(), ",")
+		}
+		runOptimizedCommand(optArg, *targetDb, *tableName, *outDir, *gridDBPath, *capital, *symbolFilter, *autoDownload, *downloadYears, *concurrency)
 		return
 	}
 

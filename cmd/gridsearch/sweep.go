@@ -231,8 +231,12 @@ func evaluateTask(ctx *sweepContext, t sweepTask, opts sweepOptions) (gridResult
 	}
 
 	label := ""
+	signalDays := t.sigDays
+	regime := t.regime
 	if ctx.ParamSpace.Direction == "tree_bounce" {
 		label = fmt.Sprintf("%s/Hold-%dd/TP+%.0f%%/SL-%.0f%%", t.sym, t.hold, t.tp*100, t.sl*100)
+		signalDays = 0 // tree_bounce's SignalDays axis is a fixed [1] placeholder, not a real decline-day window
+		regime = ""    // tree_bounce entries aren't regime-gated
 	} else {
 		label = fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
 	}
@@ -243,6 +247,12 @@ func evaluateTask(ctx *sweepContext, t sweepTask, opts sweepOptions) (gridResult
 		Trades:     trades,
 		Curve:      curve,
 		IsBaseline: t.isBaseline,
+		Symbol:     t.sym,
+		SignalDays: signalDays,
+		HoldDays:   t.hold,
+		TakeProfit: t.tp,
+		StopLoss:   t.sl,
+		Regime:     regime,
 	}, true
 }
 
