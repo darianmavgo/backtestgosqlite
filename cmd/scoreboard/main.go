@@ -64,6 +64,8 @@ func main() {
 func runAll(concurrency int, force bool) {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
+	strategy.AutoRegisterSQLStrategies(".", targetDb) // so -sql strategies are included, matching compile/status
+
 	allStrategies := strategy.List()
 	if len(allStrategies) == 0 {
 		log.Fatalf("No strategies registered.")

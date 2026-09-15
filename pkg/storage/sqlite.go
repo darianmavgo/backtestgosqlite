@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -454,12 +455,41 @@ func EnsureSignalTable(db *sqlx.DB) error {
 			take_profit REAL,
 			stop_loss REAL,
 			regime TEXT,
+			metadata TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_signals_strat_sym ON signals(strategy_id, symbol, date);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	// Backfill the column for signals.db files created before it existed — SQLite
+	// has no "ADD COLUMN IF NOT EXISTS", so check first and ignore "duplicate
+	// column" if another goroutine/run already added it.
+	var hasMetadata bool
+	rows, err := db.Query(`PRAGMA table_info(signals)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt interface{}
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "metadata" {
+			hasMetadata = true
+		}
+	}
+	if !hasMetadata {
+		if _, err := db.Exec(`ALTER TABLE signals ADD COLUMN metadata TEXT`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error {
@@ -477,8 +507,8 @@ func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error 
 
 	query := `
 		INSERT INTO signals (
-			strategy_id, symbol, date, order_type, direction, entry_price, take_profit, stop_loss, regime
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			strategy_id, symbol, date, order_type, direction, entry_price, take_profit, stop_loss, regime, metadata
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -506,8 +536,17 @@ func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error 
 			stratID = s.StrategyID
 		}
 
+		var metadataJSON interface{}
+		if len(s.Metadata) > 0 {
+			b, err := json.Marshal(s.Metadata)
+			if err != nil {
+				return err
+			}
+			metadataJSON = string(b)
+		}
+
 		_, err := stmt.Exec(
-			stratID, s.Symbol, s.Date, typ, dir, entryPrice, s.TakeProfit, s.StopLoss, s.Regime,
+			stratID, s.Symbol, s.Date, typ, dir, entryPrice, s.TakeProfit, s.StopLoss, s.Regime, metadataJSON,
 		)
 		if err != nil {
 			return err
