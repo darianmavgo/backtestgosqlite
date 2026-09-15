@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -21,6 +22,17 @@ import (
 
 func main() {
 	defaultMarketDb := cliutils.GetDefaultMarketDB()
+
+	// Subcommand dispatch:
+	//   backtest stale  -> assess which strategies' cached reports/*.db results
+	//                      are stale (unregistered strategy, newer market data,
+	//                      or an edited SQL pipeline since the result was made)
+	//                      and exit — no backtests run
+	staleMode := false
+	if len(os.Args) > 1 && os.Args[1] == "stale" {
+		staleMode = true
+		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
+	}
 
 	targetDb := flag.String("db", defaultMarketDb, "Path to source SQLite DB containing historical market bars")
 	tableName := flag.String("table", "backtest_start", "Table name containing historical bars")
@@ -50,6 +62,11 @@ func main() {
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
 	strategy.AutoRegisterSQLStrategies(".", *targetDb)
+
+	if staleMode {
+		runStaleCommand(*outDir, *targetDb, *concurrency)
+		return
+	}
 
 	if *listFlag {
 		runner.PrintStrategyList()
