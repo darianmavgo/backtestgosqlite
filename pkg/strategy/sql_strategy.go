@@ -32,24 +32,29 @@ const (
 	shortHoldDaysPlaceholder       = "__SHORT_HOLD_DAYS__"
 )
 
-// takeProfitMultiplier/stopLossMultiplier convert a StrategyConfig's
-// fractional TP/SL offset into the multiplier a SQL pipeline should apply to
-// an entry price, preserving the 0.0 "no per-signal override" sentinel the
-// simulator checks for (pkg/simulator/portfolio.go: `if sig.TakeProfit > 0` /
-// `if sig.StopLoss > 0`, falling back to the config-level TargetPct/
-// StopLossPct) when a strategy hasn't set that side at all.
-func takeProfitMultiplier(pct float64) float64 {
-	if pct <= 0 {
+// takeProfitMultiplier converts a StrategyConfig take-profit *offset* (e.g.
+// TakeProfitPct/ShortTakeProfitPct = 0.08 for +8%) into the multiplier a SQL
+// pipeline should apply to an entry price, preserving the 0.0 "no per-signal
+// override" sentinel the simulator checks for (pkg/simulator/portfolio.go:
+// `if sig.TakeProfit > 0`, falling back to config-level TargetPct/
+// TakeProfitPct) when a strategy hasn't set that side at all.
+func takeProfitMultiplier(offsetPct float64) float64 {
+	if offsetPct <= 0 {
 		return 0.0
 	}
-	return 1.0 + pct
+	return 1.0 + offsetPct
 }
 
-func stopLossMultiplier(pct float64) float64 {
-	if pct <= 0 {
+// stopLossMultiplier passes a StrategyConfig stop-loss *multiplier* (e.g.
+// StopLossPct/ShortStopLossPct = 0.98 for -2%, applied directly as
+// entryPrice*multiplier — see StrategyConfig.StopLossPct's doc comment)
+// straight through to SQL, preserving the same 0.0 "no per-signal override"
+// sentinel as takeProfitMultiplier.
+func stopLossMultiplier(multiplier float64) float64 {
+	if multiplier <= 0 {
 		return 0.0
 	}
-	return 1.0 - pct
+	return multiplier
 }
 
 // substitutePlaceholders replaces every strategy-config placeholder present
@@ -363,16 +368,26 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 			case "gld_decline":
 				cfg.Benchmark = "GLD"
 				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.08
+				cfg.TakeProfitPct = 0.08
+				cfg.StopLossPct = 0.98
+				cfg.HoldingWindow = 12
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+				cfg.DeclineDays = 2 // matches GLDDeclineStrategy's default DeclineDays
+			case "voo_tecl_combo", "voo_tecl_spxu_combo":
+				// Matches VOOTECLCombo's/VOOTECLSPXUCombo's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.05
 				cfg.TakeProfitPct = 0.05
 				cfg.StopLossPct = 0.00
 				cfg.HoldingWindow = 8
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
-				cfg.DeclineDays = 2 // matches GLDDeclineStrategy's default DeclineDays
-			case "voo_tecl_combo":
-				cfg.DeclineDays = 3 // matches VOOTECLCombo's default DeclineDays
-			case "voo_tecl_spxu_combo":
-				cfg.DeclineDays = 3 // matches VOOTECLSPXUCombo's default DeclineDays
+				cfg.DeclineDays = 3
+				cfg.ShortTakeProfitPct = 0.06
+				cfg.ShortStopLossPct = 0.95
+				cfg.ShortHoldingWindow = 2
 			}
 
 			NewSQLPipelineStrategy(id, name, desc, pipelinePath, cfg)

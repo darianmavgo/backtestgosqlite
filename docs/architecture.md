@@ -51,12 +51,10 @@
 
 ## SQL / Go Boundary
 
-**SQL owns:** date detection only. Every `.sql` file in `sql/signals/` returns one column: `signal_date`.
+**SQL owns:** a strategy's full signal-generation pipeline, as a directory of sequential `.sql` scripts under `sql/strategies/<id>/`, executed by `strategy.SQLPipelineStrategy` (see `pkg/strategy/sql_strategy.go`). Streak/regime detection and even per-signal TP/SL/hold values live in these scripts — strategy-config values (e.g. `DeclineDays`, `TakeProfitPct`, `StopLossPct`, `HoldingWindow`) are substituted into the SQL text via `__DECLINE_DAYS__`/`__TAKE_PROFIT_MULT__`/`__STOP_LOSS_MULT__`/`__HOLD_DAYS__`-style placeholders rather than being hardcoded literals, so a strategy's own config stays the single source of truth. (An earlier, simpler design kept only date detection in SQL — a single `signal_date` column per `sql/signals/*.sql` file, with everything else in Go — but that path was never wired up and has been removed.)
 
-**Go owns:** everything else.
-- Streak detection (e.g. 3 consecutive drops) — `strategy.consecutiveDrops()`
-- Regime filtering (e.g. VOO < SMA200) — `strategy.GenerateSignals()`
-- TP / SL / hold windows — `StrategyConfig` + per-signal `Signal.HoldDaysOverride`
+**Go owns:**
+- Regime filtering when it isn't expressed directly in the SQL — `strategy.GenerateSignals()`
 - Execution math (fills, P&L, drawdown) — `simulator.PortfolioSimulator`
 - Cash yield accrual — `PortfolioSimulator` reads `StrategyConfig.CashYieldAnnual`
 

@@ -21,17 +21,36 @@ import (
 type VOOTECLSPXUCombo struct{
 	// DeclineDays is the number of consecutive down-closes (long leg, checked
 	// on both VOO and TECL) or up-closes (short leg, VOO) required to enter
-	// (default: 3). The single source of truth for the streak length — flows
-	// into DefaultConfig().DeclineDays, which SQLPipelineStrategy substitutes
-	// into the SQL pipeline.
-	DeclineDays  int
-	marketDBPath string
-	calcDBPath   string
+	// (default: 3). TakeProfitPct/StopLossPct/HoldingWindow are the long
+	// (TECL) leg's exit rules (default +5% / no stop / 8d);
+	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow are the short
+	// (SPXU) leg's (default +6% / -5% / 2d). All are the single source of
+	// truth for their values — flowing into DefaultConfig(), which
+	// SQLPipelineStrategy substitutes into the SQL pipeline — instead of
+	// being separately hardcoded literals that DefaultConfig() had no actual
+	// effect on.
+	DeclineDays        int
+	TakeProfitPct      float64
+	StopLossPct        float64
+	HoldingWindow      int
+	ShortTakeProfitPct float64
+	ShortStopLossPct   float64
+	ShortHoldingWindow int
+	marketDBPath       string
+	calcDBPath         string
 }
 
 // NewVOOTECLSPXUCombo constructs and auto-registers the strategy.
 func NewVOOTECLSPXUCombo() *VOOTECLSPXUCombo {
-	s := &VOOTECLSPXUCombo{DeclineDays: 3}
+	s := &VOOTECLSPXUCombo{
+		DeclineDays:        3,
+		TakeProfitPct:      0.05,
+		StopLossPct:        0.00,
+		HoldingWindow:      8,
+		ShortTakeProfitPct: 0.06,
+		ShortStopLossPct:   0.95,
+		ShortHoldingWindow: 2,
+	}
 	Register(s)
 	RegisterAlias("voo-tecl-spxu-combo", s)
 	RegisterAlias("vooteclspxucombo", s)
@@ -68,20 +87,44 @@ func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
 	if declineDays <= 0 {
 		declineDays = 3
 	}
+	takeProfitPct := s.TakeProfitPct
+	if takeProfitPct <= 0 {
+		takeProfitPct = 0.05
+	}
+	holdingWindow := s.HoldingWindow
+	if holdingWindow <= 0 {
+		holdingWindow = 8
+	}
+	shortTakeProfitPct := s.ShortTakeProfitPct
+	if shortTakeProfitPct <= 0 {
+		shortTakeProfitPct = 0.06
+	}
+	shortStopLossPct := s.ShortStopLossPct
+	if shortStopLossPct <= 0 {
+		shortStopLossPct = 0.95
+	}
+	shortHoldingWindow := s.ShortHoldingWindow
+	if shortHoldingWindow <= 0 {
+		shortHoldingWindow = 2
+	}
 	return StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
 		Description:        s.Description(),
 		Benchmark:          "VOO",
 		AllocationPct:      0.65,
-		TakeProfitPct:      0.05, // Long leg default; short overrides per-signal
-		StopLossPct:        0.00, // Long leg: no stop-loss
-		HoldingWindow:      8,    // Long leg default; short overrides per-signal (2)
-		PositionCap:        1,    // One open position at a time
+		TargetPct:          1.0 + takeProfitPct, // legacy-multiplier mirror of TakeProfitPct
+		TakeProfitPct:      takeProfitPct,       // Long leg; short leg uses ShortTakeProfitPct
+		StopLossPct:        s.StopLossPct,       // Long leg: 0.00 means no stop-loss (intentional, not "unset")
+		HoldingWindow:      holdingWindow,       // Long leg; short leg uses ShortHoldingWindow
+		PositionCap:        1,                   // One open position at a time
 		CashYieldAnnual:    0.045,
 		SlippagePct:        0.0,
 		CommissionPerShare: 0.0,
 		DeclineDays:        declineDays,
+		ShortTakeProfitPct: shortTakeProfitPct,
+		ShortStopLossPct:   shortStopLossPct,
+		ShortHoldingWindow: shortHoldingWindow,
 	}
 }
 

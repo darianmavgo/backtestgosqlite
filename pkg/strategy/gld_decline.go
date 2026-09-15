@@ -15,17 +15,26 @@ import (
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual (4.5%).
 type GLDDeclineStrategy struct {
 	// DeclineDays is the number of consecutive GLD down-closes required to
-	// enter (default: 2). The single source of truth for the streak length —
-	// flows into DefaultConfig().DeclineDays, which SQLPipelineStrategy
-	// substitutes into the SQL pipeline, and into the pure-Go fallback below.
-	DeclineDays  int
-	marketDBPath string
-	calcDBPath   string
+	// enter (default: 2). TakeProfitPct/StopLossPct/HoldingWindow are the
+	// strategy's exit rules (defaults +8% / -2% / 12d). All four are the
+	// single source of truth for their respective values — flowing into
+	// DefaultConfig(), which SQLPipelineStrategy substitutes into the SQL
+	// pipeline, and into the pure-Go fallback below — instead of being
+	// separately hardcoded literals that DefaultConfig() had no actual
+	// effect on. TakeProfitPct is a fractional offset (0.08 = +8%);
+	// StopLossPct is a direct multiplier (0.98 = -2%), matching every other
+	// strategy's StopLossPct convention.
+	DeclineDays   int
+	TakeProfitPct float64
+	StopLossPct   float64
+	HoldingWindow int
+	marketDBPath  string
+	calcDBPath    string
 }
 
 // NewGLDDeclineStrategy constructs and auto-registers the strategy.
 func NewGLDDeclineStrategy() *GLDDeclineStrategy {
-	s := &GLDDeclineStrategy{DeclineDays: 2}
+	s := &GLDDeclineStrategy{DeclineDays: 2, TakeProfitPct: 0.08, StopLossPct: 0.98, HoldingWindow: 12}
 	Register(s)
 	RegisterAlias("gld-decline", s)
 	RegisterAlias("gld_decline", s)
@@ -58,15 +67,28 @@ func (s *GLDDeclineStrategy) DefaultConfig() StrategyConfig {
 	if declineDays <= 0 {
 		declineDays = 2
 	}
+	takeProfitPct := s.TakeProfitPct
+	if takeProfitPct <= 0 {
+		takeProfitPct = 0.08
+	}
+	stopLossPct := s.StopLossPct
+	if stopLossPct <= 0 {
+		stopLossPct = 0.98
+	}
+	holdingWindow := s.HoldingWindow
+	if holdingWindow <= 0 {
+		holdingWindow = 12
+	}
 	return StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
 		Description:        s.Description(),
 		Benchmark:          "GLD",
 		AllocationPct:      0.65,
-		TakeProfitPct:      0.08,  // +8% take-profit
-		StopLossPct:        0.02,  // -2% stop-loss
-		HoldingWindow:      12,    // 12-day max holding
+		TargetPct:          1.0 + takeProfitPct, // legacy-multiplier mirror of TakeProfitPct
+		TakeProfitPct:      takeProfitPct,
+		StopLossPct:        stopLossPct,
+		HoldingWindow:      holdingWindow,
 		PositionCap:        1,     // One position at a time
 		CashYieldAnnual:    0.045, // 4.5% idle cash APY
 		SlippagePct:        0.0,
@@ -110,10 +132,8 @@ func (s *GLDDeclineStrategy) GenerateSignals(barsBySymbol map[string][]models.Ba
 		return nil
 	}
 
-	declineDays := s.DeclineDays
-	if declineDays <= 0 {
-		declineDays = 2
-	}
+	cfg := s.DefaultConfig()
+	declineDays := cfg.DeclineDays
 
 	var signals []models.Signal
 	streak := 0
@@ -145,9 +165,9 @@ func (s *GLDDeclineStrategy) GenerateSignals(barsBySymbol map[string][]models.Ba
 				OrderType:        "limit",
 				Direction:        "LONG",
 				Regime:           "All Regimes",
-				TakeProfit:       closePrice * 1.08,
-				StopLoss:         closePrice * 0.98,
-				HoldDaysOverride: 12,
+				TakeProfit:       closePrice * (1.0 + cfg.TakeProfitPct),
+				StopLoss:         closePrice * cfg.StopLossPct,
+				HoldDaysOverride: cfg.HoldingWindow,
 				AssetClass:       "commodity",
 				StrategyID:       s.ID(),
 				Priority:         0,
@@ -179,11 +199,21 @@ func (s *GLDDeclineStrategy) ParameterSpace() ParameterSpace {
 			SignalDays: cfg.DeclineDays,
 			HoldDays:   cfg.HoldingWindow,
 			TakeProfit: cfg.TakeProfitPct,
-			StopLoss:   cfg.StopLossPct,
+			StopLoss:   stopLossOffset(cfg.StopLossPct), // gridsearch's grid is offsets; cfg.StopLossPct is a multiplier
 			Allocation: cfg.AllocationPct,
 			Regime:     "All Regimes",
 		},
 	}
+}
+
+// stopLossOffset converts a StrategyConfig.StopLossPct multiplier (e.g. 0.98
+// for -2%) back into the fractional offset (0.02) that cmd/gridsearch's
+// generic parameter grid and buildSignals() expect.
+func stopLossOffset(multiplier float64) float64 {
+	if multiplier <= 0 || multiplier >= 1.0 {
+		return 0.0
+	}
+	return 1.0 - multiplier
 }
 
 func init() {

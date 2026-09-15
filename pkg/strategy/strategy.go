@@ -45,7 +45,7 @@ type StrategyConfig struct {
 	PositionSizing     string  `json:"position_sizing,omitempty"`     // "fixed_pct", "fixed_shares", "fixed_dollar", "kelly"
 	TargetPct          float64 `json:"target_pct"`                    // Take-profit target multiplier (e.g. 1.18 for +18%); legacy field
 	TakeProfitPct      float64 `json:"take_profit_pct,omitempty"`     // Take-profit as fractional offset (e.g. 0.05 for +5%); preferred over TargetPct
-	StopLossPct        float64 `json:"stop_loss_pct"`                 // Protective stop-loss as fractional offset (e.g. 0.07 for -7%)
+	StopLossPct        float64 `json:"stop_loss_pct"`                 // Protective stop-loss multiplier applied directly to entry price (e.g. 0.93 for -7%, NOT a 0.07-style offset — see pkg/simulator's targetPrice/stopLossPrice fallback)
 	UseATRStop         bool    `json:"use_atr_stop,omitempty"`        // Whether to use ATR-based dynamic stop loss
 	ATRStopMultiplier  float64 `json:"atr_stop_multiplier,omitempty"` // Multiplier for ATR stop (e.g. 2.0)
 	UseTrailingStop    bool    `json:"use_trailing_stop,omitempty"`   // Whether to trail stop-loss from highest price
@@ -72,9 +72,11 @@ type StrategyConfig struct {
 	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg
 	// (e.g. voo-tecl-combo's/voo-tecl-spxu-combo's SPXU short), since a single
 	// StrategyConfig can't otherwise represent two different exit rules for
-	// one strategy's two legs. Substituted via __SHORT_TAKE_PROFIT_MULT__ /
-	// __SHORT_STOP_LOSS_MULT__ / __SHORT_HOLD_DAYS__. Zero/omitted for
-	// single-leg strategies.
+	// one strategy's two legs. Same conventions as their long-leg
+	// counterparts: ShortTakeProfitPct is a fractional offset (0.06 for +6%),
+	// ShortStopLossPct is a direct multiplier (0.95 for -5%). Substituted via
+	// __SHORT_TAKE_PROFIT_MULT__ / __SHORT_STOP_LOSS_MULT__ /
+	// __SHORT_HOLD_DAYS__. Zero/omitted for single-leg strategies.
 	ShortTakeProfitPct float64 `json:"short_take_profit_pct,omitempty"`
 	ShortStopLossPct   float64 `json:"short_stop_loss_pct,omitempty"`
 	ShortHoldingWindow int     `json:"short_holding_window,omitempty"`

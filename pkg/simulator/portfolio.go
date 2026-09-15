@@ -210,11 +210,36 @@ func (s *PortfolioSimulator) Run(
 					continue
 				}
 
-				targetPrice := entryPrice * s.Config.TargetPct
+				// Mirrors shared_account.go's identical fallback: TargetPct (legacy
+				// multiplier, e.g. 1.18) wins when set, else TakeProfitPct (preferred
+				// fractional offset, e.g. 0.08) is converted to a multiplier. Without
+				// the TakeProfitPct branch, a strategy that only sets TakeProfitPct
+				// (no TargetPct) would silently get an entryPrice*0 target — an
+				// immediately-hit $0 take-profit — whenever a signal didn't carry its
+				// own override (gld-decline, voo-tecl-combo and voo-tecl-spxu-combo all
+				// used to rely entirely on a per-signal override for exactly this
+				// reason).
+				targetPrice := 0.0
+				if s.Config.TargetPct > 1.0 {
+					targetPrice = entryPrice * s.Config.TargetPct
+				} else if s.Config.TakeProfitPct > 0 {
+					targetPrice = entryPrice * (1.0 + s.Config.TakeProfitPct)
+				}
 				if sig.TakeProfit > 0 {
 					targetPrice = sig.TakeProfit
 				}
-				stopLossPrice := entryPrice * s.Config.StopLossPct
+
+				// StopLossPct is always a direct multiplier (e.g. 0.93 for -7%), not an
+				// offset — <1.0 is the normal case; >=1.0 is legacy input tolerance also
+				// present in shared_account.go.
+				stopLossPrice := 0.0
+				if s.Config.StopLossPct > 0 {
+					if s.Config.StopLossPct < 1.0 {
+						stopLossPrice = entryPrice * s.Config.StopLossPct
+					} else {
+						stopLossPrice = entryPrice * (1.0 - s.Config.StopLossPct)
+					}
+				}
 				if sig.StopLoss > 0 {
 					stopLossPrice = sig.StopLoss
 				}
