@@ -171,7 +171,7 @@ The platform cleanly separates market data caching from backtest calculation sto
 | **`market_history.db`** | `data/` | **Master OHLCV Bar Cache** | `backtest_start` (OHLCV bars: `idx`, `Date`, `timeframe`, `asset_class`, `open`, `high`, `low`, `close`, `Adj Close`, `volume`, `symbol`) — see [Market Data Cache](#-market-data-cache-market_historydb) below | `cmd/download` | `cmd/backtest`, `cmd/livescan`, `cmd/gridsearch`, `cmd/scoreboard`, `cmd/study`, `cmd/etf_decision_trees`, `cmd/ticker_scan`, `cmd/candlesticks` |
 | **`<strategy_id>.db`** *(e.g. `bb-capitulation.db`, `_2.db`, `_3.db`)* | `reports/` | **Isolated Backtest Run Results** | `signals` (incl. `metadata` JSON column), `trades`, `equity_curve`, `performance_summary` | `cmd/backtest` | `cmd/audit_shared`, `cmd/compare_annual_report`, external analysis, SQLite CLI |
 | **`shared_<primary>_<secondary>.db`** *(e.g. `shared_sig-voo-buy-tecl_bb-capitulation_2.db`)* | `reports/` | **Shared-Account Combo Results** — one cash ledger split across multiple strategies with priority preemption | same 4 tables as above, plus preemption bookkeeping | `cmd/backtest -shared-account` | `cmd/audit_shared`, `cmd/compare_annual_report` |
-| **`livescan_signals.db`** *(optional, with `-save`)* | `reports/` | **Live Signal Log** | `live_signals` (actionable orders for today/tomorrow) | `cmd/livescan -save` | Live order execution & alerts |
+| **`livescan_status.db`** | `reports/` | **Live ENTER/NO_SIGNAL Status** | `livescan_status` (one row per strategy, upserted each scan — `status`, `symbols`, `signal_date`, `scanned_at`) | `cmd/livescan` | Live order execution & alerts |
 | **`scoreboard.db`** | `reports/` | **Cross-Strategy Leaderboard** | Aggregated per-strategy performance rows | `cmd/scoreboard` | Console leaderboard, external analysis |
 | **`gridsearch.db`** | `reports/` | **Parameter-Sweep Pipeline State** | `gridsearch_runs`, `gridsearch_results` | `cmd/gridsearch` | `cmd/gridsearch` (skip-if-done cache), external analysis |
 | **`<study_id>.db`** *(e.g. `gain_5pct_frequency.db`, `march_april_voo_gld_uten.db`)* | `reports/` | **Ad-hoc Study Output** | Study-specific tables (e.g. `granger_causality`) | `cmd/study` | `cmd/granger_chart`, external analysis |
@@ -271,23 +271,18 @@ make example-csv
 ```
 
 ### 6. Live Signal Scanner (`cmd/livescan`)
-Scan recent market history to calculate whether a position entry should happen **today** or **tomorrow**. Takes the exact same arguments as `backtest`, but operates lightning-fast by only querying recent warm bars from SQLite:
+Scans the market to check whether each selected strategy has a buy signal on the *latest* available bar — a fast ENTER/NO_SIGNAL status check, not a backtest. Arguments mirror `cmd/backtest` (`-db`, `-table`, `-strategy`, `-symbol`, `-out-dir`, `-auto-download`, `-download-years`, `-concurrency`, `-list`); `-bars` is livescan's own addition, since it only loads a recent window of bars instead of full history. Unlike `cmd/backtest`'s `-auto-download` (which only fetches a symbol that's *entirely* missing), livescan actually refreshes: when every selected strategy declares specific symbols (`RequiredSymbols()`/`Benchmark`, or an explicit `-symbol`), it runs an incremental `cmd/download` for exactly those symbols before every scan — cheap (`cmd/download` is cache-first; a few milliseconds per already-current symbol) and is what makes "LATEST MARKET CLOSE" actually reflect today's close instead of however many days stale the local cache happened to be. Universe-wide strategies (e.g. `bb-capitulation`, which scans every symbol in the DB) fall back to the old missing-only check — refreshing 1,800+ symbols on every invocation isn't cheap:
 ```bash
-# Scan a single strategy on all universe symbols
-./bin/livescan bb-capitulation -capital 100000
+# Scan a single strategy
+./bin/livescan bb-capitulation
 
-# Scan specific symbols with custom risk overrides
-./bin/livescan -strategy bb-capitulation -symbol SOXL,TECL -capital 50000 -stoploss 0.95 -target 1.15
+# Scan specific strategies, restricted to one symbol
+./bin/livescan -strategy gld-decline,sig-voo-buy-tecl -symbol GLD
 
-# Scan ALL strategies concurrently across the entire database universe
+# Scan every registered strategy concurrently
 ./bin/livescan all
-
-# Output as JSON for automated execution bots or cron jobs
-./bin/livescan -strategy bb-capitulation -json
-
-# Save actionable orders to SQLite database (reports/livescan_signals.db)
-./bin/livescan all -save
 ```
+Writes a per-strategy status table to `reports/livescan_status.db` (`livescan_status`: `strategy_id`, `strategy_name`, `status` — `ENTER`/`NO_SIGNAL`, `symbols` — e.g. `TECL:LONG, SPXU:SHORT`, `signal_date`, `scanned_at`). Re-running upserts by `strategy_id` — the table always reflects the most recent scan, not a historical log.
 
 ### 7. Launch the Local Web Dashboard
 ```bash
@@ -355,15 +350,13 @@ Cache-first OHLCV downloader; see [Quickstart §3](#3-download--cache-market-dat
 ./bin/scoreboard compile                # leaderboard over the now-optimized results
 ```
 
-#### `cmd/livescan` — Today/tomorrow signal scanner
-Same strategy/override flags as `backtest` (`-db`, `-table`, `-strategy`, `-symbol`, `-capital`, `-max-positions`, `-stoploss`, `-target`, `-hold`, `-list`, `-concurrency`), plus:
+#### `cmd/livescan` — Live ENTER/NO_SIGNAL status scanner
+Same core flags as `backtest` (`-db`, `-table`, `-strategy`, `-symbol`, `-out-dir`, `-auto-download`, `-download-years`, `-concurrency`, `-list`) — a live scan has no simulation to size positions or set exits for, so `-capital`/`-max-positions`/`-stoploss`/`-target`/`-hold` don't apply and aren't present. Plus:
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
-| `-bars` | `250` | Recent bars per symbol to load for indicators |
-| `-lookback` | `3` | Trading days of signals to display |
-| `-save` | `false` | Persist scanned signals to SQLite |
-| `-save-db` | `reports/livescan_signals.db` | Custom save path |
-| `-json` | `false` | Emit JSON for automation/cron |
+| `-bars` | `250` | Recent bars per symbol to load for indicator calculations |
+
+Output: `<out-dir>/livescan_status.db` (`livescan_status` table, upserted by `strategy_id` each run — see [Quickstart §6](#6-live-signal-scanner-cmdlivescan)).
 
 #### `cmd/ui` — Local web dashboard
 `-port` (default `8085`) is the only flag. See the [Quickstart §7](#7-launch-the-local-web-dashboard) caveat — it's currently wired to a legacy dataset, not the live strategy library.

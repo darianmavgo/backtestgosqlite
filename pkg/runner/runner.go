@@ -120,14 +120,41 @@ func PrintStrategyList() {
 			s.ID(),
 			sType,
 			s.Name(),
-			fmt.Sprintf("+%.1f%%", (cfg.TargetPct-1)*100),
-			fmt.Sprintf("-%.1f%%", (1-cfg.StopLossPct)*100),
+			FormatTargetDisplay(cfg),
+			FormatStopDisplay(cfg),
 			fmt.Sprintf("%dd", cfg.HoldingWindow),
 			s.Description(),
 		})
 	}
 	table.Render()
 	fmt.Printf("\nRun any strategy with: ./bin/backtest -strategy <ID>\n\n")
+}
+
+// FormatTargetDisplay and FormatStopDisplay render a strategy's baseline
+// target/stop for a -list table, honoring the same TargetPct (multiplier,
+// legacy) / TakeProfitPct (offset, preferred) and StopLossPct (multiplier)
+// conventions as pkg/simulator/portfolio.go. A plain (cfg.TargetPct-1)*100 or
+// (1-cfg.StopLossPct)*100 renders garbage ("+99800.0%", "-100.0%") for any
+// strategy that sets only TakeProfitPct or has StopLossPct == 0
+// (intentionally "no stop") — which covers most SQL-pipeline strategies.
+func FormatTargetDisplay(cfg strategy.StrategyConfig) string {
+	if cfg.TargetPct > 1.0 {
+		return fmt.Sprintf("+%.1f%%", (cfg.TargetPct-1)*100)
+	}
+	if cfg.TakeProfitPct > 0 {
+		return fmt.Sprintf("+%.1f%%", cfg.TakeProfitPct*100)
+	}
+	return "n/a (per-signal)"
+}
+
+func FormatStopDisplay(cfg strategy.StrategyConfig) string {
+	if cfg.StopLossPct <= 0 {
+		return "none"
+	}
+	if cfg.StopLossPct < 1.0 {
+		return fmt.Sprintf("-%.1f%%", (1-cfg.StopLossPct)*100)
+	}
+	return fmt.Sprintf("-%.1f%%", cfg.StopLossPct*100)
 }
 
 func PrintTradesTable(trades []models.Trade, symbolFilter string) {
