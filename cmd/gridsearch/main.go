@@ -19,6 +19,11 @@
 //	# running any backtests — no DB access required:
 //	go run cmd/gridsearch/main.go params gld_decline
 //	go run cmd/gridsearch/main.go params all
+//
+//	# Assess every strategy with a completed sweep for staleness (renamed/
+//	# removed strategy, newer market data, or an edited SQL pipeline since
+//	# the sweep ran) — no sweeps run:
+//	go run cmd/gridsearch/main.go stale
 package main
 
 import (
@@ -108,10 +113,19 @@ func main() {
 	//                                   the consecutive decline/rally-day axis)
 	//                                   for one strategy or 'all', with no DB
 	//                                   access and no backtests run
+	//   gridsearch stale              -> assess every strategy with a recorded
+	//                                    sweep in -gridsearch-db for staleness
+	//                                    (unregistered strategy, newer market
+	//                                    data, or an edited SQL pipeline since
+	//                                    the sweep ran) and exit — no sweeps run
 	paramsMode := false
+	staleMode := false
 	if len(os.Args) > 1 && os.Args[1] == "params" {
 		paramsMode = true
 		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
+	} else if len(os.Args) > 1 && os.Args[1] == "stale" {
+		staleMode = true
+		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
 	flag.Parse()
 
@@ -122,6 +136,11 @@ func main() {
 	})
 
 	strategy.AutoRegisterSQLStrategies(".", *dbPath)
+
+	if staleMode {
+		runStaleCommand(*gridDBPath, *dbPath)
+		return
+	}
 
 	if *listFlag {
 		fmt.Println("\n=======================================================================================================================")
@@ -172,6 +191,9 @@ func main() {
 		fmt.Println("Run with the 'params' subcommand to print the parameter grid without sweeping:")
 		fmt.Println("         go run cmd/gridsearch/main.go params <strategy_id>")
 		fmt.Println("         go run cmd/gridsearch/main.go params all")
+		fmt.Println()
+		fmt.Println("Run with the 'stale' subcommand to see which completed sweeps are stale:")
+		fmt.Println("         go run cmd/gridsearch/main.go stale")
 		fmt.Println()
 		os.Exit(1)
 	}

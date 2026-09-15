@@ -8,9 +8,28 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/jmoiron/sqlx"
 )
+
+// maxBarDate returns the latest "YYYY-MM-DD" date among bars — the market
+// data coverage a sweep actually ran against, recorded alongside its result
+// so a later `gridsearch stale` run can tell whether more history has since
+// appeared (see runner.AssessOne).
+func maxBarDate(bars []models.Bar) string {
+	var max string
+	for _, b := range bars {
+		d := b.Date
+		if len(d) >= 10 {
+			d = d[:10]
+		}
+		if d > max {
+			max = d
+		}
+	}
+	return max
+}
 
 // This file is the "pipeline controller" for cmd/gridsearch: a persisted record
 // of which strategies have a completed sweep (gridsearch_runs) and the full
@@ -60,7 +79,16 @@ func ensureGridSearchSchema(gdb *sqlx.DB) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_gridsearch_results_strategy ON gridsearch_results(strategy_id);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	// Added after the table above shipped; ignore the "duplicate column"
+	// error on a DB that already has it. Backs the `gridsearch stale`
+	// subcommand's data-freshness check (see recordRun and
+	// runner.AssessOne) — the latest market bar date seen when this sweep
+	// ran, so a later run can tell whether more history has since appeared.
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_runs ADD COLUMN data_max_date TEXT;`)
+	return nil
 }
 
 // isStrategyDone reports whether strategy_id has a completed ('done') sweep
@@ -129,12 +157,14 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 		bestResilienceLabel = outcome.TopResilience[0].Label
 	}
 
+	dataMaxDate := maxBarDate(outcome.SignalBars)
+
 	if _, err := gdb.Exec(`
 		INSERT INTO gridsearch_runs (
 			strategy_id, strategy_name, status, total_permutations, evaluated_configs,
 			baseline_calmar, best_calmar, best_calmar_label, best_resilience_score, best_resilience_label,
-			started_at, finished_at, duration_ms, error
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			started_at, finished_at, duration_ms, error, data_max_date
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(strategy_id) DO UPDATE SET
 			strategy_name = excluded.strategy_name,
 			status = excluded.status,
@@ -147,12 +177,13 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 			best_resilience_label = excluded.best_resilience_label,
 			finished_at = excluded.finished_at,
 			duration_ms = excluded.duration_ms,
-			error = excluded.error
+			error = excluded.error,
+			data_max_date = excluded.data_max_date
 	`,
 		strat.ID(), strat.Name(), status, outcome.TotalPerms, len(outcome.Results),
 		baselineCalmar, bestCalmar, bestCalmarLabel, bestResilience, bestResilienceLabel,
 		time.Now().UTC().Add(-outcome.Elapsed).Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339),
-		outcome.Elapsed.Milliseconds(), errMsg,
+		outcome.Elapsed.Milliseconds(), errMsg, dataMaxDate,
 	); err != nil {
 		log.Printf("Warning: failed to record run result for %s: %v", strat.ID(), err)
 	}

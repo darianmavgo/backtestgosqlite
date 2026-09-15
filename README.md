@@ -343,6 +343,11 @@ Cache-first OHLCV downloader; see [Quickstart §3](#3-download--cache-market-dat
 | `-list` | `false` | List all registered Go and SQL strategies |
 | A single strategy ID can also be passed positionally: `./bin/backtest bb-capitulation`. |
 
+**`backtest stale` subcommand**: assesses every strategy with a usable result in `-out-dir` for staleness and exits — no backtests run. Three independent signals, any one of which is enough to flag a result: the strategy ID is no longer registered (renamed or removed — e.g. what happened to `voo-tecl-combo`/`millwharf` this session); `data/market_history.db` now has bars beyond the date the result covers (compared by actual date coverage — `performance_summary.end_date` vs. the DB's latest bar — not file mtime, which is touched constantly by downloads/WAL checkpointing and would flag almost everything); or, for SQL-pipeline-backed strategies, the newest `.sql` file in the strategy's pipeline directory was edited after the result was generated. Pure-Go strategies (no SQL pipeline) skip the third check rather than guess at a source filename. Also lists currently-registered strategies with no result to assess at all ("never run").
+```bash
+./bin/backtest stale
+```
+
 #### `cmd/livescan` — Today/tomorrow signal scanner
 Same strategy/override flags as `backtest` (`-db`, `-table`, `-strategy`, `-symbol`, `-capital`, `-max-positions`, `-stoploss`, `-target`, `-hold`, `-list`, `-concurrency`), plus:
 | Flag | Default | Meaning |
@@ -382,6 +387,11 @@ Example: `./bin/gridsearch -strategy bb-capitulation` (single) or `./bin/gridsea
 ```bash
 ./bin/gridsearch params gld_decline     # one strategy, full grid + relevance check
 ./bin/gridsearch params all             # every registered strategy, plus a rollup warning
+```
+
+**`gridsearch stale` subcommand**: assesses every strategy with a completed (`status='done'`) sweep in `-gridsearch-db` for staleness and exits — no sweeps run. Same three signals as `backtest stale` (shared implementation, `pkg/runner/staleness.go`): unregistered strategy, newer market data than the sweep saw (`gridsearch_runs.data_max_date`, the latest bar date recorded when the sweep ran, vs. the market DB's latest bar now), or an edited SQL pipeline since `finished_at`. Sweeps recorded before this column existed have no `data_max_date` and simply skip that one check until re-swept. Also lists registered strategies with no completed sweep at all.
+```bash
+./bin/gridsearch stale
 ```
 
 #### `cmd/scoreboard` — Cross-strategy leaderboard
