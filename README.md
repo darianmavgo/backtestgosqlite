@@ -171,7 +171,7 @@ The platform cleanly separates market data caching from backtest calculation sto
 | **`market_history.db`** | `data/` | **Master OHLCV Bar Cache** | `backtest_start` (OHLCV bars: `idx`, `Date`, `timeframe`, `asset_class`, `open`, `high`, `low`, `close`, `Adj Close`, `volume`, `symbol`) — see [Market Data Cache](#-market-data-cache-market_historydb) below | `cmd/download` | `cmd/backtest`, `cmd/livescan`, `cmd/gridsearch`, `cmd/scoreboard`, `cmd/study`, `cmd/etf_decision_trees`, `cmd/ticker_scan`, `cmd/candlesticks` |
 | **`<strategy_id>.db`** *(e.g. `bb-capitulation.db`, `_2.db`, `_3.db`)* | `reports/` | **Isolated Backtest Run Results** | `signals` (incl. `metadata` JSON column), `trades`, `equity_curve`, `performance_summary` | `cmd/backtest` | `cmd/audit_shared`, `cmd/compare_annual_report`, external analysis, SQLite CLI |
 | **`shared_<primary>_<secondary>.db`** *(e.g. `shared_sig-voo-buy-tecl_bb-capitulation_2.db`)* | `reports/` | **Shared-Account Combo Results** — one cash ledger split across multiple strategies with priority preemption | same 4 tables as above, plus preemption bookkeeping | `cmd/backtest -shared-account` | `cmd/audit_shared`, `cmd/compare_annual_report` |
-| **`livescan_status.db`** | `reports/` | **Live ENTER/NO_SIGNAL Status** | `livescan_status` (one row per strategy, upserted each scan — `status`, `symbols`, `signal_date`, `scanned_at`) | `cmd/livescan` | Live order execution & alerts |
+| **`livescan.db`** | `reports/` | **Live ENTER/NO_SIGNAL Status** | `livescan_status` (one row per strategy, upserted each scan — `status`, `symbols`, `signal_date`, `scanned_at`) | `cmd/livescan` | Live order execution & alerts |
 | **`scoreboard.db`** | `reports/` | **Cross-Strategy Leaderboard** | Aggregated per-strategy performance rows | `cmd/scoreboard` | Console leaderboard, external analysis |
 | **`gridsearch.db`** | `reports/` | **Parameter-Sweep Pipeline State** | `gridsearch_runs`, `gridsearch_results` | `cmd/gridsearch` | `cmd/gridsearch` (skip-if-done cache), external analysis |
 | **`<study_id>.db`** *(e.g. `gain_5pct_frequency.db`, `march_april_voo_gld_uten.db`)* | `reports/` | **Ad-hoc Study Output** | Study-specific tables (e.g. `granger_causality`) | `cmd/study` | `cmd/granger_chart`, external analysis |
@@ -282,7 +282,7 @@ Scans the market to check whether each selected strategy has a buy signal on the
 # Scan every registered strategy concurrently
 ./bin/livescan all
 ```
-Writes a per-strategy status table to `reports/livescan_status.db` (`livescan_status`: `strategy_id`, `strategy_name`, `status` — `ENTER`/`NO_SIGNAL`, `symbols` — e.g. `TECL:LONG, SPXU:SHORT`, `signal_date`, `scanned_at`). Re-running upserts by `strategy_id` — the table always reflects the most recent scan, not a historical log.
+Writes a per-strategy status table to `reports/livescan.db` (`livescan_status`: `strategy_id`, `strategy_name`, `status` — `ENTER`/`NO_SIGNAL`, `symbols` — e.g. `TECL:LONG, SPXU:SHORT`, `signal_date`, `scanned_at`). Re-running upserts by `strategy_id` — the table always reflects the most recent scan, not a historical log. This same file also doubles as every scanned strategy's calc DB (SQL-pipeline slice/signal tables, and genetic-momentum's Python-subprocess predictions/rankings) — no temp file involved.
 
 ### 7. Launch the Local Web Dashboard
 ```bash
@@ -356,7 +356,7 @@ Same core flags as `backtest` (`-db`, `-table`, `-strategy`, `-symbol`, `-out-di
 | :--- | :--- | :--- |
 | `-bars` | `250` | Recent bars per symbol to load for indicator calculations |
 
-Output: `<out-dir>/livescan_status.db` (`livescan_status` table, upserted by `strategy_id` each run — see [Quickstart §6](#6-live-signal-scanner-cmdlivescan)).
+Output: `<out-dir>/livescan.db` (`livescan_status` table, upserted by `strategy_id` each run — see [Quickstart §6](#6-live-signal-scanner-cmdlivescan)).
 
 #### `cmd/ui` — Local web dashboard
 `-port` (default `8085`) is the only flag. See the [Quickstart §7](#7-launch-the-local-web-dashboard) caveat — it's currently wired to a legacy dataset, not the live strategy library.

@@ -96,11 +96,15 @@ func main() {
 		log.Fatalf("No valid strategies selected. Run with -list to view available strategies.")
 	}
 
-	// Configure DB paths for all strategies (SQL-pipeline strategies run
-	// their pipeline directly against targetDb; ":memory:" is a scratch calc
-	// DB since a live scan has no result DB to persist intermediate tables to).
+	// A single persistent file backs both strategies' calc tables (SQL-
+	// pipeline slice/signal tables, and genetic-momentum's Python-subprocess
+	// predictions — needs a real file, not ":memory:", which is a private,
+	// per-connection database no other process can ever see) and the final
+	// livescan_status results table written at the end of the run. Nothing
+	// temporary to clean up.
+	livescanDBPath := filepath.Join(*outDir, "livescan.db")
 	for _, s := range selectedStrategies {
-		s.SetDatabases(*targetDb, ":memory:")
+		s.SetDatabases(*targetDb, livescanDBPath)
 	}
 
 	// Resolve which symbols we can scope to: an explicit -symbol filter
@@ -205,11 +209,10 @@ func main() {
 
 	printScanTable(results)
 
-	statusDBPath := filepath.Join(*outDir, "livescan_status.db")
-	if err := saveScanResults(statusDBPath, results); err != nil {
-		log.Printf("Warning: failed to save live-scan status to %s: %v", statusDBPath, err)
+	if err := saveScanResults(livescanDBPath, results); err != nil {
+		log.Printf("Warning: failed to save live-scan status to %s: %v", livescanDBPath, err)
 	} else {
-		fmt.Printf("\n💾 Live-signal status saved to SQLite: %s (table: livescan_status)\n\n", statusDBPath)
+		fmt.Printf("\n💾 Live-signal status saved to SQLite: %s (table: livescan_status)\n\n", livescanDBPath)
 	}
 }
 
@@ -291,7 +294,7 @@ func printScanTable(results []scanResult) {
 // truncateSymbols caps the console table's Symbols column at maxShown
 // entries — a universe-scanning strategy (e.g. bb-capitulation) can trigger
 // on dozens of symbols in one day, which makes the console table unreadable.
-// The full, untruncated list is always what's written to livescan_status.db.
+// The full, untruncated list is always what's written to livescan.db.
 func truncateSymbols(symbols string, maxShown int) string {
 	if symbols == "" {
 		return ""
@@ -300,7 +303,7 @@ func truncateSymbols(symbols string, maxShown int) string {
 	if len(parts) <= maxShown {
 		return symbols
 	}
-	return fmt.Sprintf("%s, ... (+%d more, see livescan_status.db)", strings.Join(parts[:maxShown], ", "), len(parts)-maxShown)
+	return fmt.Sprintf("%s, ... (+%d more, see livescan.db)", strings.Join(parts[:maxShown], ", "), len(parts)-maxShown)
 }
 
 // saveScanResults upserts each strategy's status into livescan_status, keyed
