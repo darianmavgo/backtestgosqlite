@@ -54,7 +54,7 @@ type Signal struct {
 	// hold periods per leg (e.g. long=8 days, short=2 days).
 	HoldDaysOverride int `db:"hold_days_override" json:"hold_days_override,omitempty"`
 
-	// StrategyID identifies the strategy that generated this signal (e.g. "voo-tecl-combo", "bb-capitulation").
+	// StrategyID identifies the strategy that generated this signal (e.g. "sig-voo-buy-tecl", "bb-capitulation").
 	StrategyID string `db:"strategy_id" json:"strategy_id,omitempty"`
 
 	// Priority denotes the execution priority tier (0 = primary, 1 = secondary, etc.).

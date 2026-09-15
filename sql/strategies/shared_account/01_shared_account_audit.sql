@@ -2,7 +2,7 @@
 -- SHARED-ACCOUNT MULTI-STRATEGY AUDIT & PERFORMANCE ANALYSIS (SQLITE)
 -- ==============================================================================
 -- Strategy Hierarchy:
---   Primary:   voo-tecl-combo (Priority 0: Capital Precedence)
+--   Primary:   sig-voo-buy-tecl (Priority 0: Capital Precedence)
 --   Secondary: bb-capitulation (Priority 1: Idle Cash Utilization)
 -- Preemption:  Secondary positions liquidated at market if primary signal needs cash
 -- ==============================================================================

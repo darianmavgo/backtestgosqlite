@@ -4,7 +4,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-// VOOTECLCombo implements the All-Weather Dual Combo strategy:
+// SigVooBuyTecl implements the All-Weather Dual Combo strategy:
 //
 //   - LONG TECL when VOO closes down 3 consecutive days
 //     (+5% take-profit, 0% stop-loss, 8-day max hold, 65% allocation)
@@ -18,7 +18,9 @@ import (
 //
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual
 // and applied by the PortfolioSimulator.
-type VOOTECLCombo struct{
+//
+// Formerly VOOTECLCombo / ID "voo-tecl-combo" — renamed to SigVooBuyTecl / "sig-voo-buy-tecl".
+type SigVooBuyTecl struct{
 	// DeclineDays is the number of consecutive VOO down-closes (long leg) or
 	// up-closes (short leg) required to enter (default: 3). TakeProfitPct/
 	// StopLossPct/HoldingWindow are the long (TECL) leg's exit rules (default
@@ -39,9 +41,9 @@ type VOOTECLCombo struct{
 	calcDBPath         string
 }
 
-// NewVOOTECLCombo constructs and auto-registers the strategy.
-func NewVOOTECLCombo() *VOOTECLCombo {
-	s := &VOOTECLCombo{
+// NewSigVooBuyTecl constructs and auto-registers the strategy.
+func NewSigVooBuyTecl() *SigVooBuyTecl {
+	s := &SigVooBuyTecl{
 		DeclineDays:        3,
 		TakeProfitPct:      0.05,
 		StopLossPct:        0.00,
@@ -51,34 +53,34 @@ func NewVOOTECLCombo() *VOOTECLCombo {
 		ShortHoldingWindow: 2,
 	}
 	Register(s)
-	RegisterAlias("voo-tecl-combo", s)
-	RegisterAlias("vooteclcombo", s)
-	RegisterAlias("VOOTECLCombo", s)
+	RegisterAlias("sig-voo-buy-tecl", s)
+	RegisterAlias("sigvoobuytecl", s)
+	RegisterAlias("SigVooBuyTecl", s)
 	return s
 }
 
-func (s *VOOTECLCombo) ID() string { return "voo-tecl-combo" }
+func (s *SigVooBuyTecl) ID() string { return "sig-voo-buy-tecl" }
 
-func (s *VOOTECLCombo) Name() string { return "VOO→TECL All-Weather Combo" }
+func (s *SigVooBuyTecl) Name() string { return "VOO→TECL All-Weather Combo" }
 
-func (s *VOOTECLCombo) Description() string {
+func (s *SigVooBuyTecl) Description() string {
 	return "Long TECL on 3-consecutive VOO down-closes (+5% TP / 8d hold) " +
 		"combined with Short SPXU on 3-consecutive VOO up-closes in bear markets " +
 		"(VOO < SMA200, +6% TP / -5% SL / 2d hold). Long takes priority on same-day conflicts. " +
 		"65% allocation per trade. 4.5% T-bill yield on idle cash."
 }
 
-func (s *VOOTECLCombo) Validate() error {
+func (s *SigVooBuyTecl) Validate() error {
 	return ValidateConfig(s.DefaultConfig())
 }
 
 // RequiredSymbols returns the specific market symbols required by this combo strategy.
-func (s *VOOTECLCombo) RequiredSymbols() []string {
+func (s *SigVooBuyTecl) RequiredSymbols() []string {
 	return []string{"VOO", "TECL", "SPXU"}
 }
 
 // DefaultConfig returns the canonical VOO-TECL combo parameters.
-func (s *VOOTECLCombo) DefaultConfig() StrategyConfig {
+func (s *SigVooBuyTecl) DefaultConfig() StrategyConfig {
 	declineDays := s.DeclineDays
 	if declineDays <= 0 {
 		declineDays = 3
@@ -124,35 +126,35 @@ func (s *VOOTECLCombo) DefaultConfig() StrategyConfig {
 	}
 }
 
-func (s *VOOTECLCombo) SetDatabases(marketDBPath, calcDBPath string) {
-	if sqlStrat, exists := Get("voo_tecl_combo-sql"); exists {
+func (s *SigVooBuyTecl) SetDatabases(marketDBPath, calcDBPath string) {
+	if sqlStrat, exists := Get("sig_voo_buy_tecl-sql"); exists {
 		sqlStrat.SetDatabases(marketDBPath, calcDBPath)
 	}
 	s.marketDBPath = marketDBPath
 	s.calcDBPath = calcDBPath
 }
 
-func (s *VOOTECLCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+func (s *SigVooBuyTecl) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	// Run the canonical SQLite pipeline with this instance's own config, so a
 	// non-default s.DeclineDays actually takes effect. Built fresh (not the
-	// registered "voo_tecl_combo-sql" singleton, which always uses its own
+	// registered "sig_voo_buy_tecl-sql" singleton, which always uses its own
 	// AutoRegisterSQLStrategies default) but reusing that singleton's already
 	// -resolved pipeline dir when it's registered, since the literal
-	// "sql/strategies/voo_tecl_combo" only resolves correctly when the
+	// "sql/strategies/sig_voo_buy_tecl" only resolves correctly when the
 	// process's working directory is the repo root.
-	dir := "sql/strategies/voo_tecl_combo"
-	if sqlStrat, exists := Get("voo_tecl_combo-sql"); exists {
+	dir := "sql/strategies/sig_voo_buy_tecl"
+	if sqlStrat, exists := Get("sig_voo_buy_tecl-sql"); exists {
 		if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
 			dir = sp.PipelineDir()
 		}
 	}
-	pipe := NewSQLPipelineStrategy("voo_tecl_combo-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
+	pipe := NewSQLPipelineStrategy("sig_voo_buy_tecl-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
 	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
 	return pipe.GenerateSignals(barsBySymbol)
 }
 
 // ParameterSpace returns the tailored parameter search space centered around VOO-TECL combo defaults.
-func (s *VOOTECLCombo) ParameterSpace() ParameterSpace {
+func (s *SigVooBuyTecl) ParameterSpace() ParameterSpace {
 	cfg := s.DefaultConfig()
 	return ParameterSpace{
 		StrategyID:   s.ID(),
@@ -180,5 +182,5 @@ func (s *VOOTECLCombo) ParameterSpace() ParameterSpace {
 }
 
 func init() {
-	NewVOOTECLCombo()
+	NewSigVooBuyTecl()
 }

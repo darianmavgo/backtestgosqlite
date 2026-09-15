@@ -1,5 +1,5 @@
 -- LONG TECL when VOO down __DECLINE_DAYS__ days
-INSERT INTO voo_tecl_combo_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
+INSERT INTO sig_voo_buy_tecl_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
     coalesce(t.idx, t.rowid, 0) AS idx,
     'TECL' AS symbol,
@@ -22,7 +22,7 @@ WHERE v.down_streak >= __DECLINE_DAYS__;
 
 -- SHORT SPXU when VOO up __DECLINE_DAYS__ days AND VOO < SMA200
 -- Also ensure we don't insert a SHORT if a LONG was already inserted for that date (LONG takes priority)
-INSERT INTO voo_tecl_combo_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
+INSERT INTO sig_voo_buy_tecl_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
     coalesce(s.idx, s.rowid, 0) AS idx,
     'SPXU' AS symbol,
@@ -44,6 +44,6 @@ JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU' AN
 WHERE v.up_streak >= __DECLINE_DAYS__
   AND (v.sma200 <= 0 OR v.close < v.sma200)
   AND NOT EXISTS (
-      SELECT 1 FROM voo_tecl_combo_signals prev
+      SELECT 1 FROM sig_voo_buy_tecl_signals prev
       WHERE prev.date = v.date AND prev.direction = 'LONG'
   );

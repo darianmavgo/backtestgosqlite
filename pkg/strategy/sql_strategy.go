@@ -21,7 +21,7 @@ import (
 // (and, for two-leg combos, its short-leg equivalents) are real tunable
 // parameters instead of hardcoded literals baked into the .sql file — the
 // same problem __DECLINE_DAYS__ solves for the consecutive decline/rally-day
-// window (e.g. sql/strategies/gld_decline, voo_tecl_combo, voo_tecl_spxu_combo).
+// window (e.g. sql/strategies/gld_decline, sig_voo_buy_tecl, voo_tecl_spxu_combo).
 const (
 	declineDaysPlaceholder         = "__DECLINE_DAYS__"
 	takeProfitMultPlaceholder      = "__TAKE_PROFIT_MULT__"
@@ -375,8 +375,8 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
 				cfg.DeclineDays = 2 // matches GLDDeclineStrategy's default DeclineDays
-			case "voo_tecl_combo", "voo_tecl_spxu_combo":
-				// Matches VOOTECLCombo's/VOOTECLSPXUCombo's own defaults.
+			case "sig_voo_buy_tecl", "voo_tecl_spxu_combo":
+				// Matches SigVooBuyTecl's/VOOTECLSPXUCombo's own defaults.
 				cfg.AllocationPct = 0.65
 				cfg.TargetPct = 1.05
 				cfg.TakeProfitPct = 0.05

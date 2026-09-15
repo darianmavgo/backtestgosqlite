@@ -67,7 +67,7 @@ func main() {
 // row also has entries in equity_curve, trades, and signals — so that's the
 // reliable way to find it regardless of what it's named. Older databases used
 // the generic literal "SHARED_ACCOUNT"; newer ones use
-// runner.SharedAccountID(primary, secondaries) (e.g. "voo-tecl-combo+mara_tree").
+// runner.SharedAccountID(primary, secondaries) (e.g. "sig-voo-buy-tecl+mara_tree").
 // Falls back to the legacy literal if the lookup comes up empty.
 func resolveCombinedID(db *sqlx.DB) string {
 	var id string
@@ -172,7 +172,7 @@ func runPreemptedPositionsAudit(db *sqlx.DB) {
 
 	fmt.Printf("========================================================================================================================\n")
 	fmt.Printf("⚡ SECTION 2: AUDIT OF PREEMPTED SECONDARY POSITIONS (Total: %d Preempted)\n", len(rows))
-	fmt.Printf("   Liquidated at market to free cash for primary (voo-tecl-combo) buy signals\n")
+	fmt.Printf("   Liquidated at market to free cash for primary (sig-voo-buy-tecl) buy signals\n")
 	fmt.Printf("========================================================================================================================\n")
 
 	if len(rows) == 0 {

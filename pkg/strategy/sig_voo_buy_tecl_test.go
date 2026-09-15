@@ -6,13 +6,13 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-func TestVOOTECLCombo_GenerateSignals(t *testing.T) {
+func TestSigVooBuyTecl_GenerateSignals(t *testing.T) {
 	AutoRegisterSQLStrategies("../..", "../../data/market_history.db")
-	s := NewVOOTECLCombo()
+	s := NewSigVooBuyTecl()
 	s.SetDatabases("../../data/market_history.db", ":memory:")
 	sigs := s.GenerateSignals(map[string][]models.Bar{})
 	if len(sigs) == 0 {
-		t.Fatalf("expected non-zero signals generated for VOOTECLCombo, got 0")
+		t.Fatalf("expected non-zero signals generated for SigVooBuyTecl, got 0")
 	}
 
 	hasLong := false

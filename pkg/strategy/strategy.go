@@ -62,7 +62,7 @@ type StrategyConfig struct {
 	// DeclineDays is the number of consecutive down-closes (or, for a short leg,
 	// up-closes) required in the signal symbol before a decline/rally-streak
 	// strategy enters. Only meaningful for strategies whose entry is defined by
-	// a consecutive-day streak (e.g. gld-decline, voo-tecl-combo,
+	// a consecutive-day streak (e.g. gld-decline, sig-voo-buy-tecl,
 	// voo-tecl-spxu-combo); substituted into their SQL pipeline via the
 	// __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted for
 	// every other strategy.
@@ -70,7 +70,7 @@ type StrategyConfig struct {
 
 	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow mirror
 	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg
-	// (e.g. voo-tecl-combo's/voo-tecl-spxu-combo's SPXU short), since a single
+	// (e.g. sig-voo-buy-tecl's/voo-tecl-spxu-combo's SPXU short), since a single
 	// StrategyConfig can't otherwise represent two different exit rules for
 	// one strategy's two legs. Same conventions as their long-leg
 	// counterparts: ShortTakeProfitPct is a fractional offset (0.06 for +6%),

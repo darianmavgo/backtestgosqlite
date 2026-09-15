@@ -17,8 +17,8 @@ CREATE TABLE voo_streaks_slice (
     up_streak INTEGER
 );
 
-DROP TABLE IF EXISTS voo_tecl_combo_signals;
-CREATE TABLE voo_tecl_combo_signals (
+DROP TABLE IF EXISTS sig_voo_buy_tecl_signals;
+CREATE TABLE sig_voo_buy_tecl_signals (
     idx INTEGER,
     symbol TEXT,
     date TEXT,
@@ -35,4 +35,4 @@ CREATE TABLE voo_tecl_combo_signals (
     take_profit REAL,
     stop_loss REAL
 );
-CREATE INDEX IF NOT EXISTS idx_voo_tecl_combo_signals ON voo_tecl_combo_signals (symbol, date);
+CREATE INDEX IF NOT EXISTS idx_sig_voo_buy_tecl_signals ON sig_voo_buy_tecl_signals (symbol, date);

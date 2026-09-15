@@ -18,7 +18,7 @@
 │               │ │ Strategy (iface)  │ │ PortfolioSimulator    │
 │ FetchSymbol   │ │ StrategyConfig    │ │   - chronological     │
 │  Bars(symbol) │ │                   │ │     event loop        │
-│ FetchBarsWithS│ │ voo_tecl_combo.go │ │   - T-bill yield      │
+│ FetchBarsWithS│ │ sig_voo_buy_tecl.go │ │   - T-bill yield      │
 │  MA(symbol)   │ │   GenerateSignals │ │     on idle cash      │
 │ FetchBars(...)│ │   DefaultConfig   │ │   - HoldDaysOverride  │
 │               │ │                   │ │     per signal        │
@@ -58,9 +58,9 @@
 - Execution math (fills, P&L, drawdown) — `simulator.PortfolioSimulator`
 - Cash yield accrual — `PortfolioSimulator` reads `StrategyConfig.CashYieldAnnual`
 
-## The VOO-TECL Strategy
+## The Sig VOO Buy TECL Strategy (formerly "VOO-TECL")
 
-**File:** [`internal/strategy/voo_tecl_combo.go`](../internal/strategy/voo_tecl_combo.go)
+**File:** [`internal/strategy/sig_voo_buy_tecl.go`](../internal/strategy/sig_voo_buy_tecl.go)
 
 Implements the `Strategy` interface with two legs shared in one `GenerateSignals` call:
 

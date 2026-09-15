@@ -25,10 +25,10 @@ func (m *mockStrategy) GenerateSignals(bars map[string][]models.Bar) []models.Si
 
 func TestSharedAccountPreemption(t *testing.T) {
 	primaryStrat := &mockStrategy{
-		id:   "voo-tecl-combo",
+		id:   "sig-voo-buy-tecl",
 		name: "Primary Strategy",
 		cfg: strategy.StrategyConfig{
-			ID:            "voo-tecl-combo",
+			ID:            "sig-voo-buy-tecl",
 			AllocationPct: 0.65, // Needs 65% ($65,000 on $100k equity)
 			PositionCap:   1,
 			HoldingWindow: 8,
@@ -80,7 +80,7 @@ func TestSharedAccountPreemption(t *testing.T) {
 	}
 
 	// Day 1 (2026-01-01): bb-capitulation enters 3 positions ($20k each = $60k invested, $40k cash remaining)
-	// Day 2 (2026-01-02): voo-tecl-combo fires buy signal for TECL (needs 65% of $100k = $65k).
+	// Day 2 (2026-01-02): sig-voo-buy-tecl fires buy signal for TECL (needs 65% of $100k = $65k).
 	// Since Cash is only $40k, it must PREEMPT one or more bb-capitulation positions!
 	signals := []models.Signal{
 		// Day 1: Secondary signals
@@ -89,7 +89,7 @@ func TestSharedAccountPreemption(t *testing.T) {
 		{Date: "2026-01-01", Symbol: "AAPL", Close: 100, BuyLimit: 100, StrategyID: "bb-capitulation", Priority: 1, OrderType: "limit"},
 
 		// Day 2: Primary signal (TECL)
-		{Date: "2026-01-02", Symbol: "TECL", Close: 50, BuyLimit: 50, StrategyID: "voo-tecl-combo", Priority: 0, OrderType: "limit"},
+		{Date: "2026-01-02", Symbol: "TECL", Close: 50, BuyLimit: 50, StrategyID: "sig-voo-buy-tecl", Priority: 0, OrderType: "limit"},
 	}
 
 	report, perStratReport, closedTrades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
@@ -119,20 +119,20 @@ func TestSharedAccountPreemption(t *testing.T) {
 		t.Errorf("expected to find trade with ExitReasonPreempted in closed trades")
 	}
 
-	// Verify TECL was entered by voo-tecl-combo
+	// Verify TECL was entered by sig-voo-buy-tecl
 	var foundTECL bool
 	for _, tr := range closedTrades {
-		if tr.Symbol == "TECL" && tr.StrategyID == "voo-tecl-combo" {
+		if tr.Symbol == "TECL" && tr.StrategyID == "sig-voo-buy-tecl" {
 			foundTECL = true
 		}
 	}
 	if !foundTECL {
-		t.Errorf("expected TECL trade to have executed for primary strategy voo-tecl-combo")
+		t.Errorf("expected TECL trade to have executed for primary strategy sig-voo-buy-tecl")
 	}
 
 	// Check per-strategy reports exist
-	if _, ok := perStratReport["voo-tecl-combo"]; !ok {
-		t.Errorf("missing report for voo-tecl-combo")
+	if _, ok := perStratReport["sig-voo-buy-tecl"]; !ok {
+		t.Errorf("missing report for sig-voo-buy-tecl")
 	}
 	if _, ok := perStratReport["bb-capitulation"]; !ok {
 		t.Errorf("missing report for bb-capitulation")

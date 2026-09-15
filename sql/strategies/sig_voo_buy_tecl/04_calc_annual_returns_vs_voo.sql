@@ -5,11 +5,11 @@
 --              and Excess Alpha vs VOO (S&P 500) per calendar year.
 --
 -- Prerequisite Databases:
---   - Main DB: reports/voo-tecl-combo.db (or voo-tecl-combo_4.db) containing equity_curve
+--   - Main DB: reports/sig-voo-buy-tecl.db (or sig-voo-buy-tecl_4.db) containing equity_curve
 --   - Attached DB: data/market_history.db AS market containing backtest_start
 --
 -- Usage via SQLite CLI:
---   sqlite3 reports/voo-tecl-combo_4.db < sql/strategies/voo_tecl_combo/04_calc_annual_returns_vs_voo.sql
+--   sqlite3 reports/sig-voo-buy-tecl_4.db < sql/strategies/sig_voo_buy_tecl/04_calc_annual_returns_vs_voo.sql
 -- ==============================================================================
 
 ATTACH DATABASE 'data/market_history.db' AS market;

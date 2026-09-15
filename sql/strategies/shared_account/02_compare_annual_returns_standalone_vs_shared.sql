@@ -5,12 +5,12 @@
 --              idle cash utilization, and alpha vs. VOO benchmark.
 --
 -- Prerequisite Databases:
---   - Main DB: reports/shared_voo-tecl-combo_bb-capitulation_2.db (Shared Account)
---   - Attached: reports/voo-tecl-combo_4.db AS standalone
+--   - Main DB: reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db (Shared Account)
+--   - Attached: reports/sig-voo-buy-tecl_4.db AS standalone
 --   - Attached: data/market_history.db AS market
 -- ==============================================================================
 
-ATTACH DATABASE 'reports/voo-tecl-combo_4.db' AS standalone;
+ATTACH DATABASE 'reports/sig-voo-buy-tecl_4.db' AS standalone;
 ATTACH DATABASE 'data/market_history.db' AS market;
 
 WITH yearly_ranges AS (

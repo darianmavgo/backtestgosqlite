@@ -4,7 +4,7 @@
 //
 //	# Assess and optimize a single strategy:
 //	go run cmd/gridsearch/main.go gld_decline
-//	go run cmd/gridsearch/main.go -strategy voo_tecl_combo
+//	go run cmd/gridsearch/main.go -strategy sig_voo_buy_tecl
 //
 //	# Assess and optimize many strategies at once (outer concurrency across
 //	# strategies, persisted to reports/gridsearch.db, skips strategies already
@@ -150,10 +150,10 @@ func main() {
 		switch strings.ToLower(*modeFlag) {
 		case "gld", "gld_decline", "gld-decline":
 			stratArg = "gld_decline"
-		case "bull", "voo", "voo_tecl_combo":
-			stratArg = "voo-tecl-combo"
+		case "bull", "voo", "sig_voo_buy_tecl":
+			stratArg = "sig-voo-buy-tecl"
 		case "bear":
-			stratArg = "voo-tecl-combo"
+			stratArg = "sig-voo-buy-tecl"
 		default:
 			stratArg = *modeFlag
 		}

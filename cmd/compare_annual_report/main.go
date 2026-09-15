@@ -94,8 +94,8 @@ type PreemptedTrade struct {
 }
 
 func main() {
-	sharedDBPath := flag.String("shared-db", "reports/shared_voo-tecl-combo_bb-capitulation_2.db", "Path to shared account SQLite database")
-	standaloneDBPath := flag.String("standalone-db", "reports/voo-tecl-combo_4.db", "Path to standalone voo-tecl-combo SQLite database")
+	sharedDBPath := flag.String("shared-db", "reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db", "Path to shared account SQLite database")
+	standaloneDBPath := flag.String("standalone-db", "reports/sig-voo-buy-tecl_4.db", "Path to standalone sig-voo-buy-tecl SQLite database")
 	marketDBPath := flag.String("market-db", "data/market_history.db", "Path to market history SQLite database")
 	htmlOut := flag.String("html", "reports/annual_comparison_standalone_vs_shared.html", "Path to export HTML comparison report")
 	flag.Parse()
@@ -244,7 +244,7 @@ func main() {
 
 	// The combined-portfolio strategy_id used to be the generic literal
 	// "SHARED_ACCOUNT"; it's now runner.SharedAccountID(primary, secondaries)
-	// (e.g. "voo-tecl-combo+mara_tree") so it's visible directly in reports.
+	// (e.g. "sig-voo-buy-tecl+mara_tree") so it's visible directly in reports.
 	// Resolve it the same way cmd/audit_shared does (the combined row is the
 	// only one with equity_curve entries) and substitute it into the query.
 	combinedID := resolveCombinedID(db)

@@ -18,7 +18,7 @@ import (
 type SharedRunResult struct {
 	Primary            strategy.Strategy
 	Secondaries        []strategy.Strategy
-	CombinedID         string // e.g. "voo-tecl-combo+mara_tree" — see SharedAccountID
+	CombinedID         string // e.g. "sig-voo-buy-tecl+mara_tree" — see SharedAccountID
 	CombinedReport     models.PerformanceReport
 	PerStrategyReports map[string]models.PerformanceReport
 	Trades             []models.Trade

@@ -81,7 +81,7 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 
 ### 5. Built-in Strategy Library
 * **`bb-capitulation`**: Lower Bollinger Band exhaustion pierces with RSI(5) oversold confirmation.
-* **`voo-tecl-combo`**: VOO regime-filtered mean reversion allocating between TECL and inverse hedging.
+* **`sig-voo-buy-tecl`**: VOO regime-filtered mean reversion allocating between TECL and inverse hedging.
 * **`macd-crossover`**: Classic MACD (12, 26, 9) signal-line bullish crossover.
 * **`donchian-breakout`**: Turtle-style 20-day high momentum breakout with trailing stop.
 * **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
@@ -91,7 +91,7 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 
 > `wc` / `wc-4d` / `whitings_creek-sql` (Whitings Creek short-term capitulation mean-reversion) were archived — unregistered and moved to [`_archive/`](file:///Users/darianhickman/Documents/backtestgosqlite/_archive) (excluded from the Go build via the leading underscore). They converged to the exact same generic-fallback gridsearch result as several other strategies with no real distinguishing signal, while taking 2-4 minutes per sweep. See `_archive/README.md` to restore.
 
-**Decline-window and exit rules as real parameters**: `gld-decline`, `voo-tecl-combo`, and `voo-tecl-spxu-combo` all enter on a consecutive-day price decline (or, for a short leg, rally) streak, and embed per-signal take-profit/stop-loss/hold-days directly in their SQL pipeline. Every one of those values is now a genuine config field on the strategy struct — `DeclineDays` (streak length), `TakeProfitPct`/`StopLossPct`/`HoldingWindow` (long leg), and `ShortTakeProfitPct`/`ShortStopLossPct`/`ShortHoldingWindow` (short leg, combo strategies only) — flowing through `StrategyConfig` into `__DECLINE_DAYS__`/`__TAKE_PROFIT_MULT__`/`__STOP_LOSS_MULT__`/`__HOLD_DAYS__`/`__SHORT_*__` placeholders that `SQLPipelineStrategy` substitutes into the SQL pipeline at run time, rather than being separately hardcoded literals that `DefaultConfig()` had no actual effect on. `TakeProfitPct`/`ShortTakeProfitPct` are fractional offsets (0.08 = +8%); `StopLossPct`/`ShortStopLossPct` are direct multipliers (0.98 = -2%), matching every other strategy's `StopLossPct` convention. Set fields before calling `GenerateSignals`/`SetDatabases` (e.g. `s := strategy.NewGLDDeclineStrategy(); s.DeclineDays = 4; s.TakeProfitPct = 0.10`) to backtest different values.
+**Decline-window and exit rules as real parameters**: `gld-decline`, `sig-voo-buy-tecl`, and `voo-tecl-spxu-combo` all enter on a consecutive-day price decline (or, for a short leg, rally) streak, and embed per-signal take-profit/stop-loss/hold-days directly in their SQL pipeline. Every one of those values is now a genuine config field on the strategy struct — `DeclineDays` (streak length), `TakeProfitPct`/`StopLossPct`/`HoldingWindow` (long leg), and `ShortTakeProfitPct`/`ShortStopLossPct`/`ShortHoldingWindow` (short leg, combo strategies only) — flowing through `StrategyConfig` into `__DECLINE_DAYS__`/`__TAKE_PROFIT_MULT__`/`__STOP_LOSS_MULT__`/`__HOLD_DAYS__`/`__SHORT_*__` placeholders that `SQLPipelineStrategy` substitutes into the SQL pipeline at run time, rather than being separately hardcoded literals that `DefaultConfig()` had no actual effect on. `TakeProfitPct`/`ShortTakeProfitPct` are fractional offsets (0.08 = +8%); `StopLossPct`/`ShortStopLossPct` are direct multipliers (0.98 = -2%), matching every other strategy's `StopLossPct` convention. Set fields before calling `GenerateSignals`/`SetDatabases` (e.g. `s := strategy.NewGLDDeclineStrategy(); s.DeclineDays = 4; s.TakeProfitPct = 0.10`) to backtest different values.
 > `millwharf` was completely removed (code, SQL pipeline, and docs) rather than fixed — three of its four declared config fields (`HoldingWindow`, `TakeProfitLookback`, `MaxProfitCap`) were dead/unwired, and its computed take-profit never even reached the final signals table, so its real behavior silently diverged from its own description.
 
 ### 6. Research, Optimization & Diagnostic Tools
@@ -170,7 +170,7 @@ The platform cleanly separates market data caching from backtest calculation sto
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`market_history.db`** | `data/` | **Master OHLCV Bar Cache** | `backtest_start` (OHLCV bars: `idx`, `Date`, `timeframe`, `asset_class`, `open`, `high`, `low`, `close`, `Adj Close`, `volume`, `symbol`) — see [Market Data Cache](#-market-data-cache-market_historydb) below | `cmd/download` | `cmd/backtest`, `cmd/livescan`, `cmd/gridsearch`, `cmd/scoreboard`, `cmd/study`, `cmd/etf_decision_trees`, `cmd/ticker_scan`, `cmd/candlesticks` |
 | **`<strategy_id>.db`** *(e.g. `bb-capitulation.db`, `_2.db`, `_3.db`)* | `reports/` | **Isolated Backtest Run Results** | `signals` (incl. `metadata` JSON column), `trades`, `equity_curve`, `performance_summary` | `cmd/backtest` | `cmd/audit_shared`, `cmd/compare_annual_report`, external analysis, SQLite CLI |
-| **`shared_<primary>_<secondary>.db`** *(e.g. `shared_voo-tecl-combo_bb-capitulation_2.db`)* | `reports/` | **Shared-Account Combo Results** — one cash ledger split across multiple strategies with priority preemption | same 4 tables as above, plus preemption bookkeeping | `cmd/backtest -shared-account` | `cmd/audit_shared`, `cmd/compare_annual_report` |
+| **`shared_<primary>_<secondary>.db`** *(e.g. `shared_sig-voo-buy-tecl_bb-capitulation_2.db`)* | `reports/` | **Shared-Account Combo Results** — one cash ledger split across multiple strategies with priority preemption | same 4 tables as above, plus preemption bookkeeping | `cmd/backtest -shared-account` | `cmd/audit_shared`, `cmd/compare_annual_report` |
 | **`livescan_signals.db`** *(optional, with `-save`)* | `reports/` | **Live Signal Log** | `live_signals` (actionable orders for today/tomorrow) | `cmd/livescan -save` | Live order execution & alerts |
 | **`scoreboard.db`** | `reports/` | **Cross-Strategy Leaderboard** | Aggregated per-strategy performance rows | `cmd/scoreboard` | Console leaderboard, external analysis |
 | **`gridsearch.db`** | `reports/` | **Parameter-Sweep Pipeline State** | `gridsearch_runs`, `gridsearch_results` | `cmd/gridsearch` | `cmd/gridsearch` (skip-if-done cache), external analysis |
@@ -255,7 +255,7 @@ make example-csv
 ```bash
 # Run by Strategy ID or Positional Argument (creates reports/bb-capitulation.db)
 ./bin/backtest bb-capitulation -capital 100000
-./bin/backtest voo-tecl-combo
+./bin/backtest sig-voo-buy-tecl
 
 # Running again automatically creates reports/bb-capitulation_2.db, _3.db, etc.
 ./bin/backtest bb-capitulation
@@ -438,10 +438,10 @@ Applies a hand-tuned pattern (the MARA "Precision 200-SMA Bounce": volatility co
 Example: `./bin/ticker_scan -symbols SOXL,TQQQ,COIN`
 
 #### `cmd/compare_annual_report` — Standalone vs. shared-account comparison
-Generates a standalone HTML report comparing a strategy's annual performance run solo vs. inside a shared-account combo, against a VOO benchmark. Flags: `-shared-db` (default `reports/shared_voo-tecl-combo_bb-capitulation_2.db`), `-standalone-db` (default `reports/voo-tecl-combo_4.db`), `-market-db` (`data/market_history.db`), `-html` (`reports/annual_comparison_standalone_vs_shared.html`). The defaults name a specific past run — always override `-shared-db`/`-standalone-db`/`-html` for your own strategies. Every return/CAGR figure is normalized by each DB's own actual `performance_summary.initial_capital` (falling back to $100,000 only if that column is missing) and by the actual elapsed window rather than an assumed 5 years — so standalone and shared runs are compared fairly even if they weren't both backtested with the same `-capital`.
+Generates a standalone HTML report comparing a strategy's annual performance run solo vs. inside a shared-account combo, against a VOO benchmark. Flags: `-shared-db` (default `reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db`), `-standalone-db` (default `reports/sig-voo-buy-tecl_4.db`), `-market-db` (`data/market_history.db`), `-html` (`reports/annual_comparison_standalone_vs_shared.html`). The defaults name a specific past run — always override `-shared-db`/`-standalone-db`/`-html` for your own strategies. Every return/CAGR figure is normalized by each DB's own actual `performance_summary.initial_capital` (falling back to $100,000 only if that column is missing) and by the actual elapsed window rather than an assumed 5 years — so standalone and shared runs are compared fairly even if they weren't both backtested with the same `-capital`.
 
 #### `cmd/audit_shared` — Shared-account SQL audit
-Console diagnostic that verifies per-strategy trade/exit-reason accounting, preempted-position handling, and calendar-year performance for a shared-account result DB. Flag: `-db` (defaults to the most recently modified `reports/shared_*.db`). Example: `./bin/audit_shared -db reports/shared_voo-tecl-combo_bb-capitulation_2.db`.
+Console diagnostic that verifies per-strategy trade/exit-reason accounting, preempted-position handling, and calendar-year performance for a shared-account result DB. Flag: `-db` (defaults to the most recently modified `reports/shared_*.db`). Example: `./bin/audit_shared -db reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db`.
 
 #### `cmd/candlesticks` — Quick candlestick visualizer
 No flags — currently hardcoded to VOO/GLD/UTEN 1-minute bars between 2025-03-01 and 2025-05-01 from `market_history.db` (`timeframe = '1m'`). Edit the constants in `cmd/candlesticks/main.go` to repoint at other symbols/ranges. Writes `reports/candlesticks_go.html`.
