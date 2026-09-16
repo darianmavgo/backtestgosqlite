@@ -12,7 +12,7 @@ import (
 	"github.com/go-echarts/go-echarts/v2/components"
 	"github.com/go-echarts/go-echarts/v2/opts"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type OHLC struct {
@@ -83,7 +83,7 @@ func main() {
 	dbPath := cliutils.GetDefaultMarketDB()
 	log.Printf("Connecting to %s...", dbPath)
 
-	db, err := sqlx.Open("sqlite3", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open db: %v", err)
 	}

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -188,7 +188,7 @@ func (s *Gain5PctFrequencyStudy) Run() error {
 		return fmt.Errorf("failed to create results directory: %w", err)
 	}
 
-	srcDB, err := sqlx.Open("sqlite3", s.marketDBPath)
+	srcDB, err := sqlx.Open("sqlite", s.marketDBPath)
 	if err != nil {
 		return fmt.Errorf("failed to open source market database: %w", err)
 	}
@@ -432,7 +432,7 @@ func computeTickerStats(sym string, bars []rawBar) TickerGain5PctStat {
 }
 
 func (s *Gain5PctFrequencyStudy) saveResultsToDB(results []TickerGain5PctStat) error {
-	db, err := sqlx.Open("sqlite3", s.resultsDBPath)
+	db, err := sqlx.Open("sqlite", s.resultsDBPath)
 	if err != nil {
 		return fmt.Errorf("open results DB error: %w", err)
 	}

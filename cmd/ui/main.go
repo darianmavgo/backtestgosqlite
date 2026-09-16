@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed web/index.html
@@ -93,14 +93,14 @@ func getCategory(db *sqlx.DB, symbol string) string {
 }
 
 func handleSummary(w http.ResponseWriter, r *http.Request) {
-	db, err := sqlx.Open("sqlite3", masterDb)
+	db, err := sqlx.Open("sqlite", masterDb)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 	defer db.Close()
 
-	settingsDB, _ := sqlx.Open("sqlite3", settingsDb)
+	settingsDB, _ := sqlx.Open("sqlite", settingsDb)
 	if settingsDB != nil {
 		defer settingsDB.Close()
 	}
@@ -138,7 +138,7 @@ func handleSymbolDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := sqlx.Open("sqlite3", masterDb)
+	db, err := sqlx.Open("sqlite", masterDb)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -187,7 +187,7 @@ func handleDatabases(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		db, err := sqlx.Open("sqlite3", p)
+		db, err := sqlx.Open("sqlite", p)
 		if err != nil {
 			continue
 		}
@@ -237,7 +237,7 @@ func handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db, err := sqlx.Open("sqlite3", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return

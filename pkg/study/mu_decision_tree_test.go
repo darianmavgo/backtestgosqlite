@@ -7,7 +7,7 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func TestMUDecisionTreeRegistration(t *testing.T) {
@@ -54,7 +54,7 @@ func TestMUDecisionTreeExecution(t *testing.T) {
 	}
 
 	// Verify SQLite DB tables
-	db, err := sqlx.Open("sqlite3", resultsDB)
+	db, err := sqlx.Open("sqlite", resultsDB)
 	if err != nil {
 		t.Fatalf("Failed to open test results DB: %v", err)
 	}

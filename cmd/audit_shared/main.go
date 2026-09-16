@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -40,7 +40,7 @@ func main() {
 
 	fmt.Printf("\n🔍 Running Go SQL Control Audit on: %s\n\n", targetDB)
 
-	db, err := sqlx.Open("sqlite3", targetDB+"?_journal_mode=WAL&_busy_timeout=15000")
+	db, err := sqlx.Open("sqlite", targetDB+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(15000)")
 	if err != nil {
 		log.Fatalf("Failed to open database %s: %v", targetDB, err)
 	}

@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -112,7 +112,7 @@ func main() {
 	fmt.Printf("   Market DB:     %s\n", *marketDBPath)
 	fmt.Println("========================================================================================================================")
 
-	db, err := sqlx.Open("sqlite3", *sharedDBPath+"?_journal_mode=WAL&_busy_timeout=15000")
+	db, err := sqlx.Open("sqlite", *sharedDBPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(15000)")
 	if err != nil {
 		log.Fatalf("Failed to open shared DB: %v", err)
 	}

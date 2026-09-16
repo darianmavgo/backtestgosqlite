@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func TestClassifyTicker(t *testing.T) {
@@ -100,7 +100,7 @@ func TestGain5PctFrequencyStudy_Run(t *testing.T) {
 	resultsDBPath := filepath.Join(tempDir, "results_test.db")
 
 	// Create test source market DB
-	db, err := sqlx.Open("sqlite3", marketDBPath)
+	db, err := sqlx.Open("sqlite", marketDBPath)
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestGain5PctFrequencyStudy_Run(t *testing.T) {
 	}
 
 	// Verify results DB
-	resDB, err := sqlx.Open("sqlite3", resultsDBPath)
+	resDB, err := sqlx.Open("sqlite", resultsDBPath)
 	if err != nil {
 		t.Fatalf("failed to open results db: %v", err)
 	}

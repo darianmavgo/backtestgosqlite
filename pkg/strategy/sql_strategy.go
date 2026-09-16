@@ -13,7 +13,7 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Placeholders substituted with the strategy's own StrategyConfig values in
@@ -201,7 +201,7 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 		dsn += "&_busy_timeout=15000"
 	}
 
-	db, err := sqlx.Open("sqlite3", dsn)
+	db, err := sqlx.Open("sqlite", dsn)
 	if err != nil {
 		log.Printf("Warning: SQL strategy %s failed to open calc DB %s: %v", s.id, s.calcDBPath, err)
 		return nil

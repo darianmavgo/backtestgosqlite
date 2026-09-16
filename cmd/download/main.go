@@ -17,11 +17,11 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func getSymbolsFromTable(settingsDbPath, tableName string, limit int) ([]string, error) {
-	db, err := sqlx.Open("sqlite3", settingsDbPath)
+	db, err := sqlx.Open("sqlite", settingsDbPath)
 	if err != nil {
 		return nil, err
 	}

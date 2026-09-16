@@ -74,7 +74,7 @@ func (s *GeneticMomentumStrategy) GenerateSignals(barsBySymbol map[string][]mode
 	}
 
 	// 1. Check if calcDBPath already has completed weekly predictions
-	db, err := sql.Open("sqlite3", s.calcDBPath)
+	db, err := sql.Open("sqlite", s.calcDBPath)
 	needRun := true
 	if err == nil {
 		var count int
@@ -103,7 +103,7 @@ func (s *GeneticMomentumStrategy) GenerateSignals(barsBySymbol map[string][]mode
 	}
 
 	// 2. Read weekly predictions from calcDBPath
-	db, err = sql.Open("sqlite3", s.calcDBPath)
+	db, err = sql.Open("sqlite", s.calcDBPath)
 	if err != nil {
 		log.Printf("Failed to open strategy DB %s: %v", s.calcDBPath, err)
 		return nil

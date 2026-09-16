@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"github.com/ryanbressler/CloudForest"
 )
 
@@ -116,7 +116,7 @@ func (s *MUDecisionTreeStudy) Run() error {
 	}
 
 	// 1. Load MU daily bars from market DB
-	marketDB, err := sqlx.Open("sqlite3", s.marketDBPath)
+	marketDB, err := sqlx.Open("sqlite", s.marketDBPath)
 	if err != nil {
 		return fmt.Errorf("failed to open market DB: %w", err)
 	}
@@ -512,7 +512,7 @@ func saveResultsToSQLite(
 ) error {
 	_ = os.Remove(dbPath)
 
-	db, err := sqlx.Open("sqlite3", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open output db: %w", err)
 	}

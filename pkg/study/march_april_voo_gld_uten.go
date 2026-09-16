@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type VooGldUtenStudy struct {
@@ -50,7 +50,7 @@ func (s *VooGldUtenStudy) Run() error {
 		return fmt.Errorf("failed to create output dir: %w", err)
 	}
 
-	db, err := sqlx.Open("sqlite3", s.resultsDBPath)
+	db, err := sqlx.Open("sqlite", s.resultsDBPath)
 	if err != nil {
 		return fmt.Errorf("failed to open results db: %w", err)
 	}

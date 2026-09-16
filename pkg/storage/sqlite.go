@@ -11,7 +11,7 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 var validTableRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
@@ -33,7 +33,7 @@ func OpenSQLite(dbPath string) (*sqlx.DB, error) {
 		_ = os.MkdirAll(dir, 0755)
 	}
 
-	db, err := sqlx.Open("sqlite3", dbPath)
+	db, err := sqlx.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite db at %s: %w", dbPath, err)
 	}
