@@ -79,8 +79,11 @@ func (s *PortfolioSimulator) Run(
 	peakEquity := s.InitialCapital
 
 	for _, date := range sortedDates {
-		// 0. Accrue T-bill yield on idle cash when no positions are open
-		if s.dailyCashYieldRate > 0 && len(s.Positions) == 0 && s.Cash > 0 {
+		// 0. Accrue T-bill yield on uninvested cash. Leftover allocation
+		// (e.g. sig-voo-buy-tecl's unused 35% while a 65% TECL position is
+		// open) earns the same daily compound as a fully-flat day — matching
+		// SharedAccountSimulator and StrategyConfig.CashYieldAnnual's docs.
+		if s.dailyCashYieldRate > 0 && s.Cash > 0 {
 			s.Cash += s.Cash * s.dailyCashYieldRate
 		}
 

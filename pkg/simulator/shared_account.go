@@ -18,9 +18,8 @@ type StrategyPriorityEntry struct {
 }
 
 // SharedAccountSimulator coordinates multiple strategies trading inside a single shared cash account.
-// Higher-priority strategies (e.g. Primary Priority 0) have precedence over account capital.
-// If available cash is insufficient to fulfill a higher-priority buy order, open positions belonging
-// to lower-priority strategies are liquidated at market to free up capital.
+// Only the primary (Priority 0) may preempt: if it needs capital or the same symbol, subordinate
+// positions are liquidated at market. Secondaries never evict each other — they size to leftover cash.
 type SharedAccountSimulator struct {
 	InitialCapital      float64
 	Cash                float64
@@ -218,17 +217,15 @@ func (s *SharedAccountSimulator) Run(
 					continue
 				}
 
-				// Check if symbol is already held
+				// Check if symbol is already held. Only the primary may kick a
+				// subordinate off a symbol; overlays skip if anything holds it.
 				if existingPos, alreadyHeld := s.Positions[sig.Symbol]; alreadyHeld {
-					// If held by a lower-priority strategy and current signal has higher priority:
-					if existingPos.Priority > sig.Priority {
-						// Preempt lower-priority position in the same symbol
+					if sig.Priority == 0 && existingPos.Priority > 0 {
 						bar := barsBySymbolDate[sig.Symbol][date]
 						exitPrice := bar.Close * (1.0 - cfg.SlippagePct)
 						s.closePosition(sig.Symbol, date, exitPrice, models.ExitReasonPreempted)
 						s.PreemptedTradeCount++
 					} else {
-						// Already held by same or higher priority strategy
 						continue
 					}
 				}
@@ -256,7 +253,8 @@ func (s *SharedAccountSimulator) Run(
 				var requiredCapital float64
 
 				if sig.Priority == 0 {
-					// Primary strategy calculates its unconstrained target shares based on portfolio equity
+					// Primary sizes against full equity, then liquidates
+					// subordinate positions if cash is short.
 					shares = sizer.CalculateShares(totalEquity, totalEquity, entryPrice, cfg)
 					if shares <= 0 {
 						continue
@@ -265,27 +263,18 @@ func (s *SharedAccountSimulator) Run(
 					commission := float64(shares) * cfg.CommissionPerShare
 					requiredCapital = cost + commission
 
-					// -------------------------------------------------------------
-					// PREEMPTION LOGIC:
-					// If a higher-priority signal fires (e.g. Priority 0 Primary) and Cash is insufficient,
-					// liquidate open positions belonging to lower-priority strategies to free up funds.
-					// -------------------------------------------------------------
 					if requiredCapital > s.Cash {
-						// Collect all lower-priority open positions
-						var lowerPriorityPositions []*models.Position
+						var subordinates []*models.Position
 						for _, p := range s.Positions {
-							if p.Priority > sig.Priority {
-								lowerPriorityPositions = append(lowerPriorityPositions, p)
+							if p.Priority > 0 {
+								subordinates = append(subordinates, p)
 							}
 						}
-
-						// Sort lower-priority positions by longest hold days (FIFO)
-						sort.Slice(lowerPriorityPositions, func(i, j int) bool {
-							return lowerPriorityPositions[i].HoldDays > lowerPriorityPositions[j].HoldDays
+						sort.Slice(subordinates, func(i, j int) bool {
+							return subordinates[i].HoldDays > subordinates[j].HoldDays
 						})
 
-						// Liquidate secondary positions until Cash >= requiredCapital
-						for _, lp := range lowerPriorityPositions {
+						for _, lp := range subordinates {
 							bar, hasBar := barsBySymbolDate[lp.Symbol][date]
 							exitPrice := lp.CurrentPrice * (1.0 - cfg.SlippagePct)
 							if hasBar {
@@ -299,7 +288,6 @@ func (s *SharedAccountSimulator) Run(
 							}
 						}
 
-						// If still short of cash after all preemption, size down to available cash
 						if s.Cash < requiredCapital {
 							availShares := int(s.Cash / (entryPrice + cfg.CommissionPerShare))
 							if availShares > 0 {
@@ -313,7 +301,7 @@ func (s *SharedAccountSimulator) Run(
 						}
 					}
 				} else {
-					// Secondary/lower-priority strategy: constrained by current available cash
+					// Subordinates never preempt. They trade leftover cash only.
 					shares = sizer.CalculateShares(s.Cash, totalEquity, entryPrice, cfg)
 					if shares <= 0 {
 						continue
@@ -322,7 +310,7 @@ func (s *SharedAccountSimulator) Run(
 					commission := float64(shares) * cfg.CommissionPerShare
 					requiredCapital = cost + commission
 					if requiredCapital > s.Cash {
-						continue // Cannot afford
+						continue
 					}
 				}
 

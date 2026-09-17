@@ -13,12 +13,12 @@ type mockStrategy struct {
 	cfg  strategy.StrategyConfig
 }
 
-func (m *mockStrategy) ID() string                              { return m.id }
-func (m *mockStrategy) Name() string                            { return m.name }
-func (m *mockStrategy) Description() string                     { return m.name }
+func (m *mockStrategy) ID() string                             { return m.id }
+func (m *mockStrategy) Name() string                           { return m.name }
+func (m *mockStrategy) Description() string                    { return m.name }
 func (m *mockStrategy) DefaultConfig() strategy.StrategyConfig { return m.cfg }
-func (m *mockStrategy) Validate() error                         { return nil }
-func (m *mockStrategy) SetDatabases(mPath, cPath string)        {}
+func (m *mockStrategy) Validate() error                        { return nil }
+func (m *mockStrategy) SetDatabases(mPath, cPath string)       {}
 func (m *mockStrategy) GenerateSignals(bars map[string][]models.Bar) []models.Signal {
 	return nil
 }
@@ -139,4 +139,60 @@ func TestSharedAccountPreemption(t *testing.T) {
 	}
 
 	t.Logf("Combined Total Return: %.2f%%", report.TotalReturnPct*100)
+}
+
+func TestSharedAccountSecondaryDoesNotPreemptTertiary(t *testing.T) {
+	p0 := &mockStrategy{
+		id: "primary",
+		cfg: strategy.StrategyConfig{
+			ID: "primary", AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
+		},
+	}
+	p1 := &mockStrategy{
+		id: "secondary",
+		cfg: strategy.StrategyConfig{
+			ID: "secondary", AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
+		},
+	}
+	p2 := &mockStrategy{
+		id: "tertiary",
+		cfg: strategy.StrategyConfig{
+			ID: "tertiary", AllocationPct: 0.80, PositionCap: 1, HoldingWindow: 8,
+		},
+	}
+	entries := []StrategyPriorityEntry{
+		{Strategy: p0, Priority: 0, Config: p0.cfg},
+		{Strategy: p1, Priority: 1, Config: p1.cfg},
+		{Strategy: p2, Priority: 2, Config: p2.cfg},
+	}
+	sim := NewSharedAccountSimulator(entries, 100000.0)
+
+	sortedDates := []string{"2026-01-01", "2026-01-02", "2026-01-03"}
+	barsBySymbol := map[string][]models.Bar{
+		"AAA": {
+			{Date: "2026-01-01", Open: 100, High: 100, Low: 100, Close: 100},
+			{Date: "2026-01-02", Open: 100, High: 100, Low: 100, Close: 100},
+			{Date: "2026-01-03", Open: 100, High: 100, Low: 100, Close: 100},
+		},
+		"BBB": {
+			{Date: "2026-01-01", Open: 100, High: 100, Low: 100, Close: 100},
+			{Date: "2026-01-02", Open: 100, High: 100, Low: 100, Close: 100},
+			{Date: "2026-01-03", Open: 100, High: 100, Low: 100, Close: 100},
+		},
+	}
+	signals := []models.Signal{
+		{Date: "2026-01-01", Symbol: "AAA", Close: 100, BuyLimit: 100, StrategyID: "tertiary", Priority: 2, OrderType: "limit"},
+		{Date: "2026-01-02", Symbol: "BBB", Close: 100, BuyLimit: 100, StrategyID: "secondary", Priority: 1, OrderType: "limit"},
+	}
+
+	_, _, closedTrades, _ := sim.Run(signals, barsBySymbol, sortedDates)
+
+	for _, tr := range closedTrades {
+		if tr.ExitReason == models.ExitReasonPreempted {
+			t.Errorf("subordinate %s was preempted; only the primary may preempt", tr.StrategyID)
+		}
+	}
+	if sim.PreemptedTradeCount != 0 {
+		t.Errorf("PreemptedTradeCount = %d, want 0 (secondaries must not evict each other)", sim.PreemptedTradeCount)
+	}
 }

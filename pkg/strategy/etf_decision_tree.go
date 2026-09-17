@@ -118,3 +118,37 @@ func registerETFDecisionTreesFromFile(path string) {
 func init() {
 	registerETFDecisionTreesFromFile(etfDecisionTreeResultsFile)
 }
+
+// RankedETFDecisionTreeIDs returns dt_<symbol> IDs in the csv's recorded
+// score order (highest first). limit <= 0 returns the full ranked list.
+// Used by stack-eval to overlay only the strongest auto-fit trees instead
+// of all 500+ registered dt_* strategies.
+func RankedETFDecisionTreeIDs(limit int) []string {
+	f, err := os.Open(etfDecisionTreeResultsFile)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var ids []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "symbol,") {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 1 {
+			continue
+		}
+		symbol := strings.ToUpper(strings.TrimSpace(parts[0]))
+		if symbol == "" {
+			continue
+		}
+		ids = append(ids, "dt_"+strings.ToLower(symbol))
+		if limit > 0 && len(ids) >= limit {
+			break
+		}
+	}
+	return ids
+}

@@ -91,8 +91,9 @@ type StrategyConfig struct {
 	ShortStopLossPct   float64 `json:"short_stop_loss_pct,omitempty"`
 	ShortHoldingWindow int     `json:"short_holding_window,omitempty"`
 
-	// CashYieldAnnual is the annualized T-bill / money-market yield accrued on idle cash
-	// each trading day the portfolio holds no open positions. Set 0.045 for 4.5% APY.
-	// Applied universally by PortfolioSimulator.
+	// CashYieldAnnual is the annualized T-bill / money-market yield accrued on
+	// uninvested cash every trading day (leftover allocation included, not only
+	// fully-flat days). Set 0.045 for 4.5% APY. Applied by PortfolioSimulator
+	// and SharedAccountSimulator.
 	CashYieldAnnual float64 `json:"cash_yield_annual,omitempty"`
 }

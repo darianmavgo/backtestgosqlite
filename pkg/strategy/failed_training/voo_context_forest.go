@@ -1,8 +1,9 @@
+//go:build ignore
+
 package strategy
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
@@ -49,11 +50,11 @@ func (s *VOOContextForestStrategy) Name() string {
 
 func (s *VOOContextForestStrategy) Description() string {
 	return fmt.Sprintf(
-		"CloudForest random forest (%d bagged trees, mtry feature-subsampling) trained on VOO's own "+
-			"technicals plus GLD/USO/UTEN cross-asset context on the same date. Label: trade entered at "+
+		"CloudForest random forest (%d bagged depth-%d trees; each tree sees VOO plus one of "+
+			"GLD/USO/UTEN) trained on VOO technicals with cross-asset context. Label: trade entered at "+
 			"close hits +%.0f%% before -%.0f%% within %d trading days. Emits a per-signal confidence "+
 			"score (weighted BUY vote share) via Signal.Metadata[\"confidence\"].",
-		VOOContextNTrees, VOOContextTargetPct*100, VOOContextStopPct*100, VOOContextHoldDays)
+		VOOContextNTrees, VOOContextMaxDepth, VOOContextTargetPct*100, VOOContextStopPct*100, VOOContextHoldDays)
 }
 
 func (s *VOOContextForestStrategy) Validate() error {
@@ -99,7 +100,11 @@ const (
 	VOOContextHoldDays  = 15   // trading days a case has to hit one barrier before it's labeled a time-exit (AVOID)
 	VOOContextNTrees    = 300  // bagged trees in the ensemble
 	VOOContextLeafSize  = 5
-	VOOContextMaxDepth  = 8
+	// Depth 3: at most three features on any path, so a 52-column VOO+GLD+USO+UTEN
+	// matrix cannot memorize the training window the way depth 8 did (98% in-sample
+	// win rate, 51% on the holdout). Each tree is a weak learner; the 300-tree vote
+	// is what recovers interactions across the larger context.
+	VOOContextMaxDepth = 3
 
 	// VOOContextTrainFrac is the chronological split point: only the earliest
 	// fraction of cases is eligible to train the forest. The remainder is a genuine
@@ -343,18 +348,25 @@ func ContextForestSignals(targetBars []models.Bar, contextBars map[string][]mode
 	fm.Map["Target"] = len(fm.Data)
 	fm.Data = append(fm.Data, targetFeature)
 
-	candidateIndices := make([]int, len(columns))
+	// Column layout is symbol-major (see the nested loop above). Group indices
+	// so each tree can be grown on VOO plus one context asset instead of a
+	// 52-wide mtry=√52≈7 soup, which with depth 3 almost never splits on GLD/USO/UTEN.
+	nFeat := len(voo_context_feature_order)
+	colsBySym := make(map[string][]int, len(contextSymbols))
 	for i := range columns {
-		candidateIndices[i] = i
+		sym := contextSymbols[i/nFeat]
+		colsBySym[sym] = append(colsBySym[sym], i)
+	}
+	var contextOnly []string
+	for _, sym := range contextSymbols {
+		if !strings.EqualFold(sym, voo_context_target_symbol) {
+			contextOnly = append(contextOnly, sym)
+		}
 	}
 
 	weights := map[string]float64{"AVOID": 1.0, "BUY": 1.0} // balanced — the dual-barrier label isn't a rare-event target the way dt_*'s +-5% extreme-move label is
 	wrfTarget := CloudForest.NewWRFTarget(targetFeature, weights)
 
-	mTry := int(math.Sqrt(float64(len(columns))))
-	if mTry < 1 {
-		mTry = 1
-	}
 	allocs := CloudForest.NewBestSplitAllocs(len(trainableCases), wrfTarget)
 
 	bb := CloudForest.NewCatBallotBox(nCases)
@@ -365,9 +377,28 @@ func ContextForestSignals(targetBars []models.Bar, contextBars map[string][]mode
 			bootstrap[k] = trainableCases[p]
 		}
 
+		// Rotate the extra context asset so GLD, USO, and UTEN each own ~1/3 of
+		// the forest. Depth-3 paths can then actually use that asset.
+		cands := append([]int(nil), colsBySym[voo_context_target_symbol]...)
+		if len(contextOnly) > 0 {
+			cands = append(cands, colsBySym[contextOnly[t%len(contextOnly)]]...)
+		}
+		if len(cands) == 0 {
+			cands = make([]int, len(columns))
+			for i := range columns {
+				cands[i] = i
+			}
+		}
+		// Shallow trees need a wide look at whatever columns they were given,
+		// not √n (which would be ~5 of 26 and again starve the context half).
+		mTry := len(cands) / 3
+		if mTry < 1 {
+			mTry = 1
+		}
+
 		tree := CloudForest.NewTree()
 		tree.Target = "Target"
-		tree.Grow(fm, wrfTarget, bootstrap, candidateIndices, nil, mTry, VOOContextLeafSize, VOOContextMaxDepth, true, false, false, false, false, nil, nil, allocs)
+		tree.Grow(fm, wrfTarget, bootstrap, cands, nil, mTry, VOOContextLeafSize, VOOContextMaxDepth, true, false, false, false, false, nil, nil, allocs)
 		tree.Vote(fm, bb) // votes on every case in fm, not just bootstrap — this is how out-of-bag/tail cases get a prediction
 	}
 

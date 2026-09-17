@@ -32,13 +32,19 @@ func main() {
 	//   backtest optimized  -> run every selected strategy (default: all) with
 	//                          the best config a prior `gridsearch` sweep
 	//                          found for it, instead of its baseline defaults
+	//   backtest stack-eval -> rank existing strategies as idle-cash overlays
+	//                          on one primary, one shared cash ledger
 	staleMode := false
 	optimizedMode := false
+	stackEvalMode := false
 	if len(os.Args) > 1 && os.Args[1] == "stale" {
 		staleMode = true
 		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
 	} else if len(os.Args) > 1 && os.Args[1] == "optimized" {
 		optimizedMode = true
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	} else if len(os.Args) > 1 && (os.Args[1] == "stack-eval" || os.Args[1] == "stackeval") {
+		stackEvalMode = true
 		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
 
@@ -62,6 +68,11 @@ func main() {
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
 	force := flag.Bool("force", false, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
 	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
+	includeUniverse := flag.Bool("include-universe", false, "(stack-eval) also try full-universe overlays (bb-capitulation, rsi2, ...)")
+	includeDT := flag.Bool("include-dt", false, "(stack-eval) also try auto-fit dt_* ETF decision trees")
+	dtTop := flag.Int("dt-top", 15, "(stack-eval) how many highest-scored dt_* trees to include with -include-dt")
+	stackDepth := flag.Int("stack-depth", 3, "(stack-eval) greedy complementary overlays to combine after pairwise ranking")
+	persistBest := flag.Bool("persist-best", true, "(stack-eval) write a shared_*.db for the greedy N-way stack")
 	flag.Parse()
 
 	// Ensure HTML reports land in reports/ directory
@@ -83,6 +94,27 @@ func main() {
 			optArg = strings.Join(flag.Args(), ",")
 		}
 		runOptimizedCommand(optArg, *targetDb, *tableName, *outDir, *gridDBPath, *capital, *symbolFilter, *autoDownload, *downloadYears, *concurrency)
+		return
+	}
+
+	if stackEvalMode {
+		primaryID := strings.TrimSpace(*primaryFlag)
+		if primaryID == "" {
+			primaryID = strings.TrimSpace(*strategyType)
+		}
+		if primaryID == "" && len(flag.Args()) > 0 {
+			primaryID = strings.TrimSpace(flag.Args()[0])
+		}
+		runStackEvalCommand(
+			primaryID,
+			parseSecondaryList(*secondaryFlag),
+			*includeUniverse, *includeDT,
+			*dtTop, *stackDepth, *concurrency,
+			*targetDb, *tableName, *outDir,
+			*capital, *symbolFilter,
+			*autoDownload, *downloadYears,
+			*persistBest,
+		)
 		return
 	}
 

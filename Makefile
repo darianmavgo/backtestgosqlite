@@ -39,12 +39,12 @@ list: build
 	./$(BIN_DIR)/backtest -list
 
 backtest: build
-	@echo "Running default backtest (BB-Capitulation)..."
-	./$(BIN_DIR)/backtest -strategy bb-capitulation -capital 100000
+	@echo "Running default backtest (sig-voo-buy-tecl)..."
+	./$(BIN_DIR)/backtest -strategy sig-voo-buy-tecl -capital 100000
 
 livescan: build
 	@echo "Running live scan for entry signals today/tomorrow..."
-	./$(BIN_DIR)/livescan -strategy bb-capitulation -capital 100000
+	./$(BIN_DIR)/livescan -strategy sig-voo-buy-tecl -capital 100000
 
 example-csv: build
 	@echo "Running custom CSV ingestion and backtest example..."

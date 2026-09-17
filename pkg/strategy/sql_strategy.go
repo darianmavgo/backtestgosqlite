@@ -327,6 +327,10 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			dirName := entry.Name()
+			// failed_training holds retired pipelines; shared_account is audit SQL, not a strategy.
+			if dirName == "failed_training" || dirName == "shared_account" {
+				continue
+			}
 			id := fmt.Sprintf("%s-sql", dirName)
 			name := fmt.Sprintf("%s (SQL Pipeline)", strings.Title(strings.ReplaceAll(dirName, "_", " ")))
 			desc := fmt.Sprintf("SQL pipeline executed from sql/strategies/%s", dirName)

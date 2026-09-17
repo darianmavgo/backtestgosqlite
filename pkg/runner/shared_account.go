@@ -26,6 +26,7 @@ type SharedRunResult struct {
 	Signals            []models.Signal
 	DbPath             string
 	PreemptedCount     int
+	Idle               simulator.IdleStats
 	Err                error
 }
 
@@ -43,7 +44,30 @@ func SharedAccountID(primary strategy.Strategy, secondaries []strategy.Strategy)
 	return id
 }
 
-// ExecuteSharedAccount runs a multi-strategy backtest in a single shared cash account with priority preemption.
+// StackRequest is a first-class multi-strategy run on one cash ledger.
+// List order is fill order: Primary = 0 (only it may preempt subordinates
+// for capital or a symbol), Secondaries[i] = i+1 (idle-cash utilization;
+// they never evict each other).
+type StackRequest struct {
+	Primary      strategy.Strategy
+	Secondaries  []strategy.Strategy
+	BarsBySymbol map[string][]models.Bar
+	SortedDates  []string
+	Capital      float64
+	SymbolFilter string
+	OutDir       string
+	MarketDBPath string
+	// Persist writes a unique reports/shared_*.db. Stack-eval pairwise
+	// sweeps set this false so they don't flood reports/.
+	Persist bool
+	// Signals, when non-nil, skips GenerateSignals (used to reuse a primary's
+	// already-generated signals across overlay candidates).
+	Signals []models.Signal
+	// CalcDir holds isolated SQL-pipeline calc DBs. Defaults to OutDir.
+	CalcDir string
+}
+
+// ExecuteSharedAccount runs a stacked backtest and persists a unique results DB.
 func ExecuteSharedAccount(
 	primary strategy.Strategy,
 	secondaries []strategy.Strategy,
@@ -54,52 +78,74 @@ func ExecuteSharedAccount(
 	outDir string,
 	marketDBPath string,
 ) SharedRunResult {
-	if primary == nil {
+	return ExecuteStack(StackRequest{
+		Primary:      primary,
+		Secondaries:  secondaries,
+		BarsBySymbol: barsBySymbol,
+		SortedDates:  sortedDates,
+		Capital:      capital,
+		SymbolFilter: symbolFilter,
+		OutDir:       outDir,
+		MarketDBPath: marketDBPath,
+		Persist:      true,
+	})
+}
+
+// ExecuteStack runs existing strategies as a priority stack on one cash ledger.
+// No new pkg/strategy types are created — stacking is an engine/runner concern.
+func ExecuteStack(req StackRequest) SharedRunResult {
+	if req.Primary == nil {
 		return SharedRunResult{Err: fmt.Errorf("primary strategy cannot be nil")}
 	}
 
-	// 1. Create unique SQLite database for shared account
-	baseName := fmt.Sprintf("shared_%s", primary.ID())
-	for _, sec := range secondaries {
-		baseName += fmt.Sprintf("_%s", sec.ID())
+	outDir := req.OutDir
+	if outDir == "" {
+		outDir = "reports"
+	}
+	calcDir := req.CalcDir
+	if calcDir == "" {
+		calcDir = outDir
 	}
 
-	outDBPath, outDB, err := storage.CreateUniqueDB(outDir, baseName)
-	if err != nil {
-		return SharedRunResult{Err: fmt.Errorf("failed to create unique SQLite DB for shared account: %w", err)}
-	}
-	outDB.Close()
-
-	// 2. Configure isolated calculation DBs for signal generation
-	primaryCalcPath := filepath.Join(outDir, fmt.Sprintf("calc_%s.db", primary.ID()))
-	primary.SetDatabases(marketDBPath, primaryCalcPath)
-
-	for _, sec := range secondaries {
-		secCalcPath := filepath.Join(outDir, fmt.Sprintf("calc_%s.db", sec.ID()))
-		sec.SetDatabases(marketDBPath, secCalcPath)
-	}
-
-	// 3. Generate and tag signals with StrategyID and Priority
-	var allSignals []models.Signal
-
-	primSignals := primary.GenerateSignals(barsBySymbol)
-	for i := range primSignals {
-		primSignals[i].StrategyID = primary.ID()
-		primSignals[i].Priority = 0
-	}
-	allSignals = append(allSignals, primSignals...)
-
-	for secIdx, sec := range secondaries {
-		secSignals := sec.GenerateSignals(barsBySymbol)
-		for i := range secSignals {
-			secSignals[i].StrategyID = sec.ID()
-			secSignals[i].Priority = secIdx + 1
+	var outDBPath string
+	if req.Persist {
+		baseName := fmt.Sprintf("shared_%s", req.Primary.ID())
+		for _, sec := range req.Secondaries {
+			baseName += fmt.Sprintf("_%s", sec.ID())
 		}
-		allSignals = append(allSignals, secSignals...)
+		path, outDB, err := storage.CreateUniqueDB(outDir, baseName)
+		if err != nil {
+			return SharedRunResult{Err: fmt.Errorf("failed to create unique SQLite DB for shared account: %w", err)}
+		}
+		outDB.Close()
+		outDBPath = path
 	}
 
-	// Optional symbol filter
-	symUpper := strings.ToUpper(strings.TrimSpace(symbolFilter))
+	allSignals := req.Signals
+	if allSignals == nil {
+		if err := os.MkdirAll(calcDir, 0755); err != nil {
+			return SharedRunResult{Err: fmt.Errorf("failed to create calc dir %s: %w", calcDir, err)}
+		}
+		req.Primary.SetDatabases(req.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", req.Primary.ID())))
+		primSignals := req.Primary.GenerateSignals(req.BarsBySymbol)
+		for i := range primSignals {
+			primSignals[i].StrategyID = req.Primary.ID()
+			primSignals[i].Priority = 0
+		}
+		allSignals = append(allSignals, primSignals...)
+
+		for secIdx, sec := range req.Secondaries {
+			sec.SetDatabases(req.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", sec.ID())))
+			secSignals := sec.GenerateSignals(req.BarsBySymbol)
+			for i := range secSignals {
+				secSignals[i].StrategyID = sec.ID()
+				secSignals[i].Priority = secIdx + 1
+			}
+			allSignals = append(allSignals, secSignals...)
+		}
+	}
+
+	symUpper := strings.ToUpper(strings.TrimSpace(req.SymbolFilter))
 	if symUpper != "" {
 		var filtered []models.Signal
 		for _, s := range allSignals {
@@ -110,15 +156,10 @@ func ExecuteSharedAccount(
 		allSignals = filtered
 	}
 
-	// 4. Set up priority entries
 	entries := []simulator.StrategyPriorityEntry{
-		{
-			Strategy: primary,
-			Priority: 0,
-			Config:   primary.DefaultConfig(),
-		},
+		{Strategy: req.Primary, Priority: 0, Config: req.Primary.DefaultConfig()},
 	}
-	for secIdx, sec := range secondaries {
+	for secIdx, sec := range req.Secondaries {
 		entries = append(entries, simulator.StrategyPriorityEntry{
 			Strategy: sec,
 			Priority: secIdx + 1,
@@ -126,15 +167,13 @@ func ExecuteSharedAccount(
 		})
 	}
 
-	// 5. Initialize and run SharedAccountSimulator
-	sim := simulator.NewSharedAccountSimulator(entries, capital)
+	sim := simulator.NewSharedAccountSimulator(entries, req.Capital)
 
-	// Set benchmark bars (default to Primary's benchmark, e.g. VOO or SPY)
-	bmSymbol := primary.DefaultConfig().Benchmark
+	bmSymbol := req.Primary.DefaultConfig().Benchmark
 	if bmSymbol == "" {
 		bmSymbol = "SPY"
 	}
-	if bBars, hasBm := barsBySymbol[bmSymbol]; hasBm {
+	if bBars, hasBm := req.BarsBySymbol[bmSymbol]; hasBm {
 		bmMap := make(map[string]models.Bar)
 		for _, b := range bBars {
 			bmMap[b.Date] = b
@@ -142,39 +181,41 @@ func ExecuteSharedAccount(
 		sim.SetBenchmarkBars(bmMap)
 	}
 
-	combinedReport, perStratReports, trades, equityCurve := sim.Run(allSignals, barsBySymbol, sortedDates)
-	combinedID := SharedAccountID(primary, secondaries)
+	combinedReport, perStratReports, trades, equityCurve := sim.Run(allSignals, req.BarsBySymbol, req.SortedDates)
+	combinedID := SharedAccountID(req.Primary, req.Secondaries)
+	idle := simulator.CalculateIdleStats(equityCurve)
 
-	// 6. Persist results to the shared SQLite database
-	db, err := storage.OpenSQLite(outDBPath)
-	if err != nil {
-		log.Printf("Warning: Failed to re-open %s for shared account results: %v", outDBPath, err)
-	} else {
-		defer db.Close()
+	if req.Persist && outDBPath != "" {
+		db, err := storage.OpenSQLite(outDBPath)
+		if err != nil {
+			log.Printf("Warning: Failed to re-open %s for shared account results: %v", outDBPath, err)
+		} else {
+			defer db.Close()
 
-		if err := storage.SaveSignals(db, combinedID, allSignals); err != nil {
-			log.Printf("Warning: Failed to save signals to %s: %v", outDBPath, err)
-		}
-		if err := storage.SaveTrades(db, combinedID, trades); err != nil {
-			log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
-		}
-		if err := storage.SaveEquityCurve(db, combinedID, equityCurve); err != nil {
-			log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
-		}
-		if err := storage.SavePerformanceReport(db, combinedID, combinedReport); err != nil {
-			log.Printf("Warning: Failed to save combined performance summary to %s: %v", outDBPath, err)
-		}
+			if err := storage.SaveSignals(db, combinedID, allSignals); err != nil {
+				log.Printf("Warning: Failed to save signals to %s: %v", outDBPath, err)
+			}
+			if err := storage.SaveTrades(db, combinedID, trades); err != nil {
+				log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
+			}
+			if err := storage.SaveEquityCurve(db, combinedID, equityCurve); err != nil {
+				log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
+			}
+			if err := storage.SavePerformanceReport(db, combinedID, combinedReport); err != nil {
+				log.Printf("Warning: Failed to save combined performance summary to %s: %v", outDBPath, err)
+			}
 
-		for sID, rep := range perStratReports {
-			if err := storage.SavePerformanceReport(db, sID, rep); err != nil {
-				log.Printf("Warning: Failed to save performance summary for %s: %v", sID, err)
+			for sID, rep := range perStratReports {
+				if err := storage.SavePerformanceReport(db, sID, rep); err != nil {
+					log.Printf("Warning: Failed to save performance summary for %s: %v", sID, err)
+				}
 			}
 		}
 	}
 
 	return SharedRunResult{
-		Primary:            primary,
-		Secondaries:        secondaries,
+		Primary:            req.Primary,
+		Secondaries:        req.Secondaries,
 		CombinedID:         combinedID,
 		CombinedReport:     combinedReport,
 		PerStrategyReports: perStratReports,
@@ -183,6 +224,7 @@ func ExecuteSharedAccount(
 		Signals:            allSignals,
 		DbPath:             outDBPath,
 		PreemptedCount:     sim.PreemptedTradeCount,
+		Idle:               idle,
 	}
 }
 
@@ -196,6 +238,8 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 		fmt.Printf("   Secondary Strategy: %s (ID: %s) [Priority %d - Idle Cash Utilization]\n", sec.Name(), sec.ID(), i+1)
 	}
 	fmt.Printf("   Preempted Trades:   %d secondary positions liquidated to obey primary signals\n", res.PreemptedCount)
+	fmt.Printf("   Idle Cash:          avg %.1f%% of equity (fully flat %.1f%% of days, deployed %.1f%%)\n",
+		res.Idle.AvgCashPct*100, res.Idle.FullyIdlePct*100, res.Idle.AvgDeployedPct*100)
 	fmt.Printf("   Results Database:   %s\n", res.DbPath)
 	fmt.Printf("========================================================================================================================\n")
 
