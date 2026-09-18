@@ -1,6 +1,6 @@
 // cmd/etf_universe — Discovers every active US-listed ETF ticker via Polygon.io's
-// reference tickers API and writes them to a plain symbols file, one per line, for
-// consumption by cmd/download -symbols-file.
+// reference tickers API and saves them to the reference DB's etf_universe table (list "all") for
+// consumption by cmd/download -list.
 //
 // Note: Polygon's list endpoint (v3/reference/tickers) does not return a listing
 // date, so this tool only discovers the *symbol universe*. Filtering down to ETFs
@@ -11,7 +11,7 @@
 // Usage:
 //
 //	go run cmd/etf_universe/main.go
-//	go run cmd/etf_universe/main.go -out data/etf_universe_all.txt
+//	go run cmd/etf_universe/main.go -ref-db data/settings.db
 package main
 
 import (
@@ -21,11 +21,11 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 )
 
 type tickerResult struct {
@@ -42,7 +42,7 @@ type tickersResponse struct {
 }
 
 func main() {
-	outPath := flag.String("out", "data/etf_universe_all.txt", "Output file: one ticker symbol per line")
+	refPath := flag.String("ref-db", refdb.DefaultPath, "Reference DB to save the universe into (etf_universe, list \"all\")")
 	polygonKey := flag.String("polygon-key", "", "Polygon.io API key (or set POLYGON_API_KEY / .env)")
 	limit := flag.Int("limit", 1000, "Page size per API request (max 1000)")
 	flag.Parse()
@@ -122,18 +122,14 @@ func main() {
 		time.Sleep(13 * time.Second)
 	}
 
-	if err := os.MkdirAll("data", 0755); err != nil {
-		log.Fatalf("Failed to create data directory: %v", err)
-	}
-	f, err := os.Create(*outPath)
+	ref, err := refdb.Open(*refPath)
 	if err != nil {
-		log.Fatalf("Failed to create output file %s: %v", *outPath, err)
+		log.Fatalf("Failed to open reference DB %s: %v", *refPath, err)
 	}
-	defer f.Close()
-
-	for _, t := range allTickers {
-		fmt.Fprintln(f, t)
+	defer ref.Close()
+	if err := refdb.SaveUniverse(ref, refdb.ListAll, allTickers); err != nil {
+		log.Fatalf("Failed to save universe: %v", err)
 	}
 
-	fmt.Printf("\n✨ Discovered %d active US ETF tickers. Saved to %s\n", len(allTickers), *outPath)
+	fmt.Printf("\n✨ Discovered %d active US ETF tickers. Saved to %s (etf_universe, list %q)\n", len(allTickers), *refPath, refdb.ListAll)
 }

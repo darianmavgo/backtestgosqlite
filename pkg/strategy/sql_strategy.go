@@ -379,6 +379,16 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
 				cfg.DeclineDays = 2 // matches GLDDeclineStrategy's default DeclineDays
+			case "sig_voo_buy_spxu":
+				// Matches SigVooBuySpxu's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.06
+				cfg.TakeProfitPct = 0.06
+				cfg.StopLossPct = 0.95
+				cfg.HoldingWindow = 2
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+				cfg.DeclineDays = 3
 			case "sig_voo_buy_tecl", "voo_tecl_spxu_combo":
 				// Matches SigVooBuyTecl's/VOOTECLSPXUCombo's own defaults.
 				cfg.AllocationPct = 0.65

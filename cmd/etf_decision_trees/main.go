@@ -1,33 +1,32 @@
 // cmd/etf_decision_trees — Fits a CloudForest decision tree per ETF (see
 // pkg/strategy/decisiontree.go), sweeps a small TP/SL/hold grid against each
 // tree's BUY predictions, and writes the best-found config per symbol to
-// data/etf_dt_strategies.csv — which pkg/strategy/etf_decision_tree.go reads on
+// the reference DB's etf_dt_strategies table — which pkg/strategy/etf_decision_tree.go reads on
 // startup to register one ETFDecisionTreeStrategy per qualifying ETF (ID "dt_<symbol>"),
 // so every symbol becomes independently runnable via cmd/backtest / cmd/gridsearch.
 //
 // Usage:
 //
 //	go run cmd/etf_decision_trees/main.go
-//	go run cmd/etf_decision_trees/main.go -symbols-file data/etf_universe_6yr.txt -workers 16
+//	go run cmd/etf_decision_trees/main.go -list 6yr -workers 16
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 )
 
@@ -48,61 +47,22 @@ func resilienceScore(r models.PerformanceReport) float64 {
 	return r.CAGR / ((1.0 + r.MaxDrawdownPct) * (1.0 + durationYears))
 }
 
-func readSymbols(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var out []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		s := strings.ToUpper(strings.TrimSpace(scanner.Text()))
-		if s != "" {
-			out = append(out, s)
-		}
-	}
-	return out, scanner.Err()
-}
-
-// readExistingResults loads a previously-written output CSV (if any) so a rerun
-// can skip re-fitting a tree + re-sweeping TP/SL/hold for symbols that already
-// have a usable result — the same "don't redo finished work by default" as
-// cmd/backtest/cmd/scoreboard, applied here to CloudForest fits instead of
+// readExistingResults loads previously-saved results from the reference DB so
+// a rerun can skip re-fitting a tree + re-sweeping TP/SL/hold for symbols that
+// already have a usable result — the same "don't redo finished work by default"
+// as cmd/backtest/cmd/scoreboard, applied here to CloudForest fits instead of
 // full backtests.
-func readExistingResults(path string) map[string]dtResult {
+func readExistingResults(ref *sqlx.DB) map[string]dtResult {
 	out := make(map[string]dtResult)
-	f, err := os.Open(path)
+	rows, err := refdb.DTStrategies(ref)
 	if err != nil {
-		return out // no prior run — nothing to skip, that's fine
+		return out
 	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "symbol,") {
-			continue
-		}
-		parts := strings.Split(line, ",")
-		if len(parts) < 10 {
-			continue
-		}
-		tp, e1 := strconv.ParseFloat(parts[1], 64)
-		sl, e2 := strconv.ParseFloat(parts[2], 64)
-		hold, e3 := strconv.Atoi(parts[3])
-		cagr, e4 := strconv.ParseFloat(parts[4], 64)
-		maxDD, e5 := strconv.ParseFloat(parts[5], 64)
-		maxDDDays, e6 := strconv.Atoi(parts[6])
-		trades, e7 := strconv.Atoi(parts[7])
-		winRate, e8 := strconv.ParseFloat(parts[8], 64)
-		score, e9 := strconv.ParseFloat(parts[9], 64)
-		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || e7 != nil || e8 != nil || e9 != nil {
-			continue
-		}
-		out[strings.ToUpper(parts[0])] = dtResult{
-			Symbol: strings.ToUpper(parts[0]), TP: tp, SL: sl, Hold: hold,
-			CAGR: cagr, MaxDD: maxDD, MaxDDDays: maxDDDays, Trades: trades, WinRate: winRate, Score: score,
+	for _, r := range rows {
+		sym := strings.ToUpper(r.Symbol)
+		out[sym] = dtResult{
+			Symbol: sym, TP: r.TP, SL: r.SL, Hold: r.Hold, CAGR: r.CAGR, MaxDD: r.MaxDD,
+			MaxDDDays: r.MaxDDDays, Trades: r.Trades, WinRate: r.WinRate, Score: r.Score,
 		}
 	}
 	return out
@@ -110,8 +70,8 @@ func readExistingResults(path string) map[string]dtResult {
 
 func main() {
 	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
-	symbolsFile := flag.String("symbols-file", "data/etf_universe_6yr.txt", "File with one ETF symbol per line")
-	outCSV := flag.String("out", "data/etf_dt_strategies.csv", "Output CSV of best config per symbol")
+	refPath := flag.String("ref-db", refdb.DefaultPath, "Reference DB holding the ETF universe and receiving etf_dt_strategies")
+	listName := flag.String("list", refdb.List6Yr, "etf_universe list to fit (all, 6yr, sweep)")
 	minTrades := flag.Int("min-trades", 15, "Minimum trade count for a config to be considered valid")
 	workers := flag.Int("workers", runtime.NumCPU(), "Concurrent worker count (CPU-bound: tree fit + grid sweep)")
 	topN := flag.Int("top", 40, "How many top results to print")
@@ -121,14 +81,19 @@ func main() {
 	force := flag.Bool("force", false, "Refit every symbol even if -out already has a usable result for it")
 	flag.Parse()
 
-	allSymbols, err := readSymbols(*symbolsFile)
+	ref, err := refdb.Open(*refPath)
 	if err != nil {
-		log.Fatalf("Failed to read symbols file %s: %v", *symbolsFile, err)
+		log.Fatalf("Failed to open reference DB %s: %v", *refPath, err)
+	}
+	defer ref.Close()
+	allSymbols, err := refdb.Universe(ref, *listName)
+	if err != nil || len(allSymbols) == 0 {
+		log.Fatalf("No symbols in %s etf_universe list %q (err: %v)", *refPath, *listName, err)
 	}
 
 	existing := map[string]dtResult{}
 	if !*force {
-		existing = readExistingResults(*outCSV)
+		existing = readExistingResults(ref)
 	}
 	var symbols []string
 	for _, s := range allSymbols {
@@ -155,7 +120,7 @@ func main() {
 
 	if len(symbols) == 0 {
 		fmt.Println("\n✅ Nothing to fit — every symbol already has a usable result. (Use -force to refit everything.)")
-		printAndWriteResults(existing, *outCSV, *topN)
+		printAndWriteResults(existing, ref, *topN)
 		return
 	}
 
@@ -274,13 +239,13 @@ func main() {
 		return
 	}
 
-	printAndWriteResults(merged, *outCSV, *topN)
+	printAndWriteResults(merged, ref, *topN)
 }
 
 // printAndWriteResults prints the top-N ranked results and writes the full set
-// to outCSV. Shared between the normal fit-then-report path and the
+// to the reference DB. Shared between the normal fit-then-report path and the
 // nothing-to-fit (everything already existed) early-return path.
-func printAndWriteResults(bySymbol map[string]dtResult, outCSV string, topN int) {
+func printAndWriteResults(bySymbol map[string]dtResult, ref *sqlx.DB, topN int) {
 	results := make([]dtResult, 0, len(bySymbol))
 	for _, r := range bySymbol {
 		results = append(results, r)
@@ -297,15 +262,15 @@ func printAndWriteResults(bySymbol map[string]dtResult, outCSV string, topN int)
 			i+1, r.Symbol, r.TP*100, r.SL*100, r.Hold, r.CAGR*100, r.MaxDD*100, r.MaxDDDays, r.WinRate*100, r.Trades, r.Score)
 	}
 
-	f, err := os.Create(outCSV)
-	if err != nil {
-		log.Fatalf("Failed to create output CSV %s: %v", outCSV, err)
-	}
-	defer f.Close()
-	fmt.Fprintln(f, "symbol,tp,sl,hold,cagr,max_dd,max_dd_days,trades,win_rate,score")
+	rows := make([]refdb.DTStrategy, 0, len(results))
 	for _, r := range results {
-		fmt.Fprintf(f, "%s,%.4f,%.4f,%d,%.4f,%.4f,%d,%d,%.4f,%.6f\n",
-			r.Symbol, r.TP, r.SL, r.Hold, r.CAGR, r.MaxDD, r.MaxDDDays, r.Trades, r.WinRate, r.Score)
+		rows = append(rows, refdb.DTStrategy{
+			Symbol: r.Symbol, TP: r.TP, SL: r.SL, Hold: r.Hold, CAGR: r.CAGR, MaxDD: r.MaxDD,
+			MaxDDDays: r.MaxDDDays, Trades: r.Trades, WinRate: r.WinRate, Score: r.Score,
+		})
 	}
-	fmt.Printf("\n✨ Wrote %d symbol configs to %s\n   Run any of them: go run cmd/backtest/main.go -strategy dt_<symbol>\n", len(results), outCSV)
+	if err := refdb.SaveDTStrategies(ref, rows); err != nil {
+		log.Fatalf("Failed to save etf_dt_strategies: %v", err)
+	}
+	fmt.Printf("\n✨ Wrote %d symbol configs to etf_dt_strategies in the reference DB\n   Run any of them: go run cmd/backtest/main.go -strategy dt_<symbol>\n", len(results))
 }

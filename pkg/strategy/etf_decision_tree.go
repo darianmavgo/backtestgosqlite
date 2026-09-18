@@ -1,18 +1,16 @@
 package strategy
 
 import (
-	"bufio"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 )
 
 // ETFDecisionTreeStrategy is a generic, symbol-parameterized strategy: it fits a
 // fresh CloudForest decision tree (see decisiontree.go) against its own symbol's
 // bars and trades the tree's BUY predictions with a baked-in TP/SL/hold. One
-// instance is registered per qualifying ETF (see etfDecisionTreeResultsFile),
+// instance is registered per qualifying ETF (see registerETFDecisionTrees),
 // avoiding a hand-written Go file per ticker.
 type ETFDecisionTreeStrategy struct {
 	Symbol string
@@ -82,70 +80,37 @@ func (s *ETFDecisionTreeStrategy) GenerateSignals(barsBySymbol map[string][]mode
 	return sigs
 }
 
-// etfDecisionTreeResultsFile is produced by cmd/etf_decision_trees: one row per
-// qualifying ETF with its best-found TP/SL/hold from the grid sweep.
-// Format: symbol,tp,sl,hold (comma-separated, no header).
-const etfDecisionTreeResultsFile = "data/etf_dt_strategies.csv"
-
-func registerETFDecisionTreesFromFile(path string) {
-	f, err := os.Open(path)
-	if err != nil {
-		return // not generated yet; harmless
+// registerETFDecisionTrees registers one ETFDecisionTreeStrategy per row of the
+// reference DB's etf_dt_strategies table (written by cmd/etf_decision_trees).
+// A missing/empty reference DB is harmless: nothing is registered.
+func registerETFDecisionTrees() {
+	for _, r := range loadDTStrategies() {
+		Register(&ETFDecisionTreeStrategy{Symbol: strings.ToUpper(r.Symbol), TP: r.TP, SL: r.SL, Hold: r.Hold})
 	}
-	defer f.Close()
+}
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "symbol,") {
-			continue
-		}
-		parts := strings.Split(line, ",")
-		if len(parts) < 4 {
-			continue
-		}
-		symbol := strings.ToUpper(strings.TrimSpace(parts[0]))
-		tp, err1 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-		sl, err2 := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-		hold, err3 := strconv.Atoi(strings.TrimSpace(parts[3]))
-		if symbol == "" || err1 != nil || err2 != nil || err3 != nil {
-			continue
-		}
-		Register(&ETFDecisionTreeStrategy{Symbol: symbol, TP: tp, SL: sl, Hold: hold})
+func loadDTStrategies() []refdb.DTStrategy {
+	db, err := refdb.OpenExisting(refdb.DefaultPath)
+	if err != nil || db == nil {
+		return nil
 	}
+	defer db.Close()
+	rows, _ := refdb.DTStrategies(db) // no table yet = none
+	return rows
 }
 
 func init() {
-	registerETFDecisionTreesFromFile(etfDecisionTreeResultsFile)
+	registerETFDecisionTrees()
 }
 
-// RankedETFDecisionTreeIDs returns dt_<symbol> IDs in the csv's recorded
-// score order (highest first). limit <= 0 returns the full ranked list.
+// RankedETFDecisionTreeIDs returns dt_<symbol> IDs in recorded score order
+// (highest first). limit <= 0 returns the full ranked list.
 // Used by stack-eval to overlay only the strongest auto-fit trees instead
 // of all 500+ registered dt_* strategies.
 func RankedETFDecisionTreeIDs(limit int) []string {
-	f, err := os.Open(etfDecisionTreeResultsFile)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
 	var ids []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "symbol,") {
-			continue
-		}
-		parts := strings.Split(line, ",")
-		if len(parts) < 1 {
-			continue
-		}
-		symbol := strings.ToUpper(strings.TrimSpace(parts[0]))
-		if symbol == "" {
-			continue
-		}
-		ids = append(ids, "dt_"+strings.ToLower(symbol))
+	for _, r := range loadDTStrategies() {
+		ids = append(ids, "dt_"+strings.ToLower(r.Symbol))
 		if limit > 0 && len(ids) >= limit {
 			break
 		}

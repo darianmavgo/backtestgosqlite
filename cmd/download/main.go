@@ -15,6 +15,7 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -36,20 +37,13 @@ func getSymbolsFromTable(settingsDbPath, tableName string, limit int) ([]string,
 	return symbols, err
 }
 
-func readSymbolsFile(filePath string) ([]string, error) {
-	content, err := os.ReadFile(filePath)
+func readUniverse(settingsDbPath, list string) ([]string, error) {
+	db, err := refdb.Open(settingsDbPath)
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(string(content), "\n")
-	var symbols []string
-	for _, l := range lines {
-		sym := strings.TrimSpace(l)
-		if sym != "" && !strings.HasPrefix(sym, "#") {
-			symbols = append(symbols, strings.ToUpper(sym))
-		}
-	}
-	return symbols, nil
+	defer db.Close()
+	return refdb.Universe(db, list)
 }
 
 func fetchWithFallback(ctx context.Context, primary, fallback datasource.DataSource, req datasource.FetchRequest) ([]models.Bar, error) {
@@ -75,7 +69,7 @@ func main() {
 	polygonKey := flag.String("polygon-key", "", "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	csvPath := flag.String("csv", "", "Path to CSV file or directory of CSV files (used with -source csv)")
 	symbolFlag := flag.String("symbols", "", "Comma-separated list of symbols to download/import (e.g. SPY,QQQ,TQQQ)")
-	symbolsFile := flag.String("symbols-file", "", "Path to text file with one symbol per line")
+	universeList := flag.String("list", "", "etf_universe list in the settings DB to download (all, 6yr, sweep)")
 	table := flag.String("table", "leveraged_etf", "Table name in settings.db with symbols (fallback if no symbols specified)")
 	limit := flag.Int("limit", 50, "Limit number of symbols (0 for all)")
 	years := flag.Int("years", 4, "Number of years of history")
@@ -147,12 +141,12 @@ func main() {
 				symbols = append(symbols, trimmed)
 			}
 		}
-	} else if *symbolsFile != "" {
-		fileSymbols, err := readSymbolsFile(*symbolsFile)
+	} else if *universeList != "" {
+		listSymbols, err := readUniverse(*settingsDb, *universeList)
 		if err != nil {
-			log.Fatalf("Failed to read symbols file %s: %v", *symbolsFile, err)
+			log.Fatalf("Failed to read etf_universe list %q from %s: %v", *universeList, *settingsDb, err)
 		}
-		symbols = fileSymbols
+		symbols = listSymbols
 	} else {
 		dbSymbols, err := getSymbolsFromTable(*settingsDb, *table, *limit)
 		if err != nil {
@@ -162,7 +156,7 @@ func main() {
 	}
 
 	if len(symbols) == 0 {
-		log.Fatalf("No symbols resolved. Specify -symbols SPY,QQQ or -symbols-file <path> or -table <name>")
+		log.Fatalf("No symbols resolved. Specify -symbols SPY,QQQ or -list <name> or -table <name>")
 	}
 
 	fmt.Printf("Database: %s (Table: %s)\n", *targetDb, *targetTable)

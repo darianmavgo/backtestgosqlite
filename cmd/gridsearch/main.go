@@ -44,6 +44,7 @@ import (
 )
 
 type gridResult struct {
+	task       sweepTask // the permutation that produced this result (for re-simulation)
 	Label      string
 	Report     models.PerformanceReport
 	Trades     []models.Trade
@@ -502,10 +503,11 @@ func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direc
 			continue
 		}
 		entryPrice := tradeBar.Close
+		// isLong only selects the streak type (decline vs rally in the signal
+		// symbol). The trade itself is always a long buy of tradeSym (the
+		// simulator has no short side; inverse ETFs are bought long), so
+		// direction, TP and SL are always long-style.
 		dir := "LONG"
-		if !isLong {
-			dir = "SHORT"
-		}
 		sig := models.Signal{
 			Symbol:           tradeSym,
 			Date:             voo.Date,
@@ -525,18 +527,10 @@ func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direc
 			Priority:         0,
 		}
 		if tpPct > 0 {
-			if isLong {
-				sig.TakeProfit = entryPrice * (1.0 + tpPct)
-			} else {
-				sig.TakeProfit = entryPrice * (1.0 - tpPct)
-			}
+			sig.TakeProfit = entryPrice * (1.0 + tpPct)
 		}
 		if slPct > 0 {
-			if isLong {
-				sig.StopLoss = entryPrice * (1.0 - slPct)
-			} else {
-				sig.StopLoss = entryPrice * (1.0 + slPct)
-			}
+			sig.StopLoss = entryPrice * (1.0 - slPct)
 		}
 		signals = append(signals, sig)
 	}

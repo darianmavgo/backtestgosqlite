@@ -184,6 +184,13 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 // raw signal count or by the simulator's actual fill count) and should not be
 // counted as a result.
 func evaluateTask(ctx *sweepContext, t sweepTask, opts sweepOptions) (gridResult, bool) {
+	// Trades and the daily equity curve are only kept for the baseline; every
+	// other result is slim (the full grid is far too big to hold in memory at
+	// 100k+ permutations) and finalizeSweep re-simulates the few winners.
+	return evalTask(ctx, t, opts, t.isBaseline)
+}
+
+func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool) (gridResult, bool) {
 	barsBySymbol := map[string][]models.Bar{
 		ctx.ParamSpace.SignalSymbol: ctx.SignalBars,
 		t.sym:                       t.tradeBars,
@@ -242,7 +249,11 @@ func evaluateTask(ctx *sweepContext, t sweepTask, opts sweepOptions) (gridResult
 		label = fmt.Sprintf("%s/%dd/%dd/+%.0f%%-%.0f%%/%s", t.sym, t.sigDays, t.hold, t.tp*100, t.sl*100, t.regime)
 	}
 
+	if !keepDetail {
+		trades, curve = nil, nil
+	}
 	return gridResult{
+		task:       t,
 		Label:      label,
 		Report:     report,
 		Trades:     trades,
@@ -300,6 +311,18 @@ func finalizeSweep(ctx *sweepContext, results []gridResult, baselineRes *gridRes
 		byProfit = byProfit[:topN]
 	}
 	outcome.TopProfit = byProfit
+
+	// Re-simulate the winners to restore their trades/equity curves.
+	for _, top := range [][]gridResult{outcome.TopCalmar, outcome.TopResilience, outcome.TopProfit} {
+		for i := range top {
+			if top[i].Curve != nil {
+				continue
+			}
+			if full, ok := evalTask(ctx, top[i].task, opts, true); ok {
+				top[i] = full
+			}
+		}
+	}
 
 	return outcome
 }

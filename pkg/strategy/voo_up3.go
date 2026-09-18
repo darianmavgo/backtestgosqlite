@@ -1,23 +1,14 @@
 package strategy
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-// vooUp3WinnerFile is written by the voo_up3_etf study: the single (symbol, TP,
-// SL, hold) combo with the best CAGR on a VOO 3-up-close signal. When present,
-// voo-up3 trades that winner; otherwise it falls back to TQQQ / +5% / -6% / 8d.
-const vooUp3WinnerFile = "data/voo_up3_winner.csv"
-
 // VOOUp3Strategy longs a trade ETF the day VOO closes up for GainDays
-// consecutive sessions. The trade symbol and exits are filled from the study
-// winner file when it exists.
+// consecutive sessions.
 type VOOUp3Strategy struct {
 	TradeSymbol  string
 	GainDays     int
@@ -36,12 +27,6 @@ func NewVOOUp3Strategy() *VOOUp3Strategy {
 		SL:          0.06,
 		Hold:        8,
 	}
-	if w, ok := readVOOUp3Winner(vooUp3WinnerFile); ok {
-		s.TradeSymbol = w.Symbol
-		s.TP = w.TP
-		s.SL = w.SL
-		s.Hold = w.Hold
-	}
 	Register(s)
 	RegisterAlias("voo-up3", s)
 	RegisterAlias("voo_up3", s)
@@ -56,8 +41,7 @@ func (s *VOOUp3Strategy) Name() string {
 
 func (s *VOOUp3Strategy) Description() string {
 	return fmt.Sprintf(
-		"Long %s when VOO closes up %d consecutive days. Exits: +%.0f%% TP / -%.0f%% SL / %d-day hold. "+
-			"Symbol and exits come from the voo_up3_etf study winner when data/voo_up3_winner.csv exists.",
+		"Long %s when VOO closes up %d consecutive days. Exits: +%.0f%% TP / -%.0f%% SL / %d-day hold.",
 		s.TradeSymbol, s.GainDays, s.TP*100, s.SL*100, s.Hold)
 }
 
@@ -214,40 +198,6 @@ func barsForSymbol(barsBySymbol map[string][]models.Bar, want string) []models.B
 		}
 	}
 	return nil
-}
-
-type vooUp3Winner struct {
-	Symbol string
-	TP, SL float64
-	Hold   int
-}
-
-func readVOOUp3Winner(path string) (vooUp3Winner, bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		return vooUp3Winner{}, false
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "symbol,") || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Split(line, ",")
-		if len(parts) < 4 {
-			continue
-		}
-		sym := strings.ToUpper(strings.TrimSpace(parts[0]))
-		tp, e1 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-		sl, e2 := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-		hold, e3 := strconv.Atoi(strings.TrimSpace(parts[3]))
-		if sym == "" || e1 != nil || e2 != nil || e3 != nil || hold <= 0 {
-			continue
-		}
-		return vooUp3Winner{Symbol: sym, TP: tp, SL: sl, Hold: hold}, true
-	}
-	return vooUp3Winner{}, false
 }
 
 func init() {
