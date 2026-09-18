@@ -3,14 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
+	_ "modernc.org/sqlite"
 )
 
 func main() {
@@ -20,7 +21,7 @@ func main() {
 	targetDB := *dbPath
 	if targetDB == "" {
 		// Find latest shared_*.db in reports/
-		files, err := filepath.Glob("reports/shared_*.db")
+		files, err := filepath.Glob(appenv.ReportFile("shared_*.db"))
 		if err != nil || len(files) == 0 {
 			log.Fatalf("No shared account database found in reports/. Run backtest first.")
 		}

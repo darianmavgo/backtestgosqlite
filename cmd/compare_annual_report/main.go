@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
+	_ "modernc.org/sqlite"
 )
 
 //go:embed template.html
@@ -94,16 +94,14 @@ type PreemptedTrade struct {
 }
 
 func main() {
-	sharedDBPath := flag.String("shared-db", "reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db", "Path to shared account SQLite database")
-	standaloneDBPath := flag.String("standalone-db", "reports/sig-voo-buy-tecl_4.db", "Path to standalone sig-voo-buy-tecl SQLite database")
-	marketDBPath := flag.String("market-db", "data/market_history.db", "Path to market history SQLite database")
-	htmlOut := flag.String("html", "reports/annual_comparison_standalone_vs_shared.html", "Path to export HTML comparison report")
+	sharedDBPath := flag.String("shared-db", appenv.ReportFile("shared_sig-voo-buy-tecl_bb-capitulation_2.db"), "Path to shared account SQLite database")
+	standaloneDBPath := flag.String("standalone-db", appenv.ReportFile("sig-voo-buy-tecl_4.db"), "Path to standalone sig-voo-buy-tecl SQLite database")
+	marketDBPath := flag.String("market-db", appenv.MarketDB(), "Path to market history SQLite database")
+	htmlOut := flag.String("html", appenv.ReportFile("annual_comparison_standalone_vs_shared.html"), "Path to export HTML comparison report")
 	flag.Parse()
 
 	// Ensure HTML report lands in reports/ directory
-	if *htmlOut != "" && !filepath.IsAbs(*htmlOut) && !strings.HasPrefix(*htmlOut, "reports/") && !strings.HasPrefix(*htmlOut, "reports"+string(filepath.Separator)) {
-		*htmlOut = filepath.Join("reports", *htmlOut)
-	}
+	*htmlOut = appenv.ReportFile(*htmlOut)
 
 	fmt.Println("\n========================================================================================================================")
 	fmt.Println("⚖️ ANNUAL PERFORMANCE COMPARISON: VOO-TECL COMBO vs. 2-STRATEGY SHARED ACCOUNT")

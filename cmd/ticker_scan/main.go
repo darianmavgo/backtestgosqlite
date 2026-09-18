@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"runtime"
 	"sort"
@@ -66,7 +67,7 @@ func resilienceScore(r models.PerformanceReport) float64 {
 }
 
 func main() {
-	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
+	dbPath := flag.String("db", appenv.MarketDB(), "Path to SQLite database")
 	symbolsFlag := flag.String("symbols", "", "Comma-separated symbol list to scan (defaults to every symbol in the database)")
 	capital := flag.Float64("capital", 100000.0, "Starting cash ($)")
 	alloc := flag.Float64("alloc", 0.65, "Allocation percentage per position")

@@ -29,6 +29,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"path/filepath"
@@ -99,7 +100,7 @@ func formatPercents(vals []float64) []string {
 
 func main() {
 	startFlag := flag.String("start", storage.DefaultStartDate, "Earliest bar date (YYYY-MM-DD) to sweep; earlier bars only warm up SMAs. Empty = full history")
-	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
+	dbPath := flag.String("db", appenv.MarketDB(), "Path to SQLite database")
 	stratFlag := flag.String("strategy", "", "Strategy ID (comma-separated list, or 'all') to assess and optimize")
 	stratShort := flag.String("strat", "", "Alias for -strategy")
 	modeFlag := flag.String("mode", "", "Legacy compatibility alias for -strategy")
@@ -118,7 +119,7 @@ func main() {
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Worker goroutines. Single-strategy mode: workers within that one sweep. Multi-strategy mode: total workers shared across every strategy's tasks combined (not per-strategy — a few expensive strategies get proportionally more of the pool once cheap ones finish). Defaults to all CPU cores.")
 	force := flag.Bool("force", false, "Redo strategies that already have a completed sweep in reports/gridsearch.db")
 	includeDT := flag.Bool("include-dt", false, "Include dt_* (auto-generated per-ETF decision tree) strategies in -strategy all — they already have their own dedicated sweep via cmd/etf_decision_trees, so excluded by default")
-	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
+	gridDBPath := flag.String("gridsearch-db", appenv.ReportFile("gridsearch.db"), "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
 	maxPerms := flag.Int("max-perms", 20000, "Multi-strategy mode: skip a strategy whose generic parameter grid exceeds this many permutations (e.g. genetic-momentum's 50-symbol RequiredSymbols list balloons its generic grid to 210,000+ combos, none of which even exercise its real Python-driven signal logic). 0 disables the cap. Single-strategy mode ignores this.")
 
 	// Subcommand dispatch:
@@ -149,7 +150,7 @@ func main() {
 		userPassedFlags[f.Name] = true
 	})
 
-	strategy.AutoRegisterSQLStrategies(".", *dbPath)
+	strategy.AutoRegisterSQLStrategies(appenv.Folder(), *dbPath)
 
 	if staleMode {
 		runStaleCommand(*gridDBPath, *dbPath)
@@ -341,13 +342,11 @@ func main() {
 func defaultReportPath(strat strategy.Strategy, override string) string {
 	if override != "" {
 		reportFile := override
-		if !filepath.IsAbs(reportFile) && !strings.HasPrefix(reportFile, "reports/") && !strings.HasPrefix(reportFile, "reports"+string(filepath.Separator)) {
-			reportFile = filepath.Join("reports", reportFile)
-		}
+		reportFile = appenv.ReportFile(reportFile)
 		return reportFile
 	}
 	cleanID := strings.ReplaceAll(strat.ID(), "-", "_")
-	return fmt.Sprintf("reports/%s_gridsearch.html", cleanID)
+	return appenv.ReportFile(fmt.Sprintf("%s_gridsearch.html", cleanID))
 }
 
 func printSweepHeader(strat strategy.Strategy, opts sweepOptions) {

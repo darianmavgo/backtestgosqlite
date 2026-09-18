@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"net/http"
 	"os"
@@ -21,9 +22,9 @@ import (
 var indexHTML []byte
 
 var (
-	masterDb    = "data/wc_master_backtest.db"
-	settingsDb  = "data/settings.db"
-	wcDir       = "."
+	masterDb    = appenv.DataFile("wc_master_backtest.db")
+	settingsDb  = appenv.RefDB()
+	wcDir       = appenv.Folder()
 	runningTask string
 	taskOutput  string
 	taskMutex   sync.Mutex

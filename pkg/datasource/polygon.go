@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,17 +19,17 @@ import (
 
 // PolygonAggsResponse represents the Polygon.io Aggregates (Bars) v2 API response payload.
 type PolygonAggsResponse struct {
-	Ticker       string               `json:"ticker"`
-	QueryCount   int                  `json:"queryCount"`
-	ResultsCount int                  `json:"resultsCount"`
-	Adjusted     bool                 `json:"adjusted"`
-	Status       string               `json:"status"`
-	RequestID    string               `json:"request_id"`
-	Count        int                  `json:"count"`
-	NextURL      string               `json:"next_url"`
-	Message      string               `json:"message"`
-	Error        string               `json:"error"`
-	Results      []PolygonAggResult   `json:"results"`
+	Ticker       string             `json:"ticker"`
+	QueryCount   int                `json:"queryCount"`
+	ResultsCount int                `json:"resultsCount"`
+	Adjusted     bool               `json:"adjusted"`
+	Status       string             `json:"status"`
+	RequestID    string             `json:"request_id"`
+	Count        int                `json:"count"`
+	NextURL      string             `json:"next_url"`
+	Message      string             `json:"message"`
+	Error        string             `json:"error"`
+	Results      []PolygonAggResult `json:"results"`
 }
 
 // PolygonAggResult represents a single aggregate candlestick bar.
@@ -250,33 +250,13 @@ func parsePolygonTimeframe(tf string) (int, string) {
 	return 1, "day"
 }
 
-// ResolvePolygonAPIKey searches for the Polygon API key across:
-// 1. POLYGON_API_KEY environment variable
-// 2. POLYGON_KEY environment variable
-// 3. .env file in the current directory or parent directories
+// ResolvePolygonAPIKey returns POLYGON_API_KEY (or POLYGON_KEY) from the
+// environment or the project .env file (see pkg/appenv).
 func ResolvePolygonAPIKey() string {
-	if key := os.Getenv("POLYGON_API_KEY"); key != "" {
-		return strings.TrimSpace(key)
+	if key := appenv.Get("POLYGON_API_KEY"); key != "" {
+		return key
 	}
-	if key := os.Getenv("POLYGON_KEY"); key != "" {
-		return strings.TrimSpace(key)
-	}
-
-	// Search .env files upwards
-	searchDirs := []string{".", "..", "../.."}
-	for _, dir := range searchDirs {
-		envPath := filepath.Join(dir, ".env")
-		if envMap, err := parseSimpleEnvFile(envPath); err == nil {
-			if key, ok := envMap["POLYGON_API_KEY"]; ok && strings.TrimSpace(key) != "" {
-				return strings.TrimSpace(key)
-			}
-			if key, ok := envMap["POLYGON_KEY"]; ok && strings.TrimSpace(key) != "" {
-				return strings.TrimSpace(key)
-			}
-		}
-	}
-
-	return ""
+	return appenv.Get("POLYGON_KEY")
 }
 
 // parseSimpleEnvFile extracts key-value pairs from a .env file without external dependencies.

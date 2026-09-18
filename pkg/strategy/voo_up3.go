@@ -97,7 +97,7 @@ func (s *VOOUp3Strategy) ParameterSpace() ParameterSpace {
 		Description:  s.Description(),
 		Symbols:      []string{s.TradeSymbol},
 		SignalSymbol: "VOO",
-		Direction:    "long",
+		Direction:    "rally",
 		SignalDays:   []int{2, 3, 4, 5},
 		HoldDays:     []int{2, 5, 8, 12, 15},
 		TakeProfits:  []float64{0.03, 0.05, 0.08, 0.12},

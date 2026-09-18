@@ -14,6 +14,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"runtime"
 	"sort"
@@ -69,7 +70,7 @@ func readExistingResults(ref *sqlx.DB) map[string]dtResult {
 }
 
 func main() {
-	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
+	dbPath := flag.String("db", appenv.MarketDB(), "Path to SQLite database")
 	refPath := flag.String("ref-db", refdb.DefaultPath, "Reference DB holding the ETF universe and receiving etf_dt_strategies")
 	listName := flag.String("list", refdb.List6Yr, "etf_universe list to fit (all, 6yr, sweep)")
 	minTrades := flag.Int("min-trades", 15, "Minimum trade count for a config to be considered valid")

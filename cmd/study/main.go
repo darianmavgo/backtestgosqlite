@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ func main() {
 
 	targetDb := flag.String("db", defaultMarketDb, "Path to source SQLite DB containing historical market bars")
 	studyID := flag.String("study", "", "Study ID to run (e.g. march_april_voo_gld_uten)")
-	outDir := flag.String("out-dir", "reports", "Directory to write study results (SQLite database)")
+	outDir := flag.String("out-dir", appenv.Reports(), "Directory to write study results (SQLite database)")
 	listFlag := flag.Bool("list", false, "List all registered studies")
 	flag.Parse()
 

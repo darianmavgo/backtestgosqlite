@@ -11,7 +11,7 @@
 // Usage:
 //
 //	go run cmd/etf_universe/main.go
-//	go run cmd/etf_universe/main.go -ref-db data/settings.db
+//	go run cmd/etf_universe/main.go
 package main
 
 import (

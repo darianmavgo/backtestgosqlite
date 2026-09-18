@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"io"
 	"log"
 	"os"
@@ -47,8 +48,8 @@ func generateKline(title string, data []OHLC) *charts.Kline {
 			XAxisIndex: []int{0},
 		}),
 		charts.WithTooltipOpts(opts.Tooltip{
-			Show:      opts.Bool(true),
-			Trigger:   "axis",
+			Show:    opts.Bool(true),
+			Trigger: "axis",
 			AxisPointer: &opts.AxisPointer{
 				Type: "cross",
 			},
@@ -121,12 +122,12 @@ func main() {
 			log.Printf("Warning: no data for %s", sym)
 			continue
 		}
-		
+
 		k := generateKline(fmt.Sprintf("%s (1m Candlesticks)", sym), data)
 		page.AddCharts(k)
 	}
 
-	outPath := filepath.Join("reports", "candlesticks_go.html")
+	outPath := appenv.ReportFile("candlesticks_go.html")
 	_ = os.MkdirAll(filepath.Dir(outPath), 0755)
 	f, err := os.Create(outPath)
 	if err != nil {

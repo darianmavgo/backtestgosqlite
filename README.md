@@ -87,7 +87,7 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 * **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
 * **`rsi2`**: Connors RSI(2) deep pullback strategy.
 * **`voo-buy-hold`**: Passive VOO (S&P 500) buy-and-hold baseline for computing active Alpha & Beta. (Formerly `buy-and-hold` — renamed after it was found to buy an arbitrary basket of symbols rather than VOO once the ETF universe grew past a few hundred symbols; still resolvable under the old ID via alias.)
-* **`dt_<symbol>`**: One auto-generated CloudForest decision-tree strategy per qualifying ETF (e.g. `dt_fxr`), produced by `cmd/etf_decision_trees` and registered automatically at startup from the `etf_dt_strategies` table in `data/settings.db`.
+* **`dt_<symbol>`**: One auto-generated CloudForest decision-tree strategy per qualifying ETF (e.g. `dt_fxr`), produced by `cmd/etf_decision_trees` and registered automatically at startup from the `etf_dt_strategies` table in `refdata/settings.db`.
 
 > `wc` / `wc-4d` / `whitings_creek-sql` (Whitings Creek short-term capitulation mean-reversion) were archived — unregistered and moved to [`_archive/`](file:///Users/darianhickman/Documents/backtestgosqlite/_archive) (excluded from the Go build via the leading underscore). They converged to the exact same generic-fallback gridsearch result as several other strategies with no real distinguishing signal, while taking 2-4 minutes per sweep. See `_archive/README.md` to restore.
 
@@ -99,7 +99,7 @@ Beyond the core backtest/download/livescan loop, the platform includes a set of 
 * **`cmd/gridsearch`**: Multi-core TP/SL/hold/allocation parameter sweep per strategy (or all strategies), with a shared worker pool and a persistent `reports/gridsearch.db` so repeat runs skip strategies already swept.
 * **`cmd/scoreboard`**: Backtests every registered strategy against the full ETF universe and compiles a single leaderboard (`reports/scoreboard.db`); `compile`/`status` subcommands re-aggregate or check completeness without re-running backtests.
 * **`cmd/etf_decision_trees`**: Fits a CloudForest decision tree per ETF and grid-sweeps its BUY predictions, feeding the `dt_<symbol>` strategy family above.
-* **`cmd/etf_universe`**: Pulls the full active US ETF ticker list from Polygon.io into the `etf_universe` table of `data/settings.db` (list `all`) for `cmd/download -list`.
+* **`cmd/etf_universe`**: Pulls the full active US ETF ticker list from Polygon.io into the `etf_universe` table of `refdata/settings.db` (list `all`) for `cmd/download -list`.
 * **`cmd/ticker_scan`**: Tests whether a hand-tuned pattern (e.g. MARA's 200-SMA bounce) generalizes across the whole symbol universe.
 * **`cmd/study`**: Runs registered one-off statistical studies (e.g. Granger-causality lead/lag, 5%-gain frequency) against `market_history.db`.
 * **`cmd/audit_shared`**, **`cmd/compare_annual_report`**, **`cmd/candlesticks`**, **`cmd/granger_chart`**: Post-hoc SQL/HTML diagnostics and visualizations over already-generated `reports/*.db` result databases.
@@ -302,7 +302,7 @@ Cache-first OHLCV downloader; see [Quickstart §3](#3-download--cache-market-dat
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
 | `-db` | `data/market_history.db` | Target SQLite DB for bars |
-| `-settings` | `data/settings.db` | Settings DB for `-table` symbol-list lookups |
+| `-settings` | `refdata/settings.db` | Settings DB for `-table` symbol-list lookups |
 | `-source` | `yahoo` | `yahoo`, `polygon`, `stooq`, or `csv` |
 | `-polygon-key` | *(env `POLYGON_API_KEY` / `.env`)* | Polygon.io API key |
 | `-csv` | *(empty)* | CSV file or directory to import (with `-source csv`) |
@@ -415,7 +415,7 @@ Fits a CloudForest decision tree per symbol, sweeps a TP/SL/hold grid on the tre
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
 | `-db` | `data/market_history.db` | Source bars DB |
-| `-ref-db` | `data/settings.db` | Reference DB (universe in, `etf_dt_strategies` out) |
+| `-ref-db` | `refdata/settings.db` | Reference DB (universe in, `etf_dt_strategies` out) |
 | `-list` | `6yr` | `etf_universe` list to fit |
 | `-min-trades` | `15` | Minimum trade count for a config to be valid |
 | `-workers` | all CPU cores | Concurrent tree-fit + grid-sweep workers |
@@ -428,7 +428,7 @@ Fits a CloudForest decision tree per symbol, sweeps a TP/SL/hold grid on the tre
 Example: `go run cmd/etf_decision_trees/main.go -list 6yr -workers 16`
 
 #### `cmd/etf_universe` — ETF ticker discovery
-Pulls every active US-listed ETF ticker from Polygon.io's reference API for use with `cmd/download -list all`. Flags: `-ref-db` (`data/settings.db`), `-polygon-key` (or `POLYGON_API_KEY`/`.env`), `-limit` (`1000`, page size). It only discovers the ticker universe — filtering down to symbols with enough history happens after downloading, by comparing `MIN(Date)` per symbol in `market_history.db`.
+Pulls every active US-listed ETF ticker from Polygon.io's reference API for use with `cmd/download -list all`. Flags: `-ref-db` (`refdata/settings.db`), `-polygon-key` (or `POLYGON_API_KEY`/`.env`), `-limit` (`1000`, page size). It only discovers the ticker universe — filtering down to symbols with enough history happens after downloading, by comparing `MIN(Date)` per symbol in `market_history.db`.
 
 #### `cmd/ticker_scan` — Pattern generalization scan
 Applies a hand-tuned pattern (the MARA "Precision 200-SMA Bounce": volatility coil + SMA200 re-test) across every candidate symbol to see how well it generalizes beyond the one ticker it was designed for.
@@ -646,4 +646,4 @@ backtestgosqlite/
 For future improvements regarding report organization, historical data storage, and signal sharing with external execution suites (e.g., `trading_schwab`), please see [ARCHITECTURE_PROPOSALS.md](ARCHITECTURE_PROPOSALS.md).
 
 ### VOO 3-Up ETF comparison (`voo_up3_etf` study)
-`./bin/study -study voo_up3_etf` buys every ETF in the `sweep` universe (`data/settings.db`) the day VOO closes up 3 days in a row, with one fixed exit (3-day hold, +5% TP, -10% SL) — no parameter grid, 8-worker bounded pool. Results land in `reports/voo_up3_etf.db`: `etf_results` (one row per ETF), `etf_trades` (every trade), `voo_signals`, `run_params`, and the `etf_compare` view (ranked by avg per-trade return and CAGR).
+`./bin/study -study voo_up3_etf` buys every ETF in the `sweep` universe (`refdata/settings.db`) the day VOO closes up 3 days in a row, with one fixed exit (3-day hold, +5% TP, -10% SL) — no parameter grid, 8-worker bounded pool. Results land in `reports/voo_up3_etf.db`: `etf_results` (one row per ETF), `etf_trades` (every trade), `voo_signals`, `run_params`, and the `etf_compare` view (ranked by avg per-trade return and CAGR).

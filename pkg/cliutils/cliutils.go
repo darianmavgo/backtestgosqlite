@@ -1,13 +1,17 @@
 package cliutils
 
-import "os"
+import (
+	"os"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+)
 
 // GetDefaultMarketDB resolves the default market history database path.
 // It checks for data/market_history.db, and falls back to data/leveraged_backtest.db if not found.
 func GetDefaultMarketDB() string {
-	defaultMarketDb := "data/market_history.db"
+	defaultMarketDb := appenv.MarketDB()
 	if _, err := os.Stat(defaultMarketDb); os.IsNotExist(err) {
-		defaultMarketDb = "data/leveraged_backtest.db"
+		defaultMarketDb = appenv.DataFile("leveraged_backtest.db")
 	}
 	return defaultMarketDb
 }

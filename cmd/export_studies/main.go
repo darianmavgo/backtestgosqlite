@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"sort"
@@ -14,7 +15,7 @@ import (
 )
 
 func main() {
-	dbPath := "data/sp500_etfs_study.db"
+	dbPath := appenv.DataFile("sp500_etfs_study.db")
 	db, err := storage.OpenSQLite(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open DB: %v", err)
@@ -110,7 +111,7 @@ func main() {
 	vooMap, _, _ := storage.FetchBars(db, "backtest_start", []string{"VOO"}, "", "")
 	teclMap, _, _ := storage.FetchBars(db, "backtest_start", []string{"TECL"}, "", "")
 	spxuMap, _, _ := storage.FetchBars(db, "backtest_start", []string{"SPXU"}, "", "")
-	
+
 	vooBars := vooMap["VOO"]
 	teclBars := teclMap["TECL"]
 	spxuBars := spxuMap["SPXU"]
@@ -287,7 +288,7 @@ func main() {
 	// ------------------------------------------------------------------
 	// 6. Master study catalog in reports/
 	// ------------------------------------------------------------------
-	generateMasterCatalog("reports/index.html")
+	generateMasterCatalog(appenv.ReportFile("index.html"))
 	fmt.Println("✅ Generated Master Study Catalog: reports/index.html")
 }
 
@@ -306,14 +307,16 @@ func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direc
 			detected = true
 			for s := 0; s < consecutiveDays; s++ {
 				if signalBars[i-s].Close >= signalBars[i-s-1].Close {
-					detected = false; break
+					detected = false
+					break
 				}
 			}
 		} else {
 			detected = true
 			for s := 0; s < consecutiveDays; s++ {
 				if signalBars[i-s].Close <= signalBars[i-s-1].Close {
-					detected = false; break
+					detected = false
+					break
 				}
 			}
 		}

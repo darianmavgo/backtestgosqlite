@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"fmt"
 	"log"
 	"os"
@@ -100,7 +101,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 
 	outDir := req.OutDir
 	if outDir == "" {
-		outDir = "reports"
+		outDir = appenv.Reports()
 	}
 	calcDir := req.CalcDir
 	if calcDir == "" {

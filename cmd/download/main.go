@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"net/http"
 	"os"
@@ -63,8 +64,8 @@ func fetchWithFallback(ctx context.Context, primary, fallback datasource.DataSou
 }
 
 func main() {
-	targetDb := flag.String("db", "data/market_history.db", "Target SQLite DB path for market history (default: data/market_history.db)")
-	settingsDb := flag.String("settings", "data/settings.db", "Settings DB path (for table seed lookups)")
+	targetDb := flag.String("db", appenv.MarketDB(), "Target SQLite DB path for market history (default: APP_FOLDER/data/market_history.db)")
+	settingsDb := flag.String("settings", appenv.RefDB(), "Reference DB path (etf_universe lists and symbol tables)")
 	sourceType := flag.String("source", "yahoo", "Data source provider: yahoo, polygon, stooq, csv")
 	polygonKey := flag.String("polygon-key", "", "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	csvPath := flag.String("csv", "", "Path to CSV file or directory of CSV files (used with -source csv)")
@@ -78,16 +79,16 @@ func main() {
 	timeframe := flag.String("timeframe", "1d", "Bar timeframe (1d, 1h, 5m, 1m)")
 	targetTable := flag.String("target-table", "backtest_start", "Target table name in target SQLite DB")
 	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
-	seedDb := flag.String("seed-db", "data/leveraged_backtest.db", "Legacy database to seed from if target DB doesn't exist")
+	seedDb := flag.String("seed-db", appenv.DataFile("leveraged_backtest.db"), "Legacy database to seed from if target DB doesn't exist")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Number of symbols to fetch concurrently (network-bound; DB writes are serialized internally). Defaults to all CPU cores.")
 	flag.Parse()
 
 	// If default target DB does not exist yet, seed it from existing leveraged_backtest.db if available
-	if *targetDb == "data/market_history.db" {
+	if *targetDb == appenv.MarketDB() {
 		if _, err := os.Stat(*targetDb); os.IsNotExist(err) {
 			if _, errLegacy := os.Stat(*seedDb); errLegacy == nil {
 				if input, err := os.ReadFile(*seedDb); err == nil {
-					_ = os.MkdirAll("data", 0755)
+					_ = os.MkdirAll(appenv.Data(), 0755)
 					_ = os.WriteFile(*targetDb, input, 0644)
 					fmt.Printf("📦 Initialized %s from existing historical data cache.\n", *targetDb)
 				}

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,15 +19,19 @@ import (
 )
 
 const (
-	targetDb      = "data/market_history.db"
 	tableName     = "backtest_start"
 	capital       = 100000.0
 	downloadYears = 5
-	outDir        = "reports"
 )
 
 // startDate is the -start flag value (default backtest window start).
 var startDate string
+
+// targetDb and outDir resolve through APP_FOLDER / APP_REPORTS (.env).
+var (
+	targetDb = appenv.MarketDB()
+	outDir   = appenv.Reports()
+)
 
 func main() {
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent workers (defaults to all CPU cores; bounds memory/IO use with hundreds of strategies)")
@@ -69,7 +74,7 @@ func main() {
 func runAll(concurrency int, force bool) {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
-	strategy.AutoRegisterSQLStrategies(".", targetDb) // so -sql strategies are included, matching compile/status
+	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
 
 	allStrategies := strategy.List()
 	if len(allStrategies) == 0 {
@@ -182,7 +187,7 @@ func runAll(concurrency int, force bool) {
 func runCompile(concurrency int) {
 	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
 
-	strategy.AutoRegisterSQLStrategies(".", targetDb) // so -sql strategy names/descriptions resolve too
+	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategy names/descriptions resolve too
 
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
 	if totalGroups == 0 {
@@ -224,7 +229,7 @@ func runCompile(concurrency int) {
 func runStatus(concurrency int) {
 	fmt.Println("🔎 SCOREBOARD STATUS — checking whether every registered strategy has a usable backtest result")
 
-	strategy.AutoRegisterSQLStrategies(".", targetDb)
+	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb)
 
 	total := len(strategy.List())
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)

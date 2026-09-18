@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -57,7 +57,7 @@ func main() {
 	sharedAccountFlag := flag.Bool("shared-account", false, "Run strategies in a single shared cash account with priority preemption")
 	primaryFlag := flag.String("primary", "", "Primary strategy ID for shared-account execution (has capital priority)")
 	secondaryFlag := flag.String("secondary", "", "Secondary strategy ID(s) for shared-account execution (comma-separated)")
-	outDir := flag.String("out-dir", "reports", "Directory to write strategy SQLite database results and reports")
+	outDir := flag.String("out-dir", appenv.Reports(), "Directory to write strategy SQLite database results and reports")
 	listFlag := flag.Bool("list", false, "List all registered Go and SQL strategies")
 	symbolFilter := flag.String("symbol", "", "Optional: Filter backtest to a specific symbol (e.g. DFEN, SOXL)")
 	capital := flag.Float64("capital", 100000.0, "Starting portfolio capital for simulation")
@@ -65,12 +65,12 @@ func main() {
 	stopLoss := flag.Float64("stoploss", 0.0, "Optional override: Stop-loss floor multiplier (e.g. 0.93 for -7%)")
 	profitTarget := flag.Float64("target", 0.0, "Optional override: Take-profit multiplier (e.g. 1.18 for +18%)")
 	holdWindow := flag.Int("hold", 0, "Optional override: Max holding days window")
-	htmlOutput := flag.String("html", "reports/backtest_report.html", "Path to export interactive HTML dashboard report")
+	htmlOutput := flag.String("html", appenv.ReportFile("backtest_report.html"), "Path to export interactive HTML dashboard report")
 	autoDownload := flag.Bool("auto-download", true, "Automatically detect missing market data and run download")
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
 	force := flag.Bool("force", false, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
-	gridDBPath := flag.String("gridsearch-db", "reports/gridsearch.db", "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
+	gridDBPath := flag.String("gridsearch-db", appenv.ReportFile("gridsearch.db"), "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
 	includeUniverse := flag.Bool("include-universe", false, "(stack-eval) also try full-universe overlays (bb-capitulation, rsi2, ...)")
 	includeDT := flag.Bool("include-dt", false, "(stack-eval) also try auto-fit dt_* ETF decision trees")
 	dtTop := flag.Int("dt-top", 15, "(stack-eval) how many highest-scored dt_* trees to include with -include-dt")
@@ -81,12 +81,10 @@ func main() {
 	backtestStart = *startFlag
 
 	// Ensure HTML reports land in reports/ directory
-	if *htmlOutput != "" && !filepath.IsAbs(*htmlOutput) && !strings.HasPrefix(*htmlOutput, "reports/") && !strings.HasPrefix(*htmlOutput, "reports"+string(filepath.Separator)) {
-		*htmlOutput = filepath.Join("reports", *htmlOutput)
-	}
+	*htmlOutput = appenv.ReportFile(*htmlOutput)
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
-	strategy.AutoRegisterSQLStrategies(".", *targetDb)
+	strategy.AutoRegisterSQLStrategies(appenv.Folder(), *targetDb)
 
 	if staleMode {
 		runStaleCommand(*outDir, *targetDb, *concurrency)

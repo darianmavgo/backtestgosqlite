@@ -17,6 +17,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,8 +31,8 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
+	_ "modernc.org/sqlite"
 )
 
 // scanResult is one strategy's live-signal status as of the latest scanned bar.
@@ -50,7 +51,7 @@ func main() {
 	tableName := flag.String("table", "backtest_start", "Table name containing historical bars")
 	strategyType := flag.String("strategy", "", "Strategy ID to scan, comma-separated list, or 'all'")
 	symbolFilter := flag.String("symbol", "", "Optional: restrict scan to a specific symbol (e.g. SOXL)")
-	outDir := flag.String("out-dir", "reports", "Directory to write the live-signal status SQLite table")
+	outDir := flag.String("out-dir", appenv.Reports(), "Directory to write the live-signal status SQLite table")
 	listFlag := flag.Bool("list", false, "List all registered Go and SQL strategies")
 	autoDownload := flag.Bool("auto-download", true, "Automatically detect missing market data and run download")
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
@@ -59,7 +60,7 @@ func main() {
 	flag.Parse()
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
-	strategy.AutoRegisterSQLStrategies(".", *targetDb)
+	strategy.AutoRegisterSQLStrategies(appenv.Folder(), *targetDb)
 
 	if *listFlag {
 		runner.PrintStrategyList()

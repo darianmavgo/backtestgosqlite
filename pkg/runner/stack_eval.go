@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"fmt"
 	"log"
 	"os"
@@ -168,7 +169,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 		opts.Capital = 100000
 	}
 	if opts.OutDir == "" {
-		opts.OutDir = "reports"
+		opts.OutDir = appenv.Reports()
 	}
 	if opts.Concurrency <= 0 {
 		opts.Concurrency = 4

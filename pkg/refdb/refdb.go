@@ -1,10 +1,11 @@
-// Package refdb is the reference database (data/settings.db): ticker
+// Package refdb is the reference database (APP_REF/settings.db): ticker
 // universes and per-ETF decision-tree configs live here instead of in
 // text/CSV files.
 package refdb
 
 import (
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"os"
 	"strings"
 
@@ -12,8 +13,8 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// DefaultPath is the reference DB location relative to the repo root.
-const DefaultPath = "data/settings.db"
+// DefaultPath is the reference DB location (APP_FOLDER/APP_REF/settings.db).
+var DefaultPath = appenv.RefDB()
 
 // Universe list names in the etf_universe table.
 const (

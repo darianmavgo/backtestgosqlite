@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"html/template"
 	"log"
 	"math"
@@ -832,7 +833,7 @@ func getAssetDescription(target string) (string, string) {
 }
 
 func main() {
-	dbPath := filepath.Join("reports", "march_april_voo_gld_uten.db")
+	dbPath := appenv.ReportFile("march_april_voo_gld_uten.db")
 	log.Printf("Connecting to %s...", dbPath)
 
 	db, err := sqlx.Open("sqlite", dbPath)
@@ -917,7 +918,7 @@ func main() {
 		log.Fatalf("Failed to parse HTML template: %v", err)
 	}
 
-	outPath := filepath.Join("reports", "granger_causality_go.html")
+	outPath := appenv.ReportFile("granger_causality_go.html")
 	_ = os.MkdirAll(filepath.Dir(outPath), 0755)
 	f, err := os.Create(outPath)
 	if err != nil {

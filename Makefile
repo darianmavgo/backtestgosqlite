@@ -52,11 +52,11 @@ example-csv: build
 
 download: build
 	@echo "Downloading 4 years of history for top 50 symbols into market_history.db..."
-	./$(BIN_DIR)/download -db data/market_history.db -settings data/settings.db -table leveraged_etf -limit 50 -years 4
+	./$(BIN_DIR)/download -db data/market_history.db -settings refdata/settings.db -table leveraged_etf -limit 50 -years 4
 
 ui: build
 	@echo "Launching UI server on http://localhost:8080..."
-	./$(BIN_DIR)/ui -port 8080 -master data/wc_master_backtest.db -settings data/settings.db
+	./$(BIN_DIR)/ui -port 8080 -master data/wc_master_backtest.db -settings refdata/settings.db
 
 study: build
 	@echo "Running Daily 5% Gain Frequency & Leveraged ETF Study..."
