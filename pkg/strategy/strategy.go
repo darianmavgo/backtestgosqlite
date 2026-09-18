@@ -35,6 +35,28 @@ type RequiredSymbolsProvider interface {
 	RequiredSymbols() []string
 }
 
+// MinHistoryProvider is optionally implemented by strategies that know the
+// fewest trailing daily bars per symbol they need to detect an entry signal
+// on the latest bar (indicator warmup included). Used by livescan to load and
+// download only that much history. Strategies that don't implement it are
+// given DefaultMinHistoryBars.
+type MinHistoryProvider interface {
+	MinHistoryBars() int
+}
+
+// DefaultMinHistoryBars covers SMA200-style indicators plus slack.
+const DefaultMinHistoryBars = 250
+
+// MinHistoryBarsFor returns the bars-per-symbol s needs for a live scan.
+func MinHistoryBarsFor(s Strategy) int {
+	if p, ok := s.(MinHistoryProvider); ok {
+		if n := p.MinHistoryBars(); n > 0 {
+			return n
+		}
+	}
+	return DefaultMinHistoryBars
+}
+
 // DeclineDaysConfigurable is optionally implemented by strategies whose
 // consecutive decline/rally-day window is a tunable field (see
 // StrategyConfig.DeclineDays) — gld-decline, sig-voo-buy-tecl,

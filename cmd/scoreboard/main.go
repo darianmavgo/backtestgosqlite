@@ -25,8 +25,12 @@ const (
 	outDir        = "reports"
 )
 
+// startDate is the -start flag value (default backtest window start).
+var startDate string
+
 func main() {
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent workers (defaults to all CPU cores; bounds memory/IO use with hundreds of strategies)")
+	startFlag := flag.String("start", storage.DefaultStartDate, "Earliest bar date (YYYY-MM-DD) to backtest; earlier bars only warm up SMAs. Empty = full history")
 	force := flag.Bool("force", false, "(default mode only) redo every strategy's backtest even if a usable result already exists")
 
 	// Subcommand dispatch:
@@ -39,6 +43,7 @@ func main() {
 		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
 	}
 	flag.Parse()
+	startDate = *startFlag
 
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		log.Fatalf("Failed to create out dir: %v", err)
@@ -106,7 +111,7 @@ func runAll(concurrency int, force bool) {
 		defer db.Close()
 
 		fmt.Printf("\n⚙️ Loading chronological bars from '%s'...\n", tableName)
-		barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, tableName)
+		barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, nil, startDate, "")
 		if err != nil {
 			log.Fatalf("Error loading bars: %v", err)
 		}

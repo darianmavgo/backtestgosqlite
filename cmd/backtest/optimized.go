@@ -132,7 +132,7 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 	defer db.Close()
 
 	fmt.Printf("⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", tableName, capital)
-	barsBySymbol, sortedDates, err := storage.FetchAllBarsChronological(db, tableName)
+	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, nil, backtestStart, "")
 	if err != nil {
 		log.Fatalf("Error loading historical bars for simulation: %v", err)
 	}

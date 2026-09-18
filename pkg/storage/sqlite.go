@@ -272,10 +272,8 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 		}
 		query += fmt.Sprintf(" AND symbol IN (%s)", strings.Join(placeholders, ","))
 	}
-	if startDate != "" {
-		query += " AND substr(Date, 1, 10) >= ?"
-		args = append(args, startDate)
-	}
+	// startDate is applied after the query (see below) so the SMA windows
+	// above still get their pre-start warmup bars.
 	if endDate != "" {
 		query += " AND substr(Date, 1, 10) <= ?"
 		args = append(args, endDate)
@@ -294,6 +292,9 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 	var dates []string
 
 	for _, b := range allBars {
+		if startDate != "" && b.Date < startDate {
+			continue
+		}
 		bySymbol[b.Symbol] = append(bySymbol[b.Symbol], b)
 		if !datesSeen[b.Date] {
 			datesSeen[b.Date] = true
@@ -400,6 +401,10 @@ func FetchBenchmarkBars(db *sqlx.DB, tableName, benchmarkSymbol string) (map[str
 	}
 	return byDate, nil
 }
+
+// DefaultStartDate is the default backtest window start shared by the
+// backtest, gridsearch and scoreboard commands (their -start flags).
+const DefaultStartDate = "2021-01-01"
 
 // FetchAllBarsChronological loads all historical bars indexed by symbol and date.
 func FetchAllBarsChronological(db *sqlx.DB, tableName string) (map[string][]models.Bar, []string, error) {

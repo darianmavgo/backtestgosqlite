@@ -24,6 +24,7 @@ type sweepOptions struct {
 	Capital           float64
 	MinTrades         int
 	TopN              int
+	StartDate         string // earliest bar date to sweep ("" = full history)
 	InnerWorkers      int // single-strategy mode only: workers within this one sweep
 }
 
@@ -88,7 +89,7 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 		paramSpace.SignalSymbol = opts.SignalOverride
 	}
 
-	barMap, _, err := storage.FetchBars(db, "backtest_start", []string{paramSpace.SignalSymbol}, "", "")
+	barMap, _, err := storage.FetchBars(db, "backtest_start", []string{paramSpace.SignalSymbol}, opts.StartDate, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch %s bars: %w", paramSpace.SignalSymbol, err)
 	}
@@ -99,7 +100,7 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 
 	tradeBarsMap := make(map[string][]models.Bar, len(paramSpace.Symbols))
 	for _, sym := range paramSpace.Symbols {
-		tBarMap, _, err := storage.FetchBars(db, "backtest_start", []string{sym}, "", "")
+		tBarMap, _, err := storage.FetchBars(db, "backtest_start", []string{sym}, opts.StartDate, "")
 		bars := tBarMap[sym]
 		if err == nil && len(bars) > 0 {
 			tradeBarsMap[sym] = bars

@@ -57,6 +57,9 @@ func (s *GLDDeclineStrategy) Validate() error {
 }
 
 // RequiredSymbols returns the specific market symbols required by this strategy.
+// MinHistoryBars implements MinHistoryProvider: DeclineDays+1 closes, +2 slack.
+func (s *GLDDeclineStrategy) MinHistoryBars() int { return s.DefaultConfig().DeclineDays + 3 }
+
 func (s *GLDDeclineStrategy) RequiredSymbols() []string {
 	return []string{"GLD"}
 }

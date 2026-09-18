@@ -55,7 +55,7 @@ func main() {
 	autoDownload := flag.Bool("auto-download", true, "Automatically detect missing market data and run download")
 	downloadYears := flag.Int("download-years", 5, "Number of years of history to fetch when downloading missing data")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Max concurrent strategy signal-generation workers. Defaults to all CPU cores.")
-	barsLimit := flag.Int("bars", 250, "Number of recent historical bars per symbol to load for indicator calculations")
+	barsLimit := flag.Int("bars", 0, "Recent bars per symbol to load; 0 (default) = the minimum the selected strategies need to detect a signal")
 	flag.Parse()
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
@@ -123,6 +123,23 @@ func main() {
 		knownSymbols = runner.RequiredSymbolsFor(selectedStrategies, "")
 	}
 
+	// Minimum history: the largest need among the selected strategies unless
+	// -bars overrides it. Download depth follows it too (cache-first, so this
+	// only matters for symbols not yet in the DB).
+	minBars := *barsLimit
+	if minBars <= 0 {
+		for _, s := range selectedStrategies {
+			if n := strategy.MinHistoryBarsFor(s); n > minBars {
+				minBars = n
+			}
+		}
+	}
+	scanYears := minBars/240 + 1
+	if scanYears > *downloadYears {
+		scanYears = *downloadYears
+	}
+	fmt.Printf("\n📏 Live-scan history: %d bars per symbol (download depth %d yr)\n", minBars, scanYears)
+
 	if len(knownSymbols) > 0 {
 		// Actually make this "live": refresh these specific symbols to the
 		// latest close before every scan, not just when one is missing
@@ -134,7 +151,7 @@ func main() {
 		// hadn't been refreshed in days.
 		if *autoDownload {
 			fmt.Printf("\n🔄 Refreshing %d symbol(s) to the latest close...\n", len(knownSymbols))
-			if err := runner.RunDownload(*targetDb, *tableName, knownSymbols, *downloadYears); err != nil {
+			if err := runner.RunDownload(*targetDb, *tableName, knownSymbols, scanYears); err != nil {
 				log.Printf("Warning: failed to refresh market data (%v) — continuing with cached data", err)
 			}
 		}
@@ -153,7 +170,7 @@ func main() {
 	}
 	defer db.Close()
 
-	barsBySymbol, sortedDates, err := storage.FetchRecentBars(db, *tableName, knownSymbols, *barsLimit)
+	barsBySymbol, sortedDates, err := storage.FetchRecentBars(db, *tableName, knownSymbols, minBars)
 	if err != nil {
 		log.Fatalf("Error loading recent bars for live scan: %v", err)
 	}

@@ -97,6 +97,7 @@ func formatPercents(vals []float64) []string {
 }
 
 func main() {
+	startFlag := flag.String("start", storage.DefaultStartDate, "Earliest bar date (YYYY-MM-DD) to sweep; earlier bars only warm up SMAs. Empty = full history")
 	dbPath := flag.String("db", "data/market_history.db", "Path to SQLite database")
 	stratFlag := flag.String("strategy", "", "Strategy ID (comma-separated list, or 'all') to assess and optimize")
 	stratShort := flag.String("strat", "", "Alias for -strategy")
@@ -237,6 +238,7 @@ func main() {
 		Capital:   *capital,
 		MinTrades: *minTrades,
 		TopN:      *topN,
+		StartDate: *startFlag,
 	}
 	if userPassedFlags["alloc"] {
 		v := *allocPct
@@ -276,6 +278,11 @@ func main() {
 	if err := ensureGridSearchSchema(gdb); err != nil {
 		log.Fatalf("Failed to initialize gridsearch pipeline schema: %v", err)
 	}
+	// All runs and results (gridsearch_runs, gridsearch_results) land in this
+	// file; print it up front and again at exit so it's easy to find.
+	gridDBURL := fileURL(*gridDBPath)
+	fmt.Printf("🗄️  Gridsearch DB (calculations + results): %s\n", gridDBURL)
+	defer fmt.Printf("\n🗄️  Gridsearch DB (calculations + results): %s\n", gridDBURL)
 
 	// --- Single strategy: preserve the original rich, single-target CLI experience. ---
 	if len(targets) == 1 {
@@ -534,4 +541,12 @@ func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direc
 		signals = append(signals, sig)
 	}
 	return signals
+}
+
+// fileURL returns a file:// URL for path (absolute when resolvable).
+func fileURL(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return "file://" + filepath.ToSlash(path)
 }

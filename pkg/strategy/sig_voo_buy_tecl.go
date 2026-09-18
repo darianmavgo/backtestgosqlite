@@ -119,6 +119,10 @@ func (s *SigVooBuyTecl) DefaultConfig() StrategyConfig {
 	}
 }
 
+// MinHistoryBars implements MinHistoryProvider: the streak window needs
+// DeclineDays+1 closes; +2 is slack for a partial/holiday bar.
+func (s *SigVooBuyTecl) MinHistoryBars() int { return s.DefaultConfig().DeclineDays + 3 }
+
 // SetDeclineDays implements DeclineDaysConfigurable.
 func (s *SigVooBuyTecl) SetDeclineDays(n int) { s.DeclineDays = n }
 

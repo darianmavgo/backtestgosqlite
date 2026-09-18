@@ -65,7 +65,7 @@ func runStackEvalCommand(
 		fmt.Printf("\nLoading bars for %v from '%s' for stack-eval of %s (capital $%.0f)...\n",
 			reqSymbols, tableName, primary.ID(), capital)
 	}
-	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, fetchSymbols, "", "")
+	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, fetchSymbols, backtestStart, "")
 	if err != nil {
 		log.Fatalf("Error loading historical bars: %v", err)
 	}

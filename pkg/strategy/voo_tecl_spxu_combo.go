@@ -128,6 +128,10 @@ func (s *VOOTECLSPXUCombo) DefaultConfig() StrategyConfig {
 	}
 }
 
+// MinHistoryBars implements MinHistoryProvider: the SMA200 regime filter on
+// the SPXU leg needs 200 closes on top of the streak window.
+func (s *VOOTECLSPXUCombo) MinHistoryBars() int { return 200 + s.DefaultConfig().DeclineDays + 3 }
+
 // SetDeclineDays implements DeclineDaysConfigurable.
 func (s *VOOTECLSPXUCombo) SetDeclineDays(n int) { s.DeclineDays = n }
 

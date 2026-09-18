@@ -20,6 +20,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// backtestStart is the -start flag value: the default backtest window start.
+var backtestStart string
+
 func main() {
 	defaultMarketDb := cliutils.GetDefaultMarketDB()
 
@@ -73,7 +76,9 @@ func main() {
 	dtTop := flag.Int("dt-top", 15, "(stack-eval) how many highest-scored dt_* trees to include with -include-dt")
 	stackDepth := flag.Int("stack-depth", 3, "(stack-eval) greedy complementary overlays to combine after pairwise ranking")
 	persistBest := flag.Bool("persist-best", true, "(stack-eval) write a shared_*.db for the greedy N-way stack")
+	startFlag := flag.String("start", storage.DefaultStartDate, "Earliest bar date (YYYY-MM-DD) to simulate; earlier bars are only used for SMA warmup. Empty = full history")
 	flag.Parse()
+	backtestStart = *startFlag
 
 	// Ensure HTML reports land in reports/ directory
 	if *htmlOutput != "" && !filepath.IsAbs(*htmlOutput) && !strings.HasPrefix(*htmlOutput, "reports/") && !strings.HasPrefix(*htmlOutput, "reports"+string(filepath.Separator)) {
@@ -210,7 +215,7 @@ func main() {
 		// and RequiredSymbolsFor only picks up non-empty benchmarks.
 		reqSymbols := append(runner.RequiredSymbolsFor(allStrats, *symbolFilter), "SPY")
 		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Shared-Account Simulation (Starting Capital: $%.2f)...\n", reqSymbols, *tableName, *capital)
-		barsBySymbol, sortedDates, err := storage.FetchBars(db, *tableName, reqSymbols, "", "")
+		barsBySymbol, sortedDates, err := storage.FetchBars(db, *tableName, reqSymbols, backtestStart, "")
 		if err != nil {
 			log.Fatalf("Error loading historical bars for simulation: %v", err)
 		}
@@ -396,14 +401,14 @@ func main() {
 		reqSymbols := runner.RequiredSymbolsFor([]strategy.Strategy{toRun[0]}, *symbolFilter)
 		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", reqSymbols, *tableName, *capital)
 		var fetchErr error
-		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, *tableName, reqSymbols, "", "")
+		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, *tableName, reqSymbols, backtestStart, "")
 		if fetchErr != nil {
 			log.Fatalf("Error loading historical bars for simulation: %v", fetchErr)
 		}
 	} else {
 		fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", *tableName, *capital)
 		var fetchErr error
-		barsBySymbol, sortedDates, fetchErr = storage.FetchAllBarsChronological(db, *tableName)
+		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, *tableName, nil, backtestStart, "")
 		if fetchErr != nil {
 			log.Fatalf("Error loading historical bars for simulation: %v", fetchErr)
 		}
