@@ -42,7 +42,7 @@ SELECT
     s.close * __SHORT_TAKE_PROFIT_MULT__ AS take_profit,
     s.close * __SHORT_STOP_LOSS_MULT__ AS stop_loss
 FROM voo_tecl_streaks_slice v
-JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU'
+JOIN backtest_start s ON v.date = substr(s.Date, 1, 10) AND s.symbol = 'SPXU' AND length(s.Date) = 10
 WHERE v.symbol = 'VOO'
   AND v.up_streak >= __DECLINE_DAYS__
   AND (v.sma200 <= 0 OR v.close < v.sma200)

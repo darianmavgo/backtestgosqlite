@@ -49,7 +49,7 @@ equity_points AS (
 voo_prices AS (
     SELECT date, close 
     FROM market.backtest_start 
-    WHERE symbol = 'VOO'
+    WHERE symbol = 'VOO' AND length(Date) = 10
 ),
 combined AS (
     SELECT 
@@ -81,18 +81,30 @@ annual_metrics AS (
     FROM combined
 ),
 overall_totals AS (
-    SELECT 
+    -- Endpoints are the FIRST period's start and the LAST period's end (not
+    -- MIN/MAX across years, which overstates the total whenever the final
+    -- year ends below an earlier year-end peak).
+    SELECT
         'Total / 5-Yr' AS year,
         MIN(start_date) || ' to ' || MAX(end_date) AS horizon,
         SUM(trading_days) AS trading_days,
-        MIN(strat_start_eq) AS strat_start_eq,
-        MAX(strat_end_eq) AS strat_end_eq,
-        ROUND((MAX(strat_end_eq) - 100000.0) / 100000.0 * 100.0, 2) AS strat_return_pct,
-        ROUND((MAX(voo_end) - MIN(voo_start)) / MIN(voo_start) * 100.0, 2) AS voo_return_pct,
-        ROUND((POWER(MAX(strat_end_eq) / 100000.0, 365.25 / (julianday(MAX(end_date)) - julianday(MIN(start_date)))) - 1.0) * 100.0, 2) AS strat_cagr_pct,
-        ROUND((POWER(MAX(voo_end) / MIN(voo_start), 365.25 / (julianday(MAX(end_date)) - julianday(MIN(start_date)))) - 1.0) * 100.0, 2) AS voo_cagr_pct,
-        ROUND(((MAX(strat_end_eq) - 100000.0) / 100000.0 - (MAX(voo_end) - MIN(voo_start)) / MIN(voo_start)) * 100.0, 2) AS excess_alpha_pct
+        100000.0 AS strat_start_eq,
+        (SELECT strat_end_eq FROM combined ORDER BY end_date DESC LIMIT 1) AS strat_end_eq,
+        (SELECT voo_start FROM combined ORDER BY start_date ASC LIMIT 1) AS voo_first,
+        (SELECT voo_end FROM combined ORDER BY end_date DESC LIMIT 1) AS voo_last
     FROM combined
+),
+overall_metrics AS (
+    SELECT
+        year,
+        horizon,
+        trading_days,
+        ROUND((strat_end_eq - strat_start_eq) / strat_start_eq * 100.0, 2) AS strat_return_pct,
+        ROUND((voo_last - voo_first) / voo_first * 100.0, 2) AS voo_return_pct,
+        ROUND((POWER(strat_end_eq / strat_start_eq, 365.25 / (julianday(substr(horizon, 15)) - julianday(substr(horizon, 1, 10)))) - 1.0) * 100.0, 2) AS strat_cagr_pct,
+        ROUND((POWER(voo_last / voo_first, 365.25 / (julianday(substr(horizon, 15)) - julianday(substr(horizon, 1, 10)))) - 1.0) * 100.0, 2) AS voo_cagr_pct,
+        ROUND(((strat_end_eq - strat_start_eq) / strat_start_eq - (voo_last - voo_first) / voo_first) * 100.0, 2) AS excess_alpha_pct
+    FROM overall_totals
 )
 SELECT 
     year,
@@ -114,4 +126,4 @@ SELECT
     excess_alpha_pct,
     strat_cagr_pct,
     voo_cagr_pct
-FROM overall_totals;
+FROM overall_metrics;

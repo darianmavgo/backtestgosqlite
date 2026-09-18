@@ -12,4 +12,5 @@ SELECT
     LAG(close, 2) OVER (PARTITION BY symbol ORDER BY Date) AS prev2_close,
     AVG(close) OVER (PARTITION BY symbol ORDER BY Date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma50,
     COUNT(close) OVER (PARTITION BY symbol ORDER BY Date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS count50
-FROM backtest_start;
+FROM backtest_start
+WHERE length(Date) = 10;

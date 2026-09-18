@@ -14,4 +14,5 @@ SELECT
         ORDER BY Date
         ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING
     ) AS upper_20d
-FROM backtest_start;
+FROM backtest_start
+WHERE length(Date) = 10;

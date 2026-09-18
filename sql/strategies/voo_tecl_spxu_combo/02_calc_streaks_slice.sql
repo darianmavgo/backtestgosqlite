@@ -13,7 +13,7 @@ WITH diffs AS (
         AVG(close) OVER (PARTITION BY symbol ORDER BY Date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
         COUNT(close) OVER (PARTITION BY symbol ORDER BY Date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS count200
     FROM backtest_start
-    WHERE symbol = 'VOO' OR symbol = 'TECL'
+    WHERE symbol IN ('VOO', 'TECL') AND length(Date) = 10
 ),
 streaks AS (
     SELECT
