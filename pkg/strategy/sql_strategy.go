@@ -316,7 +316,29 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 	return signals
 }
 
-// AutoRegisterSQLStrategies scans the sql/strategies directory and registers any SQL pipeline folders.
+// hasGoStrategy reports whether a strategy defined in package strategy (its
+// init-registered Go types, not another SQL pipeline) corresponds to a
+// sql/strategies folder name, ignoring case, dashes and underscores.
+func hasGoStrategy(dirName string) bool {
+	registryLock.RLock()
+	defer registryLock.RUnlock()
+	want := normalizeKey(dirName)
+	for _, s := range registry {
+		if _, isSQL := s.(*SQLPipelineStrategy); isSQL {
+			continue
+		}
+		if normalizeKey(s.ID()) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// AutoRegisterSQLStrategies registers the SQL pipeline behind each Go strategy
+// defined in pkg/strategy. A sql/strategies folder with no matching Go
+// strategy in this package (archived, failed_training, audit-only, or
+// abandoned) is NOT registered: strategies come only from pkg/strategy, never
+// from other folders or subfolders.
 func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 	stratDir := filepath.Join(rootDir, "sql", "strategies")
 	entries, err := os.ReadDir(stratDir)
@@ -327,8 +349,7 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			dirName := entry.Name()
-			// failed_training holds retired pipelines; shared_account is audit SQL, not a strategy.
-			if dirName == "failed_training" || dirName == "shared_account" {
+			if !hasGoStrategy(dirName) {
 				continue
 			}
 			id := fmt.Sprintf("%s-sql", dirName)

@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS etf_universe (
 	symbol TEXT NOT NULL,
 	PRIMARY KEY (list, symbol)
 ) WITHOUT ROWID;
+-- Full decision-tree fit results for every ETF (archive/reference). Only
+-- etf_dt_strategies below drives strategy registration.
+CREATE TABLE IF NOT EXISTS etf_dt_strategies_all (
+	symbol      TEXT PRIMARY KEY,
+	tp          REAL,
+	sl          REAL,
+	hold        INTEGER,
+	cagr        REAL,
+	max_dd      REAL,
+	max_dd_days INTEGER,
+	trades      INTEGER,
+	win_rate    REAL,
+	score       REAL
+);
 CREATE TABLE IF NOT EXISTS etf_dt_strategies (
 	symbol      TEXT PRIMARY KEY,
 	tp          REAL,

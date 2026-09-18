@@ -20,3 +20,20 @@ func TestAllStrategiesHaveAllocationPct(t *testing.T) {
 		}
 	}
 }
+
+// Strategies come only from Go files in pkg/strategy itself: a SQL pipeline
+// folder registers only when a Go strategy in this package owns it.
+func TestSQLPipelinesRegisterOnlyWithGoStrategy(t *testing.T) {
+	AutoRegisterSQLStrategies("../..", "../../data/market_history.db")
+
+	for _, dir := range []string{"failed_training", "shared_account", "voo_tecl_spxu_combo", "bb_capitulation"} {
+		if _, ok := Get(dir + "-sql"); ok {
+			t.Errorf("%s-sql must not be registered (no Go strategy in pkg/strategy)", dir)
+		}
+	}
+	for _, dir := range []string{"gld_decline", "sig_voo_buy_tecl", "sig_voo_buy_spxu"} {
+		if _, ok := Get(dir + "-sql"); !ok {
+			t.Errorf("%s-sql should be registered (owned by a Go strategy)", dir)
+		}
+	}
+}
