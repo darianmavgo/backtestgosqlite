@@ -16,20 +16,16 @@ func TestSigVooBuyTecl_GenerateSignals(t *testing.T) {
 	}
 
 	hasLong := false
-	hasShort := false
 	for _, sig := range sigs {
 		if sig.Direction == "LONG" {
 			hasLong = true
 		}
-		if sig.Direction == "SHORT" {
-			hasShort = true
+		if sig.Direction == "SHORT" || sig.Symbol == "SPXU" {
+			t.Fatalf("unexpected SPXU/SHORT signal: %+v", sig)
 		}
 	}
 
 	if !hasLong {
 		t.Errorf("expected at least one LONG signal")
-	}
-	if !hasShort {
-		t.Errorf("expected at least one SHORT signal")
 	}
 }

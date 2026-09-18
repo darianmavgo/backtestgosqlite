@@ -4,17 +4,12 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-// SigVooBuyTecl implements the All-Weather Dual Combo strategy:
+// SigVooBuyTecl buys TECL only (no SPXU trades):
 //
 //   - LONG TECL when VOO closes down 3 consecutive days
 //     (+5% take-profit, 0% stop-loss, 8-day max hold, 65% allocation)
 //
-//   - SHORT SPXU when VOO closes up 3 consecutive days AND VOO is below its SMA200
-//     (+6% take-profit, -5% stop-loss, 2-day max hold, 65% allocation)
-//
-// Priority rule: if both signals fire on the same day, LONG takes priority.
-// Regime filtering (VOO < SMA200) is performed inside GenerateSignals — the
-// engine receives only pre-filtered signals and does not know about regimes.
+// The SPXU short leg lives on in voo-tecl-spxu-combo.
 //
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual
 // and applied by the PortfolioSimulator.
@@ -61,13 +56,11 @@ func NewSigVooBuyTecl() *SigVooBuyTecl {
 
 func (s *SigVooBuyTecl) ID() string { return "sig-voo-buy-tecl" }
 
-func (s *SigVooBuyTecl) Name() string { return "VOO→TECL All-Weather Combo" }
+func (s *SigVooBuyTecl) Name() string { return "VOO→TECL" }
 
 func (s *SigVooBuyTecl) Description() string {
-	return "Long TECL on 3-consecutive VOO down-closes (+5% TP / 8d hold) " +
-		"combined with Short SPXU on 3-consecutive VOO up-closes in bear markets " +
-		"(VOO < SMA200, +6% TP / -5% SL / 2d hold). Long takes priority on same-day conflicts. " +
-		"65% allocation per trade. 4.5% T-bill yield on idle cash."
+	return "Long TECL on 3-consecutive VOO down-closes (+5% TP / 8d hold). " +
+		"TECL only, no SPXU trades. 65% allocation per trade. 4.5% T-bill yield on idle cash."
 }
 
 func (s *SigVooBuyTecl) Validate() error {
@@ -76,7 +69,7 @@ func (s *SigVooBuyTecl) Validate() error {
 
 // RequiredSymbols returns the specific market symbols required by this combo strategy.
 func (s *SigVooBuyTecl) RequiredSymbols() []string {
-	return []string{"VOO", "TECL", "SPXU"}
+	return []string{"VOO", "TECL"}
 }
 
 // DefaultConfig returns the canonical VOO-TECL combo parameters.
