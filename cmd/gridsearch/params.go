@@ -18,8 +18,8 @@ func resolveParamSpace(strat strategy.Strategy, opts sweepOptions) strategy.Para
 	if opts.CashYieldOverride != nil {
 		space.CashYield = *opts.CashYieldOverride
 	}
-	if opts.SymbolOverride != "" {
-		space.Symbols = []string{opts.SymbolOverride}
+	if len(opts.SymbolOverride) > 0 {
+		space.Symbols = opts.SymbolOverride
 	}
 	if opts.SignalOverride != "" {
 		space.SignalSymbol = opts.SignalOverride

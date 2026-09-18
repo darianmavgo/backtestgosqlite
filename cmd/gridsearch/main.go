@@ -105,7 +105,9 @@ func main() {
 	modeFlag := flag.String("mode", "", "Legacy compatibility alias for -strategy")
 	listFlag := flag.Bool("list", false, "List registered strategies with baked-in parameters")
 	signalSym := flag.String("signal", "", "Signal generation symbol override (single-strategy mode only)")
-	customTradeSym := flag.String("symbol", "", "Specific trade symbol override (single-strategy mode only)")
+	customTradeSym := flag.String("symbol", "", "Trade symbol override; comma-separated list allowed (single-strategy mode only)")
+	fromReport := flag.String("symbols-from", "", "Study report DB (e.g. reports/voo_up3_etf.db) whose etf_compare view supplies the trade symbols, ranked by rank_cagr (use with -top-cagr)")
+	topCAGR := flag.Int("top-cagr", 10, "With -symbols-from: how many of the best rank_cagr symbols to sweep")
 	capital := flag.Float64("capital", 100000.0, "Starting cash ($)")
 	allocPct := flag.Float64("alloc", 0.65, "Allocation percentage override (single-strategy mode only)")
 	cashYield := flag.Float64("yield", 0.045, "Cash yield on idle reserves (4.5% = 0.045)")
@@ -252,7 +254,19 @@ func main() {
 		sweepOpts.CashYieldOverride = nil
 	}
 	if userPassedFlags["symbol"] && *customTradeSym != "" {
-		sweepOpts.SymbolOverride = *customTradeSym
+		for _, sym := range strings.Split(*customTradeSym, ",") {
+			if sym = strings.ToUpper(strings.TrimSpace(sym)); sym != "" {
+				sweepOpts.SymbolOverride = append(sweepOpts.SymbolOverride, sym)
+			}
+		}
+	}
+	if *fromReport != "" {
+		syms, err := symbolsFromReport(*fromReport, *topCAGR)
+		if err != nil {
+			log.Fatalf("-symbols-from %s: %v", *fromReport, err)
+		}
+		fmt.Printf("📄 Sweeping top %d rank_cagr symbols from %s: %v\n", len(syms), *fromReport, syms)
+		sweepOpts.SymbolOverride = syms
 	}
 	if userPassedFlags["signal"] && *signalSym != "" {
 		sweepOpts.SignalOverride = *signalSym
@@ -543,4 +557,25 @@ func fileURL(path string) string {
 		path = abs
 	}
 	return "file://" + filepath.ToSlash(path)
+}
+
+// symbolsFromReport returns the n best symbols by rank_cagr from a study
+// report DB's etf_compare view.
+func symbolsFromReport(path string, n int) ([]string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, err
+	}
+	db, err := storage.OpenSQLite(path)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var syms []string
+	if err := db.Select(&syms, `SELECT symbol FROM etf_compare ORDER BY rank_cagr, symbol LIMIT ?`, n); err != nil {
+		return nil, err
+	}
+	if len(syms) == 0 {
+		return nil, fmt.Errorf("etf_compare returned no symbols")
+	}
+	return syms, nil
 }

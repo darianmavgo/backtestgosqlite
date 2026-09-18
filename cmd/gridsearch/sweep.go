@@ -19,7 +19,7 @@ import (
 type sweepOptions struct {
 	AllocOverride     *float64
 	CashYieldOverride *float64
-	SymbolOverride    string
+	SymbolOverride    []string // trade-symbol universe override (one or many)
 	SignalOverride    string
 	Capital           float64
 	MinTrades         int
@@ -63,8 +63,8 @@ func estimatePerms(strat strategy.Strategy, opts sweepOptions) int {
 	if opts.AllocOverride != nil {
 		paramSpace.Allocations = []float64{*opts.AllocOverride}
 	}
-	if opts.SymbolOverride != "" {
-		paramSpace.Symbols = []string{opts.SymbolOverride}
+	if len(opts.SymbolOverride) > 0 {
+		paramSpace.Symbols = opts.SymbolOverride
 	}
 	return len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
 		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
@@ -82,8 +82,8 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 	if opts.CashYieldOverride != nil {
 		paramSpace.CashYield = *opts.CashYieldOverride
 	}
-	if opts.SymbolOverride != "" {
-		paramSpace.Symbols = []string{opts.SymbolOverride}
+	if len(opts.SymbolOverride) > 0 {
+		paramSpace.Symbols = opts.SymbolOverride
 	}
 	if opts.SignalOverride != "" {
 		paramSpace.SignalSymbol = opts.SignalOverride
