@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,8 +27,37 @@ import (
 )
 
 func defaultLedgerDB() string {
-	// Prefer the browsable name; fall back still works if user passes -db.
-	return appenv.ReportFile("strategies.db")
+	// Do NOT use appenv.ReportFile here: sourcing trade_orchestrator's .env
+	// often sets APP_FOLDER=/mnt/data (Linux deploy path), which breaks on a Mac.
+	if v := strings.TrimSpace(os.Getenv("STRATEGIES_DB")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("STRATEVAL_DB")); v != "" {
+		return v
+	}
+	// Prefer <repo>/reports/strategies.db when run from the module tree.
+	if root := findModuleRoot(); root != "" {
+		return filepath.Join(root, "reports", "strategies.db")
+	}
+	return filepath.Join("reports", "strategies.db")
+}
+
+func findModuleRoot() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 func main() {

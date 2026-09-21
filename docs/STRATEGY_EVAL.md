@@ -66,3 +66,14 @@ go run ./cmd/strateval report -allowlist "$STRATEGY_ALLOWLIST"
 
 - `sync-deployed` only writes the **ledger** — it never edits `.env`
 - Promote/demote still requires you to change `STRATEGY_ALLOWLIST` by hand
+
+## Allowlist sync tip
+
+Do **not** `source` trade_orchestrator’s full `.env` into this repo — it sets
+`APP_FOLDER=/mnt/data` for Linux deploys. Export only the allowlist:
+
+```bash
+export STRATEGY_ALLOWLIST="$(grep -E '^STRATEGY_ALLOWLIST=' ~/Documents/trade_orchestrator/.env | cut -d= -f2- | tr -d '\"')"
+go run ./cmd/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+# or: -db reports/strategies.db
+```
