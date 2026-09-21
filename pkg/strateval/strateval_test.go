@@ -73,3 +73,62 @@ func TestStoreAndAllowlistDiff(t *testing.T) {
 		t.Fatalf("demote=%v", demote)
 	}
 }
+
+func TestSyncAllowlistAndStatus(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "ledger.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	row := EvalRow{
+		RunID: "r1", StrategyID: "alpha", ParamsJSON: "{}",
+		Split: Split{ISStart: "a", ISEnd: "b", OOSStart: "c", OOSEnd: "d"},
+		IS: Metrics{Sharpe: 1}, OOS: Metrics{Sharpe: 0.9, Trades: 40, AvgTradePct: 0.01, MaxDD: 0.1},
+		Tier: "A", Reasons: []string{"ok"}, CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(row); err != nil {
+		t.Fatal(err)
+	}
+	row.StrategyID = "beta"
+	row.Tier = "C"
+	row.OOS = Metrics{Sharpe: -0.5, Trades: 10, AvgTradePct: -0.01, MaxDD: 0.3}
+	if err := s.Insert(row); err != nil {
+		t.Fatal(err)
+	}
+
+	live, retired, err := s.SyncAllowlist([]string{"beta", "gamma+overlay"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live < 2 {
+		t.Fatalf("live=%d", live)
+	}
+	_ = retired
+
+	st, err := s.ListStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]StrategyStatus{}
+	for _, x := range st {
+		by[x.StrategyID] = x
+	}
+	if !by["beta"].Deployed || by["beta"].Lifecycle != "deployed_review" {
+		t.Fatalf("beta=%+v", by["beta"])
+	}
+	if by["alpha"].Lifecycle != "scored_A" {
+		t.Fatalf("alpha=%+v", by["alpha"])
+	}
+	if !by["gamma"].Deployed {
+		t.Fatalf("gamma not deployed: %+v", by["gamma"])
+	}
+
+	_, retired, err = s.SyncAllowlist([]string{"alpha"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retired < 1 {
+		t.Fatalf("expected retirements, got %d", retired)
+	}
+}

@@ -1,55 +1,68 @@
-# Strategy eval loop (promote → scan)
+# Strategy ledger (tested → scored → deployed)
 
-Additive tooling. **Does not** change `cmd/backtest`, `cmd/gridsearch`, `cmd/scoreboard`,
-evening-scan, cron, or `STRATEGY_ALLOWLIST` application.
+One SQLite file tracks the full lifecycle:
 
-## Pipeline
-
-1. **IS backtest** on history before the holdout window  
-2. Optional **`--optimize`** — coarse grid on **IS only** (never peeks OOS)  
-3. **OOS** locked evaluation (default last 12 months)  
-4. **Tier** A/B/C/D from hard gates  
-5. **Allowlist diff** printed only — you edit `STRATEGY_ALLOWLIST` manually  
-
-## Commands
-
-```bash
-# List registry
-go run ./cmd/strateval -list
-
-# Evaluate one / many / all
-go run ./cmd/strateval -strategy sig_voo_buy_tecl
-go run ./cmd/strateval -strategy sig_voo_buy_tecl,gld_decline -optimize
-go run ./cmd/strateval -strategy all -allowlist "$STRATEGY_ALLOWLIST"
-
-# Re-print scorecard + allowlist proposal from DB
-go run ./cmd/strateval report -db reports/strategy_evals.db -allowlist "$STRATEGY_ALLOWLIST"
+```text
+reports/strategies.db
 ```
 
-Results: `reports/strategy_evals.db` (table `strategy_evals`).
+**Additive only** — does not change evening-scan, cron, or auto-edit `STRATEGY_ALLOWLIST`.
 
-## Default gates (tier A)
+## Browse in any SQLite UI
 
-- OOS trades ≥ 30  
-- OOS Sharpe > 0  
-- OOS avg trade return > 0  
-- OOS max DD ≤ 1.5 × IS max DD  
+Open `reports/strategies.db` in **DB Browser for SQLite**, Datasette, VS Code SQLite, TablePlus, etc.
 
-Tier **D** = on allowlist but failing gates (demote candidate).
+Useful views:
+
+| View | What it shows |
+|------|----------------|
+| `v_strategy_status` | All strategies: lifecycle, tier, deployed?, OOS stats |
+| `v_latest_scores` | Newest eval row per strategy |
+| `v_deployed` | Currently live allowlist entries |
+| `v_promote_candidates` | Tier A, not deployed |
+| `v_demote_candidates` | Deployed but tier C/D |
+
+```sql
+SELECT strategy_id, lifecycle, tier, deployed, oos_sharpe, oos_trades, last_evaluated
+FROM v_strategy_status
+ORDER BY lifecycle, oos_sharpe DESC;
+```
+
+## CLI
+
+```bash
+# Print ledger path + view cheat-sheet
+go run ./cmd/strateval path
+
+# Terminal table of lifecycle
+go run ./cmd/strateval status
+
+# Snapshot what's live (from STRATEGY_ALLOWLIST) into deployments table
+go run ./cmd/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+
+# Run evals (writes strategy_evals + updates catalog)
+go run ./cmd/strateval -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST" -sync-deployed
+
+# Markdown scorecard
+go run ./cmd/strateval report -allowlist "$STRATEGY_ALLOWLIST"
+```
+
+## Tables
+
+- `strategy_evals` — every IS/OOS score run (history)
+- `strategies` — catalog: first/last seen, eval_count, last_tier
+- `deployments` — allowlist sync history (`live` / `retired`)
+
+## Lifecycle labels
+
+| Label | Meaning |
+|-------|---------|
+| `scored_A`…`D` | Latest eval tier; not on allowlist |
+| `deployed` | On allowlist and looking fine |
+| `deployed_review` | On allowlist but latest tier is C/D |
+| `tested` / `registered` | Seen but no (or incomplete) score |
 
 ## Safety
 
-- Existing jobs unchanged unless you opt into calling `strateval`  
-- No auto-write of `.env` / `STRATEGY_ALLOWLIST`  
-- Optimizer cannot see OOS dates  
-
-## Suggested cadence
-
-Weekly (or after research changes):
-
-```bash
-go run ./cmd/strateval -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST" \
-  | tee reports/strateval_latest.md
-```
-
-Then manually promote tier-A adds / demote tier-D from the printed proposal.
+- `sync-deployed` only writes the **ledger** — it never edits `.env`
+- Promote/demote still requires you to change `STRATEGY_ALLOWLIST` by hand

@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS strategy_evals (
 CREATE INDEX IF NOT EXISTS idx_strategy_evals_strat ON strategy_evals(strategy_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_strategy_evals_run ON strategy_evals(run_id);
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.ensureLedger()
 }
 
 // Insert writes one evaluation row.
@@ -90,7 +93,10 @@ INSERT INTO strategy_evals (
 		row.OOS.CAGR, row.OOS.Sharpe, row.OOS.MaxDD, row.OOS.Trades, row.OOS.WinRate, row.OOS.AvgTradePct, row.OOS.TotalReturnPct,
 		row.Tier, string(reasons), row.CreatedAt.Format(time.RFC3339),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.TouchStrategy(row.StrategyID, row.Tier)
 }
 
 func boolInt(b bool) int {

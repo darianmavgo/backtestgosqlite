@@ -82,3 +82,11 @@ strateval:
 	go run ./cmd/strateval -strategy "$(or $(STRATEGY),all)" $(if $(OPTIMIZE),-optimize,) -allowlist "$(STRATEGY_ALLOWLIST)"
 strateval-report:
 	go run ./cmd/strateval report -allowlist "$(STRATEGY_ALLOWLIST)"
+
+.PHONY: strateval-status strateval-sync strateval-path
+strateval-status:
+	go run ./cmd/strateval status
+strateval-sync:
+	go run ./cmd/strateval sync-deployed -allowlist "$(STRATEGY_ALLOWLIST)"
+strateval-path:
+	go run ./cmd/strateval path
