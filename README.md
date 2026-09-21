@@ -647,3 +647,7 @@ For future improvements regarding report organization, historical data storage, 
 
 ### VOO 3-Up ETF comparison (`voo_up3_etf` study)
 `./bin/study -study voo_up3_etf` buys every ETF in the `sweep` universe (`refdata/settings.db`) the day VOO closes up 3 days in a row, with one fixed exit (3-day hold, +5% TP, -10% SL) — no parameter grid, 8-worker bounded pool. Results land in `reports/voo_up3_etf.db`: `etf_results` (one row per ETF), `etf_trades` (every trade), `voo_signals`, `run_params`, and the `etf_compare` view (ranked by avg per-trade return and CAGR).
+
+## Strategy eval (promote loop)
+
+See [docs/STRATEGY_EVAL.md](docs/STRATEGY_EVAL.md). Additive IS/OOS scoring; does not change live jobs.

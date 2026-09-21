@@ -73,3 +73,12 @@ compare: build
 clean:
 	@echo "Cleaning binaries..."
 	rm -rf $(BIN_DIR)/*
+
+# --- strategy eval loop (additive; does not touch live allowlist) ---
+.PHONY: strateval strateval-list strateval-report
+strateval-list:
+	go run ./cmd/strateval -list
+strateval:
+	go run ./cmd/strateval -strategy "$(or $(STRATEGY),all)" $(if $(OPTIMIZE),-optimize,) -allowlist "$(STRATEGY_ALLOWLIST)"
+strateval-report:
+	go run ./cmd/strateval report -allowlist "$(STRATEGY_ALLOWLIST)"
