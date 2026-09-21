@@ -28,16 +28,24 @@ func TestSplitDatesNoLeak(t *testing.T) {
 
 func TestAssignTier(t *testing.T) {
 	g := DefaultGates()
-	is := Metrics{MaxDD: 0.10, Sharpe: 1, Trades: 100, AvgTradePct: 0.01}
-	oos := Metrics{MaxDD: 0.12, Sharpe: 0.5, Trades: 40, AvgTradePct: 0.01}
-	tier, _ := AssignTier(is, oos, g, false)
+	is := Metrics{MaxDD: 0.10, Sharpe: 1, Trades: 100, AvgTradePct: 0.01, WinRate: 0.6}
+	// Monthly-ish: 12 trades, high win rate, contained DD → A
+	oos := Metrics{MaxDD: 0.08, Sharpe: 0.5, Trades: 12, AvgTradePct: 0.01, WinRate: 0.60}
+	tier, reasons := AssignTier(is, oos, g, false)
 	if tier != "A" {
-		t.Fatalf("want A got %s", tier)
+		t.Fatalf("want A got %s reasons=%v", tier, reasons)
 	}
-	bad := Metrics{MaxDD: 0.5, Sharpe: -0.2, Trades: 5, AvgTradePct: -0.01}
+	// High DD / low win rate on allowlist → D
+	bad := Metrics{MaxDD: 0.40, Sharpe: -0.2, Trades: 5, AvgTradePct: -0.01, WinRate: 0.30}
 	tier, _ = AssignTier(is, bad, g, true)
 	if tier != "D" {
 		t.Fatalf("want D got %s", tier)
+	}
+	// Few trades but strong win rate / DD → still can be B (marginal), not C
+	thin := Metrics{MaxDD: 0.05, Sharpe: 1.5, Trades: 8, AvgTradePct: 0.02, WinRate: 0.55}
+	tier, _ = AssignTier(is, thin, g, false)
+	if tier != "B" && tier != "A" {
+		t.Fatalf("want B or A for thin high-quality, got %s", tier)
 	}
 }
 

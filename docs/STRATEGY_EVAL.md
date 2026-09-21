@@ -77,3 +77,7 @@ export STRATEGY_ALLOWLIST="$(grep -E '^STRATEGY_ALLOWLIST=' ~/Documents/trade_or
 go run ./cmd/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
 # or: -db reports/strategies.db
 ```
+
+## Default gates (tier A) — stack-friendly
+
+High win rate + low DD over trade count. Defaults: ≥12 trades, ≥55% win rate, ≤15% OOS DD.

@@ -163,6 +163,9 @@ func runEval() {
 	runID := flag.String("run-id", time.Now().UTC().Format("20060102T150405Z"), "batch run id")
 	list := flag.Bool("list", false, "list registered strategies and exit")
 	syncDeployed := flag.Bool("sync-deployed", false, "also snapshot allowlist into deployments table after eval")
+	minTrades := flag.Int("min-oos-trades", 12, "Tier-A min OOS trades (stack books: monthly ≈ 12)")
+	minWin := flag.Float64("min-oos-win-rate", 0.55, "tier-A min OOS win rate (0-1)")
+	maxDD := flag.Float64("max-oos-dd", 0.15, "tier-A max OOS drawdown (0-1, e.g. 0.15=15%)")
 	flag.Parse()
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), *marketDB)
@@ -206,6 +209,7 @@ func runEval() {
 			MarketDB: *marketDB, Table: *table, OutDir: *outDir,
 			Capital: *capital, StartDate: *start, OOSMonths: *oosMonths,
 			Optimize: *optimize, MaxTrials: *maxTrials, Allowlist: alMap, RunID: *runID,
+			Gates: strateval.Gates{MinOOSTrades: *minTrades, MinOOSWinRate: *minWin, MaxOOSDDAbs: *maxDD},
 		})
 		if err != nil {
 			log.Printf("FAIL %s: %v", s.ID(), err)

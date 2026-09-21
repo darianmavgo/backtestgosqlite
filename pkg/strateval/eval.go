@@ -17,6 +17,7 @@ import (
 
 // EvalOptions controls one strategy evaluation.
 type EvalOptions struct {
+	Gates     Gates // zero value → DefaultGates()
 	MarketDB  string
 	Table     string
 	OutDir    string
@@ -120,7 +121,20 @@ func EvaluateStrategy(db *sqlx.DB, strat strategy.Strategy, opt EvalOptions) (Ev
 	if opt.Allowlist != nil {
 		inAL = opt.Allowlist[strat.ID()] || opt.Allowlist[strings.ToLower(strat.ID())]
 	}
-	tier, reasons := AssignTier(isM, oosM, DefaultGates(), inAL)
+	gates := DefaultGates()
+	if opt.Gates.MinOOSTrades > 0 {
+		gates.MinOOSTrades = opt.Gates.MinOOSTrades
+	}
+	if opt.Gates.MinOOSWinRate > 0 {
+		gates.MinOOSWinRate = opt.Gates.MinOOSWinRate
+	}
+	if opt.Gates.MaxOOSDDAbs > 0 {
+		gates.MaxOOSDDAbs = opt.Gates.MaxOOSDDAbs
+	}
+	if opt.Gates.MaxOOSDDMultiple > 0 {
+		gates.MaxOOSDDMultiple = opt.Gates.MaxOOSDDMultiple
+	}
+	tier, reasons := AssignTier(isM, oosM, gates, inAL)
 	pj, _ := json.Marshal(params)
 
 	row := EvalRow{
