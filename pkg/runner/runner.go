@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -14,8 +16,8 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
+	_ "modernc.org/sqlite"
 )
 
 type RunResult struct {
@@ -503,9 +505,24 @@ func RunDownload(targetDb, targetTable string, symbols []string, years int) erro
 		cmd = exec.Command("go", "run", "./cmd/download", "-db", targetDb, "-target-table", targetTable, "-symbols", symArg, "-years", yearsArg)
 	}
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	cmd.Stdin = os.Stdin
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = strings.TrimSpace(stdout.String())
+		}
+		if detail == "" {
+			detail = err.Error()
+		}
+		bin := downloadBin
+		if bin == "" {
+			bin = "go run ./cmd/download"
+		}
+		return fmt.Errorf("%s -db %s -target-table %s -symbols %s -years %s: %s", bin, targetDb, targetTable, symArg, yearsArg, detail)
+	}
+	return nil
 }

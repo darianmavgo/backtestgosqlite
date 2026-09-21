@@ -77,6 +77,8 @@ func main() {
 	stackDepth := flag.Int("stack-depth", 3, "(stack-eval) greedy complementary overlays to combine after pairwise ranking")
 	persistBest := flag.Bool("persist-best", true, "(stack-eval) write a shared_*.db for the greedy N-way stack")
 	startFlag := flag.String("start", storage.DefaultStartDate, "Earliest bar date (YYYY-MM-DD) to simulate; earlier bars are only used for SMA warmup. Empty = full history")
+	signalsOnly := flag.Bool("signals-only", false, "Skip portfolio simulation; run the same GenerateSignals live window as cmd/livescan (tip bar → next session)")
+	barsLimit := flag.Int("bars", 0, "(with -signals-only) recent bars per symbol; 0 = strategy MinHistoryBars")
 	flag.Parse()
 	backtestStart = *startFlag
 
@@ -131,6 +133,44 @@ func main() {
 	posArgs := flag.Args()
 	if stratArg == "" && len(posArgs) > 0 {
 		stratArg = strings.Join(posArgs, ",")
+	}
+
+	// -signals-only: same path as cmd/livescan (wrapper around RunSignalScan).
+	if *signalsOnly {
+		if *sharedAccountFlag || *primaryFlag != "" || *secondaryFlag != "" || strings.Contains(stratArg, "+") {
+			log.Fatalf("-signals-only does not support shared-account / + stacks; use livescan or plain -strategy lists")
+		}
+		selected, err := runner.ResolveStrategies(stratArg, "bb-capitulation")
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		fmt.Printf("\n📡 backtest -signals-only → runner.RunSignalScan (same as livescan)\n")
+		res, err := runner.RunSignalScan(runner.SignalScanOptions{
+			MarketDB:      *targetDb,
+			Table:         *tableName,
+			Strategies:    selected,
+			SymbolFilter:  *symbolFilter,
+			BarsLimit:     *barsLimit,
+			AutoDownload:  *autoDownload,
+			DownloadYears: *downloadYears,
+			Concurrency:   *concurrency,
+			OutDir:        *outDir,
+		})
+		if err != nil {
+			log.Fatalf("signals-only: %v", err)
+		}
+		fmt.Printf("📅 Tip/as-of %s → next session %s (%d symbols)\n\n", res.AsOf, res.NextSession, res.SymbolsLoaded)
+		entering := 0
+		for _, r := range res.Rows {
+			mark := "NO_SIGNAL"
+			if r.Status == "ENTER" {
+				mark = "ENTER"
+				entering++
+			}
+			fmt.Printf("  %-28s %-10s %s\n", r.StrategyID, mark, r.Symbols)
+		}
+		fmt.Printf("\n%d/%d ENTER · wrote %s\n", entering, len(res.Rows), res.OutDBPath)
+		return
 	}
 
 	// Detect if user requested Shared Account Mode
@@ -310,32 +350,9 @@ func main() {
 		return
 	}
 
-	if stratArg == "" {
-		stratArg = "bb-capitulation"
-	}
-
-	var selectedStrategies []strategy.Strategy
-	if strings.ToLower(stratArg) == "all" {
-		selectedStrategies = strategy.List()
-	} else {
-		tokens := strings.FieldsFunc(stratArg, func(r rune) bool {
-			return r == ',' || r == ' '
-		})
-		for _, token := range tokens {
-			token = strings.TrimSpace(token)
-			if token == "" {
-				continue
-			}
-			s, exists := strategy.Get(token)
-			if !exists {
-				log.Fatalf("Strategy '%s' not found in registry. Run with -list to view available strategies.", token)
-			}
-			selectedStrategies = append(selectedStrategies, s)
-		}
-	}
-
-	if len(selectedStrategies) == 0 {
-		log.Fatalf("No valid strategies selected. Run with -list to view available strategies.")
+	selectedStrategies, err := runner.ResolveStrategies(stratArg, "bb-capitulation")
+	if err != nil {
+		log.Fatalf("%v. Run with -list to view available strategies.", err)
 	}
 
 	// For bulk runs (-strategy all, or a multi-symbol comma list), avoid duplicate

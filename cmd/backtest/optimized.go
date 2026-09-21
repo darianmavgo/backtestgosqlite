@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
@@ -62,24 +61,9 @@ func bestParamsFor(gdb *sqlx.DB, strategyID string) (optimizedParams, bool) {
 // called out explicitly, since a silent fallback would look like every
 // strategy got optimized when some didn't.
 func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath string, capital float64, symbolFilter string, autoDownload bool, downloadYears, concurrency int) {
-	var targets []strategy.Strategy
-	if stratArg == "" || strings.EqualFold(stratArg, "all") {
-		targets = strategy.List()
-	} else {
-		for _, tok := range strings.FieldsFunc(stratArg, func(r rune) bool { return r == ',' || r == ' ' }) {
-			tok = strings.TrimSpace(tok)
-			if tok == "" {
-				continue
-			}
-			s, ok := strategy.Get(tok)
-			if !ok {
-				log.Fatalf("Unknown strategy '%s'. Run with -list to see available strategies.", tok)
-			}
-			targets = append(targets, s)
-		}
-	}
-	if len(targets) == 0 {
-		log.Fatalf("No valid strategies selected.")
+	targets, err := runner.ResolveStrategies(stratArg, "all")
+	if err != nil {
+		log.Fatalf("%v. Run with -list to see available strategies.", err)
 	}
 
 	gdb, err := storage.OpenSQLite(gridDBPath)
