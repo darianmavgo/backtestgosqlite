@@ -66,7 +66,7 @@ func fetchWithFallback(ctx context.Context, primary, fallback datasource.DataSou
 func main() {
 	targetDb := flag.String("db", appenv.MarketDB(), "Target SQLite DB path for market history (default: APP_FOLDER/data/market_history.db)")
 	settingsDb := flag.String("settings", appenv.RefDB(), "Reference DB path (etf_universe lists and symbol tables)")
-	sourceType := flag.String("source", "yahoo", "Data source provider: yahoo, polygon, stooq, csv")
+	sourceType := flag.String("source", "yahoo", "Data source provider: yahoo, polygon, polygon-options, stooq, csv")
 	polygonKey := flag.String("polygon-key", "", "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	csvPath := flag.String("csv", "", "Path to CSV file or directory of CSV files (used with -source csv)")
 	symbolFlag := flag.String("symbols", "", "Comma-separated list of symbols to download/import (e.g. SPY,QQQ,TQQQ)")
@@ -81,6 +81,9 @@ func main() {
 	forceDownload := flag.Bool("force", false, "Force re-downloading all bars even if already present in database")
 	seedDb := flag.String("seed-db", appenv.DataFile("leveraged_backtest.db"), "Legacy database to seed from if target DB doesn't exist")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "Number of symbols to fetch concurrently (network-bound; DB writes are serialized internally). Defaults to all CPU cores.")
+	otmFlag := flag.String("otm", "0,2,5", "(polygon-options) call strikes to pull, as % OTM vs spot at the roll date (nearest listed strike each)")
+	rate := flag.Int("rate", 5, "(polygon-options) API calls per minute; 5 = Polygon free tier, 0 = unthrottled (paid)")
+	maxCalls := flag.Int("max-calls", 0, "(polygon-options) stop after this many API calls (0 = no cap); reruns resume, finished contracts are skipped")
 	flag.Parse()
 
 	// If default target DB does not exist yet, seed it from existing leveraged_backtest.db if available
@@ -107,6 +110,34 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// 0. Option history (Polygon free tier) for one underlying.
+	if strings.ToLower(*sourceType) == "polygon-options" {
+		underlying := "VOO"
+		if syms := strings.Split(*symbolFlag, ","); strings.TrimSpace(syms[0]) != "" {
+			underlying = strings.ToUpper(strings.TrimSpace(syms[0]))
+		}
+		otms, err := parseOTMList(*otmFlag)
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		end := time.Now().UTC()
+		start := end.AddDate(-2, 0, 7) // free tier: ~2 years of option history
+		if *startFlag != "" {
+			if start, err = time.Parse("2006-01-02", *startFlag); err != nil {
+				log.Fatalf("Invalid -start date %q: expected YYYY-MM-DD", *startFlag)
+			}
+		}
+		if *endFlag != "" {
+			if end, err = time.Parse("2006-01-02", *endFlag); err != nil {
+				log.Fatalf("Invalid -end date %q: expected YYYY-MM-DD", *endFlag)
+			}
+		}
+		if err := downloadOptionHistory(ctx, db, *targetTable, underlying, start, end, otms, *polygonKey, *rate, *maxCalls); err != nil {
+			log.Fatalf("option download: %v", err)
+		}
+		return
+	}
 
 	// 1. Handle direct CSV ingestion
 	if strings.ToLower(*sourceType) == "csv" || *csvPath != "" {
