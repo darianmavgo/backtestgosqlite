@@ -35,6 +35,35 @@ type RequiredSymbolsProvider interface {
 	RequiredSymbols() []string
 }
 
+// TotalReturnProvider is optionally implemented by strategies that must be
+// simulated on dividend-adjusted prices (buy-and-hold income ETFs). When
+// UsesTotalReturn is true the runner scales each required bar's OHLC by
+// AdjClose/Close before simulating, so dividends are reinvested at the
+// ex-date and show up in the equity curve, and reports the price vs dividend
+// split of the return. Trade prices/share counts are then on the adjusted scale.
+// With runner.ReinvestDividends=false the bars stay raw and the derived cash
+// dividends are paid into the account instead.
+type TotalReturnProvider interface {
+	UsesTotalReturn() bool
+}
+
+// OverlaySpec configures a monthly covered-call overlay on a buy-and-hold underlying.
+type OverlaySpec struct {
+	Underlying       string
+	OTMPct           float64 // target call strike as % above spot at each monthly roll
+	WindowYears      int     // simulate only the trailing N years of the underlying's bars (option history is ~2y on Polygon's free tier)
+	OptionSlip       float64 // $ per share given up vs the last-trade option price when selling
+	OptionCommission float64 // $ per contract sold
+}
+
+// OptionOverlayProvider is implemented by strategies that hold an underlying
+// and write covered calls against it. They do not emit stock signals: the
+// runner simulates them with pkg/options against option history stored by
+// `download -source polygon-options`, with dividends withdrawn as paid.
+type OptionOverlayProvider interface {
+	OverlaySpec() OverlaySpec
+}
+
 // MinHistoryProvider is optionally implemented by strategies that know the
 // fewest trailing daily bars per symbol they need to detect an entry signal
 // on the latest bar (indicator warmup included). Used by livescan to load and

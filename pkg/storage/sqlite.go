@@ -257,6 +257,7 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 
 	query := fmt.Sprintf(`
 		SELECT coalesce(idx, rowid, 0) as idx, symbol, substr(Date, 1, 10) as Date, open, high, low, close, volume,
+		coalesce("Adj Close", 0) AS "Adj Close",
 		AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
 		AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 49 PRECEDING AND CURRENT ROW)  AS sma50
 		FROM %s
@@ -871,4 +872,39 @@ func FetchTradeSummaryStats(db *sqlx.DB, strategyID string) (models.PerformanceR
 	return report, nil
 }
 
+// SaveReturnBreakdown records how a buy-and-hold total return splits into
+// price appreciation and reinvested dividends, so it can be browsed in the
+// strategy's result DB next to trades / equity_curve.
+func SaveReturnBreakdown(db *sqlx.DB, strategyID, symbol, start, end string, reinvested bool, pricePct, dividendPct, totalPct float64) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS return_breakdown (
+		strategy_id TEXT, symbol TEXT, start_date TEXT, end_date TEXT,
+		dividends_reinvested INTEGER,
+		price_return_pct REAL, dividend_return_pct REAL, total_return_pct REAL,
+		PRIMARY KEY (strategy_id, symbol))`); err != nil {
+		return err
+	}
+	_, err := db.Exec(`INSERT OR REPLACE INTO return_breakdown VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		strategyID, symbol, start, end, reinvested, pricePct, dividendPct, totalPct)
+	return err
+}
 
+// RunMetric is one named number attached to a strategy run.
+type RunMetric struct {
+	Name  string
+	Value float64
+}
+
+// SaveRunMetrics stores strategy-specific result numbers (e.g. dividends
+// withdrawn, premium collected) in a run_metrics table next to trades.
+func SaveRunMetrics(db *sqlx.DB, strategyID string, metrics []RunMetric) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS run_metrics (
+		strategy_id TEXT, metric TEXT, value REAL, PRIMARY KEY (strategy_id, metric))`); err != nil {
+		return err
+	}
+	for _, m := range metrics {
+		if _, err := db.Exec(`INSERT OR REPLACE INTO run_metrics VALUES (?, ?, ?)`, strategyID, m.Name, m.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}

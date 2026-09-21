@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"io"
 	"log"
 	"os"
@@ -20,6 +21,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// ReinvestDividends controls total-return strategies (see strategy.TotalReturnProvider).
+// true (default): simulate on dividend-adjusted prices, i.e. dividends reinvested.
+// false: simulate on raw prices and pay dividends into cash, uninvested.
+// Set once from the backtest -no-reinvest-dividends flag before running.
+var ReinvestDividends = true
+
 type RunResult struct {
 	Strat       strategy.Strategy
 	Report      models.PerformanceReport
@@ -28,6 +35,19 @@ type RunResult struct {
 	DbPath      string
 	SignalCount int
 	Err         error
+
+	// Set for strategies simulated on total-return (dividend-adjusted) prices.
+	// Buy-and-hold decomposition, before fees/slippage, entry signal → last bar.
+	TotalReturn         bool
+	Notes               []string // extra strategy-specific result lines (printed by PrintNotes)
+	DividendsReinvested bool
+	DividendCash        float64 // total cash dividends received (only when not reinvested)
+	PriceReturnPct      float64 // capital gains only (raw closes)
+	DividendReturnPct   float64 // reinvested dividends (total − price)
+	TotalReturnPct      float64
+	BreakdownSymbol     string
+	BreakdownStart      string
+	BreakdownEnd        string
 }
 
 func PrintPerformanceTearSheet(strategyName string, report models.PerformanceReport) {
@@ -315,6 +335,17 @@ func ExecuteStrategy(
 	// 2. Set DB routing for ALL strategies
 	strat.SetDatabases(marketDBPath, outDBPath)
 
+	// 2a. Covered-call overlays have their own simulator (pkg/options).
+	if ov, ok := strat.(strategy.OptionOverlayProvider); ok {
+		return executeOverlay(strat, ov.OverlaySpec(), cfg, barsBySymbol, capital, outDBPath, marketDBPath)
+	}
+
+	// 2b. Dividend-inclusive strategies run on adjusted-price copies of their bars.
+	var tr *totalReturnInfo
+	if p, ok := strat.(strategy.TotalReturnProvider); ok && p.UsesTotalReturn() {
+		barsBySymbol, tr = toTotalReturnBars(strat, cfg, barsBySymbol, ReinvestDividends)
+	}
+
 	// 3. Generate signals (calculations will now write natively into outDBPath if applicable)
 	signals := strat.GenerateSignals(barsBySymbol)
 	symUpper := strings.ToUpper(symbolFilter)
@@ -334,6 +365,9 @@ func ExecuteStrategy(
 	// of idle time from unrelated long-history symbols sharing the same database.
 	scopedDates := scopeDatesToStrategy(strat, cfg, barsBySymbol, sortedDates)
 	sim := simulator.NewPortfolioSimulator(cfg, capital)
+	if tr != nil {
+		sim.Dividends = tr.divs
+	}
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, scopedDates)
 
 	// 5. Persist signals, trades, equity curve, and performance summary
@@ -359,7 +393,7 @@ func ExecuteStrategy(
 		}
 	}
 
-	return RunResult{
+	rr := RunResult{
 		Strat:       strat,
 		Report:      report,
 		Trades:      trades,
@@ -367,6 +401,137 @@ func ExecuteStrategy(
 		DbPath:      outDBPath,
 		SignalCount: len(signals),
 	}
+	if tr != nil && len(signals) > 0 {
+		if b, ok := tr.breakdown(signals[0].Symbol, signals[0].Date); ok {
+			rr.DividendsReinvested, rr.DividendCash = tr.reinvest, sim.DividendCash
+			rr.TotalReturn, rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct = true, b.price, b.total-b.price, b.total
+			rr.BreakdownSymbol, rr.BreakdownStart, rr.BreakdownEnd = signals[0].Symbol, b.start, b.end
+			if db, err := storage.OpenSQLite(outDBPath); err == nil {
+				if err := storage.SaveReturnBreakdown(db, strat.ID(), rr.BreakdownSymbol, b.start, b.end, tr.reinvest,
+					rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct); err != nil {
+					log.Printf("Warning: Failed to save return breakdown to %s: %v", outDBPath, err)
+				}
+				db.Close()
+			}
+		}
+	}
+	return rr
+}
+
+// PrintNotes prints strategy-specific result lines (e.g. covered-call income).
+func PrintNotes(res RunResult) {
+	if len(res.Notes) == 0 {
+		return
+	}
+	fmt.Println()
+	for _, n := range res.Notes {
+		fmt.Println(n)
+	}
+}
+
+// PrintReturnBreakdown prints the capital-gain vs dividend split for total-return strategies.
+func PrintReturnBreakdown(res RunResult) {
+	if !res.TotalReturn {
+		return
+	}
+	mode := "dividends reinvested"
+	if !res.DividendsReinvested {
+		mode = "dividends NOT reinvested"
+	}
+	fmt.Printf("\n💰 %s buy & hold return split (%s ➔ %s, before fees/slippage, %s):\n", res.BreakdownSymbol, res.BreakdownStart, res.BreakdownEnd, mode)
+	fmt.Printf("   Capital gains: %+.2f%%   Dividends: %+.2f%%   Total: %+.2f%%\n", res.PriceReturnPct*100, res.DividendReturnPct*100, res.TotalReturnPct*100)
+	if res.DividendsReinvested {
+		fmt.Printf("   (Simulated on dividend-adjusted prices; tear-sheet returns already include dividends, net of costs.)\n")
+	} else {
+		fmt.Printf("   (Simulated on raw prices; $%.0f of dividends paid into idle cash, earning nothing; tear-sheet equity includes that cash.)\n", res.DividendCash)
+	}
+}
+
+// totalReturnInfo keeps the raw (price-only) bars of a strategy whose bars were adjusted.
+type totalReturnInfo struct {
+	raw      map[string][]models.Bar
+	divs     map[string]map[string]float64 // symbol → ex-date → $/share (non-reinvest mode)
+	reinvest bool
+}
+
+type splitReturn struct {
+	price, total float64
+	start, end   string
+}
+
+// toTotalReturnBars returns a copy of barsBySymbol where the strategy's required
+// symbols and benchmark have OHLC scaled by AdjClose/Close. Other symbols and the
+// caller's slices are left untouched (strategies may run concurrently on one map).
+func toTotalReturnBars(strat strategy.Strategy, cfg strategy.StrategyConfig, in map[string][]models.Bar, reinvest bool) (map[string][]models.Bar, *totalReturnInfo) {
+	need := map[string]bool{strings.ToUpper(strings.TrimSpace(cfg.Benchmark)): true}
+	if rp, ok := strat.(strategy.RequiredSymbolsProvider); ok {
+		for _, s := range rp.RequiredSymbols() {
+			need[strings.ToUpper(strings.TrimSpace(s))] = true
+		}
+	}
+	out := make(map[string][]models.Bar, len(in))
+	info := &totalReturnInfo{raw: map[string][]models.Bar{}, reinvest: reinvest}
+	for sym, bars := range in {
+		if !need[strings.ToUpper(sym)] {
+			out[sym] = bars
+			continue
+		}
+		info.raw[sym] = bars
+		if !reinvest {
+			// Keep raw prices; recover cash dividends from steps in AdjClose/Close.
+			info.divs = ensureDivs(info.divs)
+			m := options.DividendsFromAdjClose(bars)
+			info.divs[sym] = m
+			out[sym] = bars
+			continue
+		}
+		adj := make([]models.Bar, len(bars))
+		for i, b := range bars {
+			if b.AdjClose > 0 && b.Close > 0 {
+				f := b.AdjClose / b.Close
+				b.Open, b.High, b.Low, b.Close = b.Open*f, b.High*f, b.Low*f, b.Close*f
+			}
+			adj[i] = b
+		}
+		out[sym] = adj
+	}
+	return out, info
+}
+
+func ensureDivs(m map[string]map[string]float64) map[string]map[string]float64 {
+	if m == nil {
+		return map[string]map[string]float64{}
+	}
+	return m
+}
+
+func (t *totalReturnInfo) breakdown(symbol, fromDate string) (splitReturn, bool) {
+	var first, last *models.Bar
+	bars := t.raw[symbol]
+	for i := range bars {
+		if bars[i].Date < fromDate {
+			continue
+		}
+		if first == nil {
+			first = &bars[i]
+		}
+		last = &bars[i]
+	}
+	if first == nil || first.Close <= 0 || last.Close <= 0 || first.AdjClose <= 0 || last.AdjClose <= 0 {
+		return splitReturn{}, false
+	}
+	price := last.Close/first.Close - 1
+	total := last.AdjClose/first.AdjClose - 1
+	if !t.reinvest { // simple (uncompounded) dividend yield on the entry price
+		var sum float64
+		for d, v := range t.divs[symbol] {
+			if d > first.Date && d <= last.Date {
+				sum += v
+			}
+		}
+		total = price + sum/first.Close
+	}
+	return splitReturn{price: price, total: total, start: first.Date, end: last.Date}, true
 }
 
 // RequiredSymbolsFor computes the union of every symbol a set of strategies

@@ -12,13 +12,18 @@ import (
 
 // PortfolioSimulator runs a chronological multi-asset event simulation with capital constraints.
 type PortfolioSimulator struct {
-	Config             strategy.StrategyConfig
-	InitialCapital     float64
-	Cash               float64
-	Positions          map[string]*models.Position
-	ClosedTrades       []models.Trade
-	EquityCurve        []models.DailyEquityPoint
-	BenchmarkBars      map[string]models.Bar
+	Config         strategy.StrategyConfig
+	InitialCapital float64
+	Cash           float64
+	Positions      map[string]*models.Position
+	ClosedTrades   []models.Trade
+	EquityCurve    []models.DailyEquityPoint
+	BenchmarkBars  map[string]models.Bar
+	// Dividends optionally maps symbol → date → cash dividend per share. Held
+	// shares are paid on that date into Cash (not reinvested). Used with raw
+	// price bars to model "take dividends as cash".
+	Dividends          map[string]map[string]float64
+	DividendCash       float64 // total dividends received during Run
 	Sizer              PositionSizer
 	tradeIDCounter     int
 	dailyCashYieldRate float64 // pre-computed daily compound factor from CashYieldAnnual
@@ -85,6 +90,15 @@ func (s *PortfolioSimulator) Run(
 		// SharedAccountSimulator and StrategyConfig.CashYieldAnnual's docs.
 		if s.dailyCashYieldRate > 0 && s.Cash > 0 {
 			s.Cash += s.Cash * s.dailyCashYieldRate
+		}
+
+		// 0b. Pay dividends on shares held going into the ex-date.
+		for sym, pos := range s.Positions {
+			if d := s.Dividends[sym][date]; d > 0 {
+				pay := float64(pos.Shares) * d
+				s.Cash += pay
+				s.DividendCash += pay
+			}
 		}
 
 		// 1. Evaluate and update existing open positions

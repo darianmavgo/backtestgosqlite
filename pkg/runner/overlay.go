@@ -1,0 +1,114 @@
+package runner
+
+import (
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/options"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
+	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+)
+
+// executeOverlay runs a covered-call overlay strategy: buy and hold the
+// underlying over the trailing spec.WindowYears, sell a monthly call at the
+// target OTM%, get called away and re-buy when exercised, and withdraw
+// dividends as paid. Results are persisted like any other strategy's.
+func executeOverlay(strat strategy.Strategy, spec strategy.OverlaySpec, cfg strategy.StrategyConfig,
+	barsBySymbol map[string][]models.Bar, capital float64, outDBPath, marketDBPath string) RunResult {
+
+	fail := func(err error) RunResult { return RunResult{Strat: strat, DbPath: outDBPath, Err: err} }
+
+	bars := barsBySymbol[spec.Underlying]
+	if len(bars) == 0 {
+		return fail(fmt.Errorf("no %s bars loaded; run `download -symbols %s` first", spec.Underlying, spec.Underlying))
+	}
+	marketDB, err := storage.OpenSQLite(marketDBPath)
+	if err != nil {
+		return fail(err)
+	}
+	defer marketDB.Close()
+	if err := storage.EnsureOptionTables(marketDB); err != nil {
+		return fail(err)
+	}
+	chains, err := storage.FetchCallChains(marketDB, spec.Underlying)
+	if err != nil {
+		return fail(err)
+	}
+	if len(chains) == 0 {
+		return fail(fmt.Errorf("no %s option history in %s; run `download -source polygon-options -symbols %s -otm %.0f` first",
+			spec.Underlying, marketDBPath, spec.Underlying, spec.OTMPct))
+	}
+
+	start := ""
+	if spec.WindowYears > 0 {
+		if last, err := time.Parse("2006-01-02", bars[len(bars)-1].Date); err == nil {
+			start = last.AddDate(-spec.WindowYears, 0, 0).Format("2006-01-02")
+		}
+	}
+	res := options.SimulateCoveredCall(options.CoveredCallConfig{
+		Underlying: spec.Underlying, Capital: capital, OTMPct: spec.OTMPct, Start: start,
+		Commission: spec.OptionCommission, SlipPerShare: spec.OptionSlip,
+		StockSlipPct: cfg.SlippagePct, StockCommission: cfg.CommissionPerShare,
+		Dividends: options.DividendsFromAdjClose(bars),
+	}, bars, chains)
+	if len(res.Equity) == 0 {
+		return fail(fmt.Errorf("no simulable window for %s since %s: option history missing or no roll had a tradable quote", spec.Underlying, start))
+	}
+	for i := range res.Trades {
+		res.Trades[i].StrategyID = strat.ID()
+	}
+
+	report := analytics.CalculatePerformanceMetrics(capital, res.Trades, res.Equity)
+	bh := analytics.CalculatePerformanceMetrics(capital, nil, res.BuyHoldEquity)
+
+	var otmSum float64
+	for _, t := range res.Trades {
+		if spot := t.InvestedCapital / float64(t.Shares); spot > 0 {
+			otmSum += t.TargetPrice/spot - 1
+		}
+	}
+	avgOTM := 0.0
+	if n := len(res.Trades); n > 0 {
+		avgOTM = otmSum / float64(n) * 100
+	}
+	// Dividend income and option premium are part of TotalEquity; report them separately.
+	notes := []string{
+		fmt.Sprintf("📞 %s covered call: %.0f%% OTM target, monthly, %s ➔ %s. Dividends withdrawn as paid (never reinvested).", spec.Underlying, spec.OTMPct, report.StartDate, report.EndDate),
+		fmt.Sprintf("   Calls sold %d (avg %.1f%% OTM at sale) · skipped, no tradable quote %d · exercised %d · re-bought %d times", len(res.Trades), avgOTM, res.Skipped, res.Assigned, res.Rebuys),
+		fmt.Sprintf("   Option premium collected $%.0f · upside surrendered on exercised calls $%.0f", res.Premium, res.Settlement),
+		fmt.Sprintf("   Dividends withdrawn $%.0f · account value at end $%.0f (tear-sheet equity = account + withdrawn dividends = $%.0f)", res.WithdrawnDividends, res.FinalAccountValue, report.FinalEquity),
+		fmt.Sprintf("   Buy & hold, same start, dividends withdrawn: total return %.1f%% (max drawdown %.1f%%) vs overlay %.1f%% (max drawdown %.1f%%)",
+			bh.TotalReturnPct*100, bh.MaxDrawdownPct*100, report.TotalReturnPct*100, report.MaxDrawdownPct*100),
+		"   Option prices are Polygon last-trade EOD bars (not bids); far-OTM strikes trade rarely, so a roll can start days late or be skipped.",
+	}
+
+	if db, err := storage.OpenSQLite(outDBPath); err != nil {
+		log.Printf("Warning: Failed to re-open %s for overlay results: %v", outDBPath, err)
+	} else {
+		defer db.Close()
+		if err := storage.SaveTrades(db, strat.ID(), res.Trades); err != nil {
+			log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
+		}
+		if err := storage.SaveEquityCurve(db, strat.ID(), res.Equity); err != nil {
+			log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
+		}
+		if err := storage.SavePerformanceReport(db, strat.ID(), report); err != nil {
+			log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
+		}
+		if err := storage.SaveRunMetrics(db, strat.ID(), []storage.RunMetric{
+			{"calls_sold", float64(len(res.Trades))}, {"calls_skipped_no_quote", float64(res.Skipped)},
+			{"exercised", float64(res.Assigned)}, {"rebuys", float64(res.Rebuys)},
+			{"premium_collected", res.Premium}, {"upside_surrendered", res.Settlement},
+			{"dividends_withdrawn", res.WithdrawnDividends}, {"account_value_end", res.FinalAccountValue},
+			{"avg_otm_pct_at_sale", avgOTM},
+			{"buyhold_total_return_pct", bh.TotalReturnPct * 100}, {"buyhold_max_drawdown_pct", bh.MaxDrawdownPct * 100},
+		}); err != nil {
+			log.Printf("Warning: Failed to save run metrics to %s: %v", outDBPath, err)
+		}
+	}
+
+	return RunResult{Strat: strat, Report: report, Trades: res.Trades, EquityCurve: res.Equity, DbPath: outDBPath, Notes: notes}
+}

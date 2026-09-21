@@ -127,7 +127,16 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 
 	var baseSignals []models.Signal
 	if paramSpace.Direction == "tree_bounce" {
-		baseSignals = strat.GenerateSignals(map[string][]models.Bar{paramSpace.SignalSymbol: signalBars})
+		// Strategies whose entry rule reads one symbol but trades another (e.g. VOO
+		// volume → TQQQ) also need the trade symbol's bars to price the signal.
+		// Same-symbol tree strategies (MARA→MARA) add nothing here.
+		baseInput := map[string][]models.Bar{paramSpace.SignalSymbol: signalBars}
+		for sym, bars := range tradeBarsMap {
+			if _, dup := baseInput[sym]; !dup {
+				baseInput[sym] = bars
+			}
+		}
+		baseSignals = strat.GenerateSignals(baseInput)
 	}
 
 	ctx := &sweepContext{

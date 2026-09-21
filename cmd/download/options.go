@@ -57,15 +57,17 @@ func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlyin
 		return fmt.Errorf("no %s bars in %s; run `download -symbols %s` first (option strikes are chosen from the underlying price)", underlying, barTable, underlying)
 	}
 	sort.Slice(closes, func(i, j int) bool { return closes[i].Date < closes[j].Date })
-	refClose := func(date string) (float64, bool) {
-		px, ok := 0.0, false
+	// refClose returns the close and date of the last trading day on/before date
+	// (the nominal roll Friday can be a market holiday, e.g. Juneteenth).
+	refClose := func(date string) (float64, string, bool) {
+		px, d, ok := 0.0, "", false
 		for _, b := range closes {
 			if b.Date[:10] > date {
 				break
 			}
-			px, ok = b.Close, true
+			px, d, ok = b.Close, b.Date[:10], true
 		}
-		return px, ok
+		return px, d, ok
 	}
 
 	cli := datasource.NewPolygonOptions(apiKey, callsPerMin)
@@ -89,10 +91,11 @@ func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlyin
 		if sell < start.Format("2006-01-02") {
 			continue
 		}
-		ref, ok := refClose(sell)
+		ref, sellDay, ok := refClose(sell)
 		if !ok {
 			continue
 		}
+		sell = sellDay
 
 		// Resolve the real expiry: the nominal third Friday, or Thursday when Friday is a holiday.
 		var chain []models.OptionContract
@@ -180,7 +183,7 @@ func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlyin
 			if len(bars) == 0 {
 				noQuote++
 			}
-			fmt.Printf("[%d/%d] %s  %s K=%.0f (spot %.2f @ %s): %d bars\n", i+1, len(expiries), expiry, c.Ticker, k, ref, sell, len(bars))
+			fmt.Printf("[%d/%d] %s  %s K=%.2f (spot %.2f @ %s): %d bars\n", i+1, len(expiries), expiry, c.Ticker, k, ref, sell, len(bars))
 		}
 	}
 

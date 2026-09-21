@@ -35,12 +35,18 @@ func main() {
 	//   backtest optimized  -> run every selected strategy (default: all) with
 	//                          the best config a prior `gridsearch` sweep
 	//                          found for it, instead of its baseline defaults
+	//   backtest covered-call -> hold -symbol (default VOO) and sell a monthly
+	//                          call; needs `download -source polygon-options`
 	//   backtest stack-eval -> rank existing strategies as idle-cash overlays
 	//                          on one primary, one shared cash ledger
 	staleMode := false
 	optimizedMode := false
 	stackEvalMode := false
-	if len(os.Args) > 1 && os.Args[1] == "stale" {
+	coveredCallMode := false
+	if len(os.Args) > 1 && (os.Args[1] == "covered-call" || os.Args[1] == "coveredcall") {
+		coveredCallMode = true
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	} else if len(os.Args) > 1 && os.Args[1] == "stale" {
 		staleMode = true
 		os.Args = append(os.Args[:1], os.Args[2:]...) // drop the subcommand so flag.Parse still works
 	} else if len(os.Args) > 1 && os.Args[1] == "optimized" {
@@ -79,8 +85,22 @@ func main() {
 	startFlag := flag.String("start", storage.DefaultStartDate, "Earliest bar date (YYYY-MM-DD) to simulate; earlier bars are only used for SMA warmup. Empty = full history")
 	signalsOnly := flag.Bool("signals-only", false, "Skip portfolio simulation; run the same GenerateSignals live window as cmd/livescan (tip bar → next session)")
 	barsLimit := flag.Int("bars", 0, "(with -signals-only) recent bars per symbol; 0 = strategy MinHistoryBars")
+	ccOTM := flag.Float64("otm", 2.0, "(covered-call) target call strike as % above spot at each monthly roll")
+	ccCommission := flag.Float64("commission", 0.65, "(covered-call) $ per option contract sold (IBKR tiered ≈ $0.65)")
+	ccSlip := flag.Float64("opt-slip", 0.05, "(covered-call) $ per share given up vs the last-trade option price when selling")
+	noReinvest := flag.Bool("no-reinvest-dividends", false, "Total-return strategies (e.g. schd-buy-hold): take dividends as idle cash instead of reinvesting them")
 	flag.Parse()
 	backtestStart = *startFlag
+	runner.ReinvestDividends = !*noReinvest
+
+	if coveredCallMode {
+		ccStart := *startFlag
+		if ccStart == storage.DefaultStartDate {
+			ccStart = "" // option history is only ~2y; begin at the first rollable month
+		}
+		runCoveredCallCommand(*targetDb, *tableName, strings.ToUpper(*symbolFilter), *capital, *ccOTM, ccStart, *ccCommission, *ccSlip)
+		return
+	}
 
 	// Ensure HTML reports land in reports/ directory
 	*htmlOutput = appenv.ReportFile(*htmlOutput)
@@ -464,6 +484,8 @@ func main() {
 		fmt.Printf("💾 Persisted quantitative performance summary to SQLite 'performance_summary' table.\n")
 
 		runner.PrintPerformanceTearSheet(strat.Name(), res.Report)
+		runner.PrintReturnBreakdown(res)
+		runner.PrintNotes(res)
 		runner.PrintTradesTable(res.Trades, *symbolFilter)
 
 		fmt.Printf("\n💾 Dedicated Strategy SQLite Database: %s\n", res.DbPath)
