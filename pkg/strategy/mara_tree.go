@@ -85,6 +85,23 @@ func (s *MARATreeStrategy) SetDatabases(marketDBPath, calcDBPath string) {
 
 // GenerateSignals evaluates historical bars for MARA and generates entry triggers.
 func (s *MARATreeStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	// 1. Prefer the SQL pipeline (sql/strategies/mara_tree): the SMA200/ATR14
+	// features TreeBounceSignals computes via nested Go loops are rolling-window
+	// math that belongs in SQLite (see docs/SQLvsGOModels.md), computed once via
+	// window functions instead of rescanning up to 200 rows per bar.
+	if s.calcDBPath != "" && s.marketDBPath != "" {
+		dir := "sql/strategies/mara_tree"
+		if sqlStrat, exists := Get("mara_tree-sql"); exists {
+			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+				dir = sp.PipelineDir()
+			}
+		}
+		pipe := NewSQLPipelineStrategy("mara_tree-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
+		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+		return pipe.GenerateSignals(barsBySymbol)
+	}
+
+	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
 	var bars []models.Bar
 	var ok bool
 

@@ -72,22 +72,39 @@ func (s *TreeBounceCombo) GenerateSignals(barsBySymbol map[string][]models.Bar) 
 	var signals []models.Signal
 
 	type leg struct {
-		symbol string
-		tp, sl float64
-		hold   int
+		symbol     string
+		pipelineID string // matching sql/strategies/<pipelineID> and <pipelineID>-sql
+		tp, sl     float64
+		hold       int
 	}
 	legs := []leg{
-		{"MARA", 0.05, 0.08, 1},
-		{"PDD", 0.05, 0.06, 3},
-		{"NVDL", 0.15, 0.07, 5},
+		{"MARA", "mara_tree", 0.05, 0.08, 1},
+		{"PDD", "pdd_tree", 0.05, 0.06, 3},
+		{"NVDL", "nvdl_tree", 0.15, 0.07, 5},
 	}
 
 	for _, l := range legs {
-		for sym, bars := range barsBySymbol {
-			if sym == l.symbol {
-				signals = append(signals, TreeBounceSignals(l.symbol, bars, l.tp, l.sl, l.hold)...)
-				break
+		// 1. Prefer each leg's own SQL pipeline (see mara_tree.go's
+		// GenerateSignals): identical rolling-window math, just reused per-symbol.
+		// The SQL pipeline reads bars from the attached market DB directly, so
+		// it doesn't need this leg's symbol present in barsBySymbol.
+		if s.calcDBPath != "" && s.marketDBPath != "" {
+			dir := "sql/strategies/" + l.pipelineID
+			if sqlStrat, exists := Get(l.pipelineID + "-sql"); exists {
+				if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+					dir = sp.PipelineDir()
+				}
 			}
+			legCfg := StrategyConfig{TakeProfitPct: l.tp, StopLossPct: 1.0 - l.sl, HoldingWindow: l.hold}
+			pipe := NewSQLPipelineStrategy(l.pipelineID+"-combo-pipeline", s.Name(), s.Description(), dir, legCfg)
+			pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+			signals = append(signals, pipe.GenerateSignals(barsBySymbol)...)
+			continue
+		}
+
+		// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
+		if bars, ok := barsBySymbol[l.symbol]; ok {
+			signals = append(signals, TreeBounceSignals(l.symbol, bars, l.tp, l.sl, l.hold)...)
 		}
 	}
 

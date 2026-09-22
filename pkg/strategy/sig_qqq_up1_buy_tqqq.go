@@ -12,9 +12,11 @@ import (
 // take-profit if TQQQ's high reaches it first. There is no stop-loss (the 1-day
 // hold is the risk limit).
 type SigQqqUp1BuyTqqq struct {
-	TradeSymbol string
-	TP          float64
-	Hold        int
+	TradeSymbol  string
+	TP           float64
+	Hold         int
+	marketDBPath string
+	calcDBPath   string
 }
 
 func NewSigQqqUp1BuyTqqq() *SigQqqUp1BuyTqqq {
@@ -60,9 +62,27 @@ func (s *SigQqqUp1BuyTqqq) DefaultConfig() StrategyConfig {
 	}
 }
 
-func (s *SigQqqUp1BuyTqqq) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *SigQqqUp1BuyTqqq) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
 func (s *SigQqqUp1BuyTqqq) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	// 1. Prefer the SQL pipeline (sql/strategies/sig_qqq_up1_buy_tqqq): see
+	// sig_voo_up1_buy_tqqq.go's GenerateSignals for why.
+	if s.calcDBPath != "" && s.marketDBPath != "" {
+		dir := "sql/strategies/sig_qqq_up1_buy_tqqq"
+		if sqlStrat, exists := Get("sig_qqq_up1_buy_tqqq-sql"); exists {
+			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+				dir = sp.PipelineDir()
+			}
+		}
+		pipe := NewSQLPipelineStrategy("sig-qqq-up1-buy-tqqq-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
+		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+		return pipe.GenerateSignals(barsBySymbol)
+	}
+
+	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
 	qqq := barsForSymbol(barsBySymbol, "QQQ")
 	trade := barsForSymbol(barsBySymbol, s.TradeSymbol)
 	if len(qqq) < 2 || len(trade) == 0 {

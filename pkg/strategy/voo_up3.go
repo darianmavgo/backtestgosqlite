@@ -77,14 +77,33 @@ func (s *VOOUp3Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 }
 
 func (s *VOOUp3Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	days := s.GainDays
+	if days <= 0 {
+		days = 3
+	}
+
+	// 1. Prefer the SQL pipeline (sql/strategies/voo_up3): the up-streak
+	// grouping + cross-symbol join belongs in SQL (see gld_decline.go's
+	// GenerateSignals for the same pattern on a decline streak).
+	if s.calcDBPath != "" && s.marketDBPath != "" {
+		dir := "sql/strategies/voo_up3"
+		if sqlStrat, exists := Get("voo_up3-sql"); exists {
+			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+				dir = sp.PipelineDir()
+			}
+		}
+		cfg := s.DefaultConfig()
+		cfg.DeclineDays = days
+		pipe := NewSQLPipelineStrategy("voo-up3-pipeline", s.Name(), s.Description(), dir, cfg)
+		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+		return pipe.GenerateSignals(barsBySymbol)
+	}
+
+	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
 	voo := barsForSymbol(barsBySymbol, "VOO")
 	trade := barsForSymbol(barsBySymbol, s.TradeSymbol)
 	if len(voo) < s.GainDays+1 || len(trade) < 2 {
 		return nil
-	}
-	days := s.GainDays
-	if days <= 0 {
-		days = 3
 	}
 	return VOOUpStreakSignals(s.TradeSymbol, voo, trade, days, s.TP, s.SL, s.Hold)
 }

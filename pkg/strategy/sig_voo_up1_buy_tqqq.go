@@ -10,10 +10,12 @@ import (
 // closed up from the previous close AND traded more volume than the previous
 // session. Exits: +8% take-profit, -10% stop-loss, or the max-hold backstop.
 type SigVooUp1BuyTqqq struct {
-	TradeSymbol string
-	TP          float64
-	SL          float64
-	Hold        int
+	TradeSymbol  string
+	TP           float64
+	SL           float64
+	Hold         int
+	marketDBPath string
+	calcDBPath   string
 }
 
 func NewSigVooUp1BuyTqqq() *SigVooUp1BuyTqqq {
@@ -60,7 +62,10 @@ func (s *SigVooUp1BuyTqqq) DefaultConfig() StrategyConfig {
 	}
 }
 
-func (s *SigVooUp1BuyTqqq) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *SigVooUp1BuyTqqq) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
 // UpVolumeUpDates returns the dates on which a signal symbol closed above the previous
 // close and its volume exceeded the previous session's. Zero-volume bars (missing
@@ -81,6 +86,22 @@ func UpVolumeUpDates(bars []models.Bar) map[string]bool {
 }
 
 func (s *SigVooUp1BuyTqqq) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	// 1. Prefer the SQL pipeline (sql/strategies/sig_voo_up1_buy_tqqq): a cross-symbol
+	// join instead of a two-symbol Go scan, following the same SQL-first pattern as
+	// gld_decline.go.
+	if s.calcDBPath != "" && s.marketDBPath != "" {
+		dir := "sql/strategies/sig_voo_up1_buy_tqqq"
+		if sqlStrat, exists := Get("sig_voo_up1_buy_tqqq-sql"); exists {
+			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+				dir = sp.PipelineDir()
+			}
+		}
+		pipe := NewSQLPipelineStrategy("sig-voo-up1-buy-tqqq-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
+		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+		return pipe.GenerateSignals(barsBySymbol)
+	}
+
+	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
 	voo := barsForSymbol(barsBySymbol, "VOO")
 	trade := barsForSymbol(barsBySymbol, s.TradeSymbol)
 	if len(voo) < 2 || len(trade) == 0 {

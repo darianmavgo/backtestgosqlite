@@ -3,6 +3,9 @@ package strategy
 import (
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/ryanbressler/CloudForest"
@@ -160,8 +163,20 @@ const MinDecisionTreeExtremeCases = 20
 // fresh from bars every call — this is a reverse-engineering/in-sample exercise
 // consistent with how the original MARA/MU studies operated, not a walk-forward
 // train/test pipeline.
+//
+// Feature extraction (computeDecisionTreeSamples) is pure Go, rescanning up to
+// 200 trailing bars per row; FitDecisionTreeBuyDatesSQL below gets identical
+// samples from SQL window functions instead (sql/strategies/decision_tree_features)
+// for the many auto-fit dt_<symbol> strategies in etf_decision_tree.go. Both feed
+// the same fitBuyDatesFromSamples, since CloudForest's recursive tree-growing
+// itself is exactly the stateful control flow SQL can't express.
 func FitDecisionTreeBuyDates(bars []models.Bar) (map[string]bool, error) {
-	samples := computeDecisionTreeSamples(bars)
+	return fitBuyDatesFromSamples(computeDecisionTreeSamples(bars))
+}
+
+// fitBuyDatesFromSamples grows the tree from an already-computed feature set
+// and returns the historical dates it predicts BUY on.
+func fitBuyDatesFromSamples(samples []decisionTreeSample) (map[string]bool, error) {
 	if len(samples) < 250 {
 		return nil, fmt.Errorf("insufficient samples (%d, need >= 250)", len(samples))
 	}
@@ -255,12 +270,137 @@ func FitDecisionTreeBuyDates(bars []models.Bar) (map[string]bool, error) {
 	return buyDates, nil
 }
 
+// decisionTreeFeaturesPipelineDir is the shared SQL pipeline directory every
+// dt_<symbol> ETFDecisionTreeStrategy instance points at (see etf_decision_tree.go).
+const decisionTreeFeaturesPipelineDir = "sql/strategies/decision_tree_features"
+
+// dtfRow scans one row of decision_tree_features_slice (see
+// sql/strategies/decision_tree_features/01_schema.sql); is_gain5/is_drop5 are
+// stored as SQLite INTEGER 0/1 and converted to bool when building samples.
+type dtfRow struct {
+	Date            string  `db:"date"`
+	Close           float64 `db:"close"`
+	NextReturn      float64 `db:"next_return"`
+	IsGain5         int     `db:"is_gain5"`
+	IsDrop5         int     `db:"is_drop5"`
+	Return1d        float64 `db:"return_1d"`
+	Return3d        float64 `db:"return_3d"`
+	Return5d        float64 `db:"return_5d"`
+	Return10d       float64 `db:"return_10d"`
+	RSI14           float64 `db:"rsi14"`
+	PriceVsSMA20    float64 `db:"price_vs_sma20"`
+	PriceVsSMA50    float64 `db:"price_vs_sma50"`
+	PriceVsSMA200   float64 `db:"price_vs_sma200"`
+	SMA20Vs50       float64 `db:"sma20_vs_50"`
+	VolRatio20      float64 `db:"vol_ratio20"`
+	RangeVsATR14    float64 `db:"range_vs_atr14"`
+	CloseNearHigh   float64 `db:"close_near_high"`
+	ConsecutiveDown int     `db:"consecutive_down"`
+}
+
+// computeDecisionTreeSamplesSQL runs the shared decision_tree_features SQL
+// pipeline for symbol (window-function equivalent of computeDecisionTreeSamples)
+// and scans its output back into the same []decisionTreeSample shape, so
+// fitBuyDatesFromSamples can't tell which source produced them. Locks
+// sqlPipelineMu like SQLPipelineStrategy.GenerateSignals, since both share the
+// same calc DB connection pattern and aren't safe to run concurrently against
+// the same calc DB.
+func computeDecisionTreeSamplesSQL(marketDBPath, calcDBPath, pipelineDir, symbol string) ([]decisionTreeSample, error) {
+	sqlPipelineMu.Lock()
+	defer sqlPipelineMu.Unlock()
+
+	db, err := openAttachedCalcDB(marketDBPath, calcDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("decision tree features pipeline: %w", err)
+	}
+	defer db.Close()
+
+	cfg := StrategyConfig{Benchmark: symbol}
+	for _, fileName := range []string{"01_schema.sql", "02_calc_features.sql"} {
+		content, err := os.ReadFile(filepath.Join(pipelineDir, fileName))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", fileName, err)
+		}
+		sqlText := substitutePlaceholders(string(content), "decision_tree_features", fileName, cfg)
+		for _, q := range strings.Split(sqlText, ";") {
+			trimmed := strings.TrimSpace(q)
+			if trimmed == "" {
+				continue
+			}
+			if _, err := db.Exec(trimmed); err != nil {
+				return nil, fmt.Errorf("exec %s: %w (query: %.80s...)", fileName, err, trimmed)
+			}
+		}
+	}
+
+	var rows []dtfRow
+	if err := db.Select(&rows, "SELECT * FROM decision_tree_features_slice ORDER BY date"); err != nil {
+		return nil, fmt.Errorf("select decision_tree_features_slice: %w", err)
+	}
+
+	samples := make([]decisionTreeSample, len(rows))
+	for i, r := range rows {
+		samples[i] = decisionTreeSample{
+			Date:            r.Date,
+			Close:           r.Close,
+			NextReturn:      r.NextReturn,
+			IsGain5:         r.IsGain5 != 0,
+			IsDrop5:         r.IsDrop5 != 0,
+			Return1d:        r.Return1d,
+			Return3d:        r.Return3d,
+			Return5d:        r.Return5d,
+			Return10d:       r.Return10d,
+			RSI14:           r.RSI14,
+			PriceVsSMA20:    r.PriceVsSMA20,
+			PriceVsSMA50:    r.PriceVsSMA50,
+			PriceVsSMA200:   r.PriceVsSMA200,
+			SMA20Vs50:       r.SMA20Vs50,
+			VolRatio20:      r.VolRatio20,
+			RangeVsATR14:    r.RangeVsATR14,
+			CloseNearHigh:   r.CloseNearHigh,
+			ConsecutiveDown: r.ConsecutiveDown,
+		}
+	}
+	return samples, nil
+}
+
+// FitDecisionTreeBuyDatesSQL is FitDecisionTreeBuyDates with feature extraction
+// computed by the shared SQL pipeline (sql/strategies/decision_tree_features)
+// instead of Go loops. pipelineDir lets callers pass an already-resolved path
+// (see ETFDecisionTreeStrategy.GenerateSignals); empty uses the repo-root-relative
+// default.
+func FitDecisionTreeBuyDatesSQL(marketDBPath, calcDBPath, pipelineDir, symbol string) (map[string]bool, error) {
+	if pipelineDir == "" {
+		pipelineDir = decisionTreeFeaturesPipelineDir
+	}
+	samples, err := computeDecisionTreeSamplesSQL(marketDBPath, calcDBPath, pipelineDir, symbol)
+	if err != nil {
+		return nil, err
+	}
+	return fitBuyDatesFromSamples(samples)
+}
+
 // DecisionTreeSignals fits a fresh decision tree against bars and converts its BUY
 // predictions into entry signals with the given exit parameters. Returns an error
 // (nil signals) if the symbol doesn't have enough history or enough extreme moves
 // to fit a meaningful tree.
 func DecisionTreeSignals(symbol string, bars []models.Bar, tpPct, slPct float64, holdDays int) ([]models.Signal, error) {
 	buyDates, err := FitDecisionTreeBuyDates(bars)
+	if err != nil {
+		return nil, err
+	}
+	if len(buyDates) == 0 {
+		return nil, fmt.Errorf("tree produced zero BUY predictions")
+	}
+	return BuildDecisionTreeSignals(symbol, bars, buyDates, tpPct, slPct, holdDays), nil
+}
+
+// DecisionTreeSignalsSQL is DecisionTreeSignals with feature extraction run
+// through the shared SQL pipeline (see FitDecisionTreeBuyDatesSQL) instead of
+// Go loops. bars is still required to build the resulting signals' OHLC —
+// only feature/label extraction moves to SQL, not signal assembly.
+func DecisionTreeSignalsSQL(symbol, marketDBPath, calcDBPath, pipelineDir string, bars []models.Bar, tpPct, slPct float64, holdDays int) ([]models.Signal, error) {
+	buyDates, err := FitDecisionTreeBuyDatesSQL(marketDBPath, calcDBPath, pipelineDir, symbol)
 	if err != nil {
 		return nil, err
 	}

@@ -30,6 +30,10 @@ const (
 	shortTakeProfitMultPlaceholder = "__SHORT_TAKE_PROFIT_MULT__"
 	shortStopLossMultPlaceholder   = "__SHORT_STOP_LOSS_MULT__"
 	shortHoldDaysPlaceholder       = "__SHORT_HOLD_DAYS__"
+	// symbolPlaceholder is substituted from StrategyConfig.Benchmark, letting one
+	// pipeline directory (e.g. sql/strategies/decision_tree_features) serve many
+	// per-symbol strategy instances instead of needing one directory per ticker.
+	symbolPlaceholder = "__SYMBOL__"
 )
 
 // takeProfitMultiplier converts a StrategyConfig take-profit *offset* (e.g.
@@ -75,6 +79,13 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 	sqlText = strings.ReplaceAll(sqlText, shortTakeProfitMultPlaceholder, strconv.FormatFloat(takeProfitMultiplier(cfg.ShortTakeProfitPct), 'f', 6, 64))
 	sqlText = strings.ReplaceAll(sqlText, shortStopLossMultPlaceholder, strconv.FormatFloat(stopLossMultiplier(cfg.ShortStopLossPct), 'f', 6, 64))
 	sqlText = strings.ReplaceAll(sqlText, shortHoldDaysPlaceholder, strconv.Itoa(cfg.ShortHoldingWindow))
+	if strings.Contains(sqlText, symbolPlaceholder) {
+		if cfg.Benchmark == "" {
+			log.Printf("[sql_strategy %s] %s references %s but config.Benchmark is unset — leaving query unsubstituted, it will fail", id, fileName, symbolPlaceholder)
+		} else {
+			sqlText = strings.ReplaceAll(sqlText, symbolPlaceholder, cfg.Benchmark)
+		}
+	}
 	return sqlText
 }
 
@@ -184,6 +195,39 @@ func (s *SQLPipelineStrategy) RequiredSymbols() []string {
 	return syms
 }
 
+// openAttachedCalcDB opens calcDBPath, attaches marketDBPath read-only as
+// "market", and creates the temp view every pipeline script reads from.
+// Shared by SQLPipelineStrategy.GenerateSignals and any other pipeline runner
+// (e.g. decisiontree.go's SQL-backed feature extraction) that needs the same
+// market-DB-as-source-of-truth setup without duplicating the DSN/attach
+// boilerplate.
+func openAttachedCalcDB(marketDBPath, calcDBPath string) (*sqlx.DB, error) {
+	dsn := calcDBPath
+	if !strings.Contains(dsn, "?") {
+		dsn += "?_busy_timeout=15000&_journal_mode=WAL"
+	} else {
+		dsn += "&_busy_timeout=15000"
+	}
+
+	db, err := sqlx.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open calc DB %s: %w", calcDBPath, err)
+	}
+
+	attachQuery := fmt.Sprintf("ATTACH DATABASE '%s' AS market;", marketDBPath)
+	if _, err := db.Exec(attachQuery); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("attach market database %s: %w", marketDBPath, err)
+	}
+
+	if _, err := db.Exec("CREATE TEMP VIEW IF NOT EXISTS backtest_start AS SELECT rowid, * FROM market.backtest_start;"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create backtest_start view: %w", err)
+	}
+
+	return db, nil
+}
+
 // GenerateSignals executes the SQL pipeline scripts in order and extracts entry signals.
 func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	sqlPipelineMu.Lock()
@@ -194,32 +238,12 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 		return nil
 	}
 
-	dsn := s.calcDBPath
-	if !strings.Contains(dsn, "?") {
-		dsn += "?_busy_timeout=15000&_journal_mode=WAL"
-	} else {
-		dsn += "&_busy_timeout=15000"
-	}
-
-	db, err := sqlx.Open("sqlite", dsn)
+	db, err := openAttachedCalcDB(s.marketDBPath, s.calcDBPath)
 	if err != nil {
-		log.Printf("Warning: SQL strategy %s failed to open calc DB %s: %v", s.id, s.calcDBPath, err)
+		log.Printf("Warning: SQL strategy %s failed to open pipeline DB: %v", s.id, err)
 		return nil
 	}
 	defer db.Close()
-
-	// Attach marketDB as read-only source
-	attachQuery := fmt.Sprintf("ATTACH DATABASE '%s' AS market;", s.marketDBPath)
-	if _, err := db.Exec(attachQuery); err != nil {
-		log.Printf("Warning: SQL strategy %s failed to attach market database %s: %v", s.id, s.marketDBPath, err)
-		return nil
-	}
-
-	// Create view to seamlessly proxy backtest_start and preserve rowid for calculations
-	if _, err := db.Exec("CREATE TEMP VIEW IF NOT EXISTS backtest_start AS SELECT rowid, * FROM market.backtest_start;"); err != nil {
-		log.Printf("Warning: SQL strategy %s failed to create view for backtest_start: %v", s.id, err)
-		return nil
-	}
 
 	// Execute pipeline scripts in lexical order
 	files, err := os.ReadDir(s.pipelineDir)
@@ -410,6 +434,61 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
 				cfg.DeclineDays = 3
+			case "mara_tree":
+				// Matches MARATreeStrategy's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.05
+				cfg.TakeProfitPct = 0.05
+				cfg.StopLossPct = 0.92
+				cfg.HoldingWindow = 1
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+			case "nvdl_tree":
+				// Matches NVDLTreeStrategy's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.15
+				cfg.TakeProfitPct = 0.15
+				cfg.StopLossPct = 0.93
+				cfg.HoldingWindow = 5
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+			case "pdd_tree":
+				// Matches PDDTreeStrategy's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.05
+				cfg.TakeProfitPct = 0.05
+				cfg.StopLossPct = 0.94
+				cfg.HoldingWindow = 3
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+			case "sig_voo_up1_buy_tqqq":
+				// Matches SigVooUp1BuyTqqq's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.08
+				cfg.TakeProfitPct = 0.08
+				cfg.StopLossPct = 0.90
+				cfg.HoldingWindow = 10
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+			case "voo_up3":
+				// Matches VOOUp3Strategy's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.05
+				cfg.TakeProfitPct = 0.05
+				cfg.StopLossPct = 0.94
+				cfg.HoldingWindow = 8
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
+				cfg.DeclineDays = 3 // VOOUp3Strategy's default GainDays
+			case "sig_qqq_up1_buy_sqqq", "sig_qqq_up1_buy_tqqq":
+				// Matches SigQqqUp1BuySqqq's/SigQqqUp1BuyTqqq's own defaults.
+				cfg.AllocationPct = 0.65
+				cfg.TargetPct = 1.08
+				cfg.TakeProfitPct = 0.08
+				cfg.StopLossPct = 0.0
+				cfg.HoldingWindow = 1
+				cfg.PositionCap = 1
+				cfg.CashYieldAnnual = 0.045
 			case "sig_voo_buy_tecl", "voo_tecl_spxu_combo":
 				// Matches SigVooBuyTecl's/VOOTECLSPXUCombo's own defaults.
 				cfg.AllocationPct = 0.65

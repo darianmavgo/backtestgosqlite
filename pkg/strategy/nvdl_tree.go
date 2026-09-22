@@ -74,6 +74,21 @@ func (s *NVDLTreeStrategy) SetDatabases(marketDBPath, calcDBPath string) {
 }
 
 func (s *NVDLTreeStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	// 1. Prefer the SQL pipeline (sql/strategies/nvdl_tree): see mara_tree.go's
+	// GenerateSignals for why the SMA200/ATR14 rolling-window math belongs in SQL.
+	if s.calcDBPath != "" && s.marketDBPath != "" {
+		dir := "sql/strategies/nvdl_tree"
+		if sqlStrat, exists := Get("nvdl_tree-sql"); exists {
+			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
+				dir = sp.PipelineDir()
+			}
+		}
+		pipe := NewSQLPipelineStrategy("nvdl_tree-pipeline", s.Name(), s.Description(), dir, s.DefaultConfig())
+		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+		return pipe.GenerateSignals(barsBySymbol)
+	}
+
+	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
 	var bars []models.Bar
 	var ok bool
 	for sym, b := range barsBySymbol {

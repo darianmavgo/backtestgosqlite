@@ -13,10 +13,17 @@ import (
 // instance is registered per qualifying ETF (see registerETFDecisionTrees),
 // avoiding a hand-written Go file per ticker.
 type ETFDecisionTreeStrategy struct {
-	Symbol string
-	TP     float64
-	SL     float64
-	Hold   int
+	Symbol       string
+	TP           float64
+	SL           float64
+	Hold         int
+	marketDBPath string
+	calcDBPath   string
+	// PipelineDir overrides the default "sql/strategies/decision_tree_features"
+	// path (which is relative to the repo root, matching the compiled binaries'
+	// working directory). Tests running from pkg/strategy set this to the
+	// package-relative equivalent instead of relying on the default resolving.
+	PipelineDir string
 }
 
 func (s *ETFDecisionTreeStrategy) ID() string { return "dt_" + strings.ToLower(s.Symbol) }
@@ -58,7 +65,10 @@ func (s *ETFDecisionTreeStrategy) DefaultConfig() StrategyConfig {
 	}
 }
 
-func (s *ETFDecisionTreeStrategy) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *ETFDecisionTreeStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
 func (s *ETFDecisionTreeStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var bars []models.Bar
@@ -73,6 +83,21 @@ func (s *ETFDecisionTreeStrategy) GenerateSignals(barsBySymbol map[string][]mode
 	if !ok {
 		return nil
 	}
+
+	// 1. Prefer the shared SQL pipeline (sql/strategies/decision_tree_features):
+	// the 13-feature rolling-window computation computeDecisionTreeSamples does
+	// in Go belongs in SQL (docs/SQLvsGOModels.md); only CloudForest's recursive
+	// tree-growing stays in Go. One directory serves every dt_<symbol> instance
+	// via the __SYMBOL__ placeholder instead of needing 500+ per-ticker copies.
+	if s.calcDBPath != "" && s.marketDBPath != "" {
+		sigs, err := DecisionTreeSignalsSQL(s.Symbol, s.marketDBPath, s.calcDBPath, s.PipelineDir, bars, s.TP, s.SL, s.Hold)
+		if err != nil {
+			return nil
+		}
+		return sigs
+	}
+
+	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
 	sigs, err := DecisionTreeSignals(s.Symbol, bars, s.TP, s.SL, s.Hold)
 	if err != nil {
 		return nil
