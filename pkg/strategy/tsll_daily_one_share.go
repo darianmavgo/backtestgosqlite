@@ -49,8 +49,16 @@ func (s *TSLLDailyOneShareStrategy) DefaultConfig() StrategyConfig {
 		StopLossPct:        0.80,
 		HoldingWindow:      1,
 		PositionCap:        1, // the prior day's share is closed before the next entry
-		SlippagePct:        0.0,
-		CommissionPerShare: 0.0,
+		// TSLL (Direxion Daily TSLA Bull 1.5X) is a single-name leveraged
+		// product on one of the most volatile large-cap underlyings traded;
+		// even with solid ADV its quoted spread widens more than a
+		// diversified leveraged index ETF like TECL during normal
+		// volatility, let alone around TSLA-specific news -- 20bp reflects
+		// that. Commission matches Schwab's real $0 online equity/ETF
+		// commission; the token $0.0001/share stands in for SEC/FINRA TAF
+		// pass-through fees Schwab still collects on sells.
+		SlippagePct:        0.0020,
+		CommissionPerShare: 0.0001,
 	}
 }
 

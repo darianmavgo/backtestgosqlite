@@ -110,8 +110,14 @@ func (s *SigVooBuyTecl) DefaultConfig() StrategyConfig {
 		HoldingWindow:      holdingWindow,       // Long leg; short leg uses ShortHoldingWindow
 		PositionCap:        1,                   // One open position at a time
 		CashYieldAnnual:    0.045,
-		SlippagePct:        0.0,
-		CommissionPerShare: 0.0,
+		// TECL (Direxion Daily Technology Bull 3X) trades tighter than most
+		// single-name leveraged ETFs thanks to steady arb-driven volume, but
+		// still noticeably wider than a plain index fund like VOO -- 10bp is
+		// a reasonable floor for a 3x sector-leveraged product. Commission
+		// matches Schwab's real $0 online equity/ETF commission; the token
+		// $0.0001/share stands in for SEC/FINRA TAF pass-through fees.
+		SlippagePct:        0.0010,
+		CommissionPerShare: 0.0001,
 		DeclineDays:        declineDays,
 		ShortTakeProfitPct: shortTakeProfitPct,
 		ShortStopLossPct:   shortStopLossPct,

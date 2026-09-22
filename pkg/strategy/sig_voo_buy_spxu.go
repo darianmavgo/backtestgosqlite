@@ -102,8 +102,14 @@ func (s *SigVooBuySpxu) DefaultConfig() StrategyConfig {
 		HoldingWindow:      holdingWindow,
 		PositionCap:        1,
 		CashYieldAnnual:    0.045,
-		SlippagePct:        0.0,
-		CommissionPerShare: 0.0,
+		// SPXU (ProShares UltraPro Short S&P500, -3x) has meaningfully lower
+		// volume/AUM than the long-leveraged index ETFs and an inverse
+		// product's quotes widen further in the down-market conditions this
+		// strategy specifically buys into -- 15bp reflects that. Commission
+		// matches Schwab's real $0 online equity/ETF commission; the token
+		// $0.0001/share stands in for SEC/FINRA TAF pass-through fees.
+		SlippagePct:        0.0015,
+		CommissionPerShare: 0.0001,
 		DeclineDays:        rallyDays,
 	}
 }

@@ -94,8 +94,14 @@ func (s *GLDDeclineStrategy) DefaultConfig() StrategyConfig {
 		HoldingWindow:      holdingWindow,
 		PositionCap:        1,     // One position at a time
 		CashYieldAnnual:    0.045, // 4.5% idle cash APY
-		SlippagePct:        0.0,
-		CommissionPerShare: 0.0,
+		// GLD is one of the most liquid ETFs traded (heavy ADV, sub-penny-wide
+		// quotes) -- same 5bp slippage floor used for the other liquid,
+		// non-leveraged ETFs in this package. Commission matches Schwab's
+		// real $0 online equity/ETF commission; the token $0.0001/share
+		// stands in for the SEC/FINRA TAF pass-through fees Schwab still
+		// collects on sells even at "$0 commission."
+		SlippagePct:        0.0005,
+		CommissionPerShare: 0.0001,
 		DeclineDays:        declineDays,
 	}
 }
