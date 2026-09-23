@@ -15,7 +15,7 @@ import (
 // and applied by the PortfolioSimulator.
 //
 // Formerly VOOTECLCombo / ID "voo-tecl-combo" — renamed to SigVooBuyTecl / "sig-voo-buy-tecl".
-type SigVooBuyTecl struct{
+type SigVooBuyTecl struct {
 	// DeclineDays is the number of consecutive VOO down-closes (long leg) or
 	// up-closes (short leg) required to enter (default: 3). TakeProfitPct/
 	// StopLossPct/HoldingWindow are the long (TECL) leg's exit rules (default
@@ -96,17 +96,21 @@ func (s *SigVooBuyTecl) DefaultConfig() StrategyConfig {
 		shortHoldingWindow = 2
 	}
 	return StrategyConfig{
-		ID:                 s.ID(),
-		Name:               s.Name(),
-		Description:        s.Description(),
-		Benchmark:          "VOO",
-		AllocationPct:      0.65,
-		TargetPct:          1.0 + takeProfitPct, // legacy-multiplier mirror of TakeProfitPct
-		TakeProfitPct:      takeProfitPct,       // Long leg; short leg uses ShortTakeProfitPct
-		StopLossPct:        s.StopLossPct,       // Long leg: 0.00 means no stop-loss (intentional, not "unset")
-		HoldingWindow:      holdingWindow,       // Long leg; short leg uses ShortHoldingWindow
-		PositionCap:        1,                   // One open position at a time
-		CashYieldAnnual:    0.045,
+		ID:            s.ID(),
+		Name:          s.Name(),
+		Description:   s.Description(),
+		Benchmark:     "VOO",
+		AllocationPct: 0.65,
+		TargetPct:     1.0 + takeProfitPct, // legacy-multiplier mirror of TakeProfitPct
+		TakeProfitPct: takeProfitPct,       // Long leg; short leg uses ShortTakeProfitPct
+		StopLossPct:   s.StopLossPct,       // Long leg: 0.00 means no stop-loss (intentional, not "unset")
+		HoldingWindow: holdingWindow,       // Long leg; short leg uses ShortHoldingWindow
+		PositionCap:   1,                   // One open position at a time
+		// Live pipeline: DAY limit at the signal price next morning; time exit at the open
+		// (manage_exits 09:35). See simulator.ApplyLiveEntryModel.
+		NextDayLimitEntry: true,
+		ExitAtMarketOpen:  true,
+		CashYieldAnnual:   0.045,
 		// TECL (Direxion Daily Technology Bull 3X) trades tighter than most
 		// single-name leveraged ETFs thanks to steady arb-driven volume, but
 		// still noticeably wider than a plain index fund like VOO -- 10bp is

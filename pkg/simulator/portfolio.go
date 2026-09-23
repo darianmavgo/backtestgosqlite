@@ -66,6 +66,8 @@ func (s *PortfolioSimulator) Run(
 	barsBySymbol map[string][]models.Bar,
 	sortedDates []string,
 ) (models.PerformanceReport, []models.Trade, []models.DailyEquityPoint) {
+	signals = ApplyLiveEntryModel(signals, barsBySymbol, func(models.Signal) strategy.StrategyConfig { return s.Config })
+
 	// Index signals by date for O(1) daily lookup
 	signalsByDate := make(map[string][]models.Signal)
 	for _, sig := range signals {

@@ -86,6 +86,8 @@ func (s *SharedAccountSimulator) Run(
 	barsBySymbol map[string][]models.Bar,
 	sortedDates []string,
 ) (models.PerformanceReport, map[string]models.PerformanceReport, []models.Trade, []models.DailyEquityPoint) {
+	signals = ApplyLiveEntryModel(signals, barsBySymbol, func(sig models.Signal) strategy.StrategyConfig { return s.Configs[sig.StrategyID] })
+
 	// Index signals by date
 	signalsByDate := make(map[string][]models.Signal)
 	for _, sig := range signals {

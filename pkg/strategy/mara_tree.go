@@ -56,17 +56,21 @@ func (s *MARATreeStrategy) RequiredSymbols() []string {
 // DefaultConfig returns the operational risk and portfolio settings.
 func (s *MARATreeStrategy) DefaultConfig() StrategyConfig {
 	return StrategyConfig{
-		ID:                 s.ID(),
-		Name:               s.Name(),
-		Description:        s.Description(),
-		Benchmark:          "MARA",
-		Timeframe:          "1d",
-		PositionSizing:     "fixed_pct",
-		AllocationPct:      0.65,  // 65% available capital per position
-		TargetPct:          1.05,  // +5% take-profit multiplier
-		TakeProfitPct:      0.05,  // +5% take-profit fractional offset
-		StopLossPct:        0.92,  // -8% stop-loss floor multiplier (entry * 0.92)
-		HoldingWindow:      1,     // 1 trading day hold
+		ID:             s.ID(),
+		Name:           s.Name(),
+		Description:    s.Description(),
+		Benchmark:      "MARA",
+		Timeframe:      "1d",
+		PositionSizing: "fixed_pct",
+		AllocationPct:  0.65, // 65% available capital per position
+		TargetPct:      1.05, // +5% take-profit multiplier
+		TakeProfitPct:  0.05, // +5% take-profit fractional offset
+		StopLossPct:    0.92, // -8% stop-loss floor multiplier (entry * 0.92)
+		HoldingWindow:  1,    // 1 trading day hold
+		// Live pipeline: DAY limit at the signal price next morning; time exit at the open
+		// (manage_exits 09:35). See simulator.ApplyLiveEntryModel.
+		NextDayLimitEntry:  true,
+		ExitAtMarketOpen:   true,
 		PositionCap:        1,     // Single position at a time
 		CashYieldAnnual:    0.045, // 4.5% idle cash T-bill yield
 		SlippagePct:        0.0005,

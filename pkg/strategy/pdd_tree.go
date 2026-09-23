@@ -46,17 +46,21 @@ func (s *PDDTreeStrategy) RequiredSymbols() []string {
 
 func (s *PDDTreeStrategy) DefaultConfig() StrategyConfig {
 	return StrategyConfig{
-		ID:                 s.ID(),
-		Name:               s.Name(),
-		Description:        s.Description(),
-		Benchmark:          "PDD",
-		Timeframe:          "1d",
-		PositionSizing:     "fixed_pct",
-		AllocationPct:      0.65,
-		TargetPct:          1.05,
-		TakeProfitPct:      0.05,
-		StopLossPct:        0.94, // -6% stop-loss floor multiplier (entry * 0.94)
-		HoldingWindow:      3,
+		ID:             s.ID(),
+		Name:           s.Name(),
+		Description:    s.Description(),
+		Benchmark:      "PDD",
+		Timeframe:      "1d",
+		PositionSizing: "fixed_pct",
+		AllocationPct:  0.65,
+		TargetPct:      1.05,
+		TakeProfitPct:  0.05,
+		StopLossPct:    0.94, // -6% stop-loss floor multiplier (entry * 0.94)
+		HoldingWindow:  3,
+		// Live pipeline: DAY limit at the signal price next morning; time exit at the open
+		// (manage_exits 09:35). See simulator.ApplyLiveEntryModel.
+		NextDayLimitEntry:  true,
+		ExitAtMarketOpen:   true,
 		PositionCap:        1,
 		CashYieldAnnual:    0.045,
 		SlippagePct:        0.0005,
