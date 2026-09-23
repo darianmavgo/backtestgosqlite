@@ -1,8 +1,10 @@
 package runner
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,6 +55,11 @@ type SignalScanOptions struct {
 	Concurrency   int
 	OutDir        string    // livescan.db parent; empty skips persist
 	Now           time.Time // tests; zero → time.Now()
+
+	// Context cancels the refresh and scan; nil means context.Background().
+	Context context.Context
+	// Out receives progress text; nil discards it (the CLIs pass os.Stdout).
+	Out io.Writer
 }
 
 // SignalScanResult is the full live-window scan output.
@@ -76,6 +83,14 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 	now := opts.Now
 	if now.IsZero() {
 		now = time.Now()
+	}
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	out := opts.Out
+	if out == nil {
+		out = io.Discard
 	}
 
 	outDir := opts.OutDir
@@ -121,9 +136,9 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 		symbolsForRefresh = RequiredSymbolsFor(opts.Strategies, opts.SymbolFilter)
 	}
 	if opts.AutoDownload {
-		fmt.Printf("\n📥 Refreshing market history for live window (%d symbol(s), %d yr)...\n", len(symbolsForRefresh), scanYears)
+		fmt.Fprintf(out, "\n📥 Refreshing market history for live window (%d symbol(s), %d yr)...\n", len(symbolsForRefresh), scanYears)
 		if len(symbolsForRefresh) > 0 {
-			if err := RunDownload(opts.MarketDB, opts.Table, symbolsForRefresh, scanYears); err != nil {
+			if err := RunDownloadContext(ctx, opts.MarketDB, opts.Table, symbolsForRefresh, scanYears); err != nil {
 				return nil, fmt.Errorf("MARKET_DATA_REFRESH_FAILED: download for %v into %s (%s) failed: %w", symbolsForRefresh, opts.MarketDB, opts.Table, err)
 			}
 		} else {
@@ -132,7 +147,7 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 			}
 		}
 	} else {
-		fmt.Println("\n⚠️  -auto-download=false: skipping refresh; will still refuse a stale tip")
+		fmt.Fprintln(out, "\n⚠️  -auto-download=false: skipping refresh; will still refuse a stale tip")
 	}
 
 	db, err := storage.OpenSQLite(opts.MarketDB)
@@ -177,6 +192,9 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 		go func() {
 			defer wg.Done()
 			for strat := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
 				sigs := strat.GenerateSignals(barsBySymbol)
 				row, details := buildSignalScanRow(strat, sigs, asOf)
 				resultsChan <- scanOut{row: row, sigs: details}
@@ -185,6 +203,9 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 	}
 	wg.Wait()
 	close(resultsChan)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("signal scan cancelled: %w", err)
+	}
 
 	var rows []SignalScanRow
 	var details []SignalDetail
@@ -200,7 +221,7 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 		return details[i].Symbol < details[j].Symbol
 	})
 
-	out := &SignalScanResult{
+	res := &SignalScanResult{
 		AsOf:          asOf,
 		NextSession:   nextSession,
 		TipDate:       tip,
@@ -211,13 +232,13 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 	}
 	if opts.OutDir != "" {
 		if err := SaveSignalScanRows(livescanDBPath, rows); err != nil {
-			return out, fmt.Errorf("save livescan_status: %w", err)
+			return res, fmt.Errorf("save livescan_status: %w", err)
 		}
 		if err := SaveSignalDetails(livescanDBPath, details); err != nil {
-			return out, fmt.Errorf("save livescan_signals: %w", err)
+			return res, fmt.Errorf("save livescan_signals: %w", err)
 		}
 	}
-	return out, nil
+	return res, nil
 }
 
 func allStrategiesDeclareSymbols(strategies []strategy.Strategy) bool {

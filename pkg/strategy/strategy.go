@@ -41,7 +41,7 @@ type RequiredSymbolsProvider interface {
 // AdjClose/Close before simulating, so dividends are reinvested at the
 // ex-date and show up in the equity curve, and reports the price vs dividend
 // split of the return. Trade prices/share counts are then on the adjusted scale.
-// With runner.ReinvestDividends=false the bars stay raw and the derived cash
+// With reinvestDividends=false (runner.ExecuteStrategyWithDividends) the bars stay raw and the derived cash
 // dividends are paid into the account instead.
 type TotalReturnProvider interface {
 	UsesTotalReturn() bool

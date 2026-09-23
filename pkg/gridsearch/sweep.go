@@ -1,4 +1,4 @@
-package main
+package gridsearch
 
 import (
 	"fmt"
@@ -25,7 +25,7 @@ type sweepOptions struct {
 	MinTrades         int
 	TopN              int
 	StartDate         string // earliest bar date to sweep ("" = full history)
-	InnerWorkers      int // single-strategy mode only: workers within this one sweep
+	InnerWorkers      int    // single-strategy mode only: workers within this one sweep
 }
 
 // sweepTask is one (signal-days, hold, TP, SL, regime, allocation, symbol)

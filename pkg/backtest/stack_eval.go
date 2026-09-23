@@ -1,8 +1,7 @@
-package main
+package backtest
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
@@ -24,13 +23,13 @@ func runStackEvalCommand(
 	autoDownload bool,
 	downloadYears int,
 	persistBest bool,
-) {
+) error {
 	if primaryID == "" {
-		log.Fatal("stack-eval requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack-eval -primary sig-voo-buy-tecl")
+		return fmt.Errorf("stack-eval requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack-eval -primary sig-voo-buy-tecl")
 	}
 	primary, ok := strategy.Get(primaryID)
 	if !ok {
-		log.Fatalf("Primary strategy %q not found. Run ./bin/backtest -list", primaryID)
+		return fmt.Errorf("Primary strategy %q not found. Run ./bin/backtest -list", primaryID)
 	}
 
 	cands := runner.OverlayCandidates(primary, runner.OverlayCandidateOptions{
@@ -40,17 +39,17 @@ func runStackEvalCommand(
 		DTTop:           dtTop,
 	})
 	if len(cands) == 0 {
-		log.Fatalf("No overlay candidates for %s. Pass -secondary id1,id2 or -include-dt / -include-universe.", primary.ID())
+		return fmt.Errorf("No overlay candidates for %s. Pass -secondary id1,id2 or -include-dt / -include-universe.", primary.ID())
 	}
 
 	all := append([]strategy.Strategy{primary}, cands...)
 	if err := runner.DetectAndDownloadMissingData(targetDb, tableName, all, symbolFilter, autoDownload, downloadYears); err != nil {
-		log.Fatalf("Market data resolution error: %v", err)
+		return fmt.Errorf("Market data resolution error: %v", err)
 	}
 
 	db, err := storage.OpenSQLite(targetDb)
 	if err != nil {
-		log.Fatalf("Failed to open source DB %s: %v", targetDb, err)
+		return fmt.Errorf("Failed to open source DB %s: %v", targetDb, err)
 	}
 	defer db.Close()
 
@@ -67,7 +66,7 @@ func runStackEvalCommand(
 	}
 	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, fetchSymbols, backtestStart, "")
 	if err != nil {
-		log.Fatalf("Error loading historical bars: %v", err)
+		return fmt.Errorf("Error loading historical bars: %v", err)
 	}
 
 	fmt.Printf("Evaluating %d overlay candidates on idle cash of %s...\n", len(cands), primary.ID())
@@ -88,6 +87,8 @@ func runStackEvalCommand(
 		PersistBest:  persistBest,
 	})
 	runner.PrintStackEvalTearSheet(result)
+
+	return nil
 }
 
 func parseSecondaryList(raw string) []string {

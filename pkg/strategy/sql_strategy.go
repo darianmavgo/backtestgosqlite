@@ -358,12 +358,30 @@ func hasGoStrategy(dirName string) bool {
 	return false
 }
 
+var (
+	autoRegisteredMu sync.Mutex
+	autoRegistered   = map[string]bool{}
+)
+
 // AutoRegisterSQLStrategies registers the SQL pipeline behind each Go strategy
 // defined in pkg/strategy. A sql/strategies folder with no matching Go
 // strategy in this package (archived, failed_training, audit-only, or
 // abandoned) is NOT registered: strategies come only from pkg/strategy, never
 // from other folders or subfolders.
+//
+// It is idempotent: repeated calls with the same rootDir and default DB path
+// (e.g. one per live scan in a long-running process) register once and then
+// return immediately. Strategies added on disk after the first call are not
+// picked up.
 func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
+	key := rootDir + "\x00" + strings.Join(defaultDBPath, "\x00")
+	autoRegisteredMu.Lock()
+	defer autoRegisteredMu.Unlock()
+	if autoRegistered[key] {
+		return
+	}
+	autoRegistered[key] = true
+
 	stratDir := filepath.Join(rootDir, "sql", "strategies")
 	entries, err := os.ReadDir(stratDir)
 	if err != nil {

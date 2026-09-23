@@ -1,4 +1,4 @@
-package main
+package gridsearch
 
 import (
 	"fmt"

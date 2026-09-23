@@ -1,8 +1,7 @@
-package main
+package backtest
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -14,28 +13,28 @@ import (
 // runCoveredCallCommand backtests buy-and-hold + a monthly short call against
 // plain buy-and-hold, using option history stored by
 // `download -source polygon-options`.
-func runCoveredCallCommand(dbPath, table, underlying string, capital, otmPct float64, start string, commission, slip float64) {
+func runCoveredCallCommand(dbPath, table, underlying string, capital, otmPct float64, start string, commission, slip float64) error {
 	if underlying == "" {
 		underlying = "VOO"
 	}
 	db, err := storage.OpenSQLite(dbPath)
 	if err != nil {
-		log.Fatalf("open %s: %v", dbPath, err)
+		return fmt.Errorf("open %s: %v", dbPath, err)
 	}
 	defer db.Close()
 	if err := storage.EnsureOptionTables(db); err != nil {
-		log.Fatalf("option tables: %v", err)
+		return fmt.Errorf("option tables: %v", err)
 	}
 	bySym, _, err := storage.FetchBars(db, table, []string{underlying}, "1900-01-01", "2100-01-01")
 	if err != nil || len(bySym[underlying]) == 0 {
-		log.Fatalf("no %s bars in %s (err=%v); run `download -symbols %s` first", underlying, table, err, underlying)
+		return fmt.Errorf("no %s bars in %s (err=%v); run `download -symbols %s` first", underlying, table, err, underlying)
 	}
 	chains, err := storage.FetchCallChains(db, underlying)
 	if err != nil {
-		log.Fatalf("load option chains: %v", err)
+		return fmt.Errorf("load option chains: %v", err)
 	}
 	if len(chains) == 0 {
-		log.Fatalf("no %s option history in %s; run `download -source polygon-options -symbols %s` first", underlying, dbPath, underlying)
+		return fmt.Errorf("no %s option history in %s; run `download -source polygon-options -symbols %s` first", underlying, dbPath, underlying)
 	}
 
 	res := options.SimulateCoveredCall(options.CoveredCallConfig{
@@ -43,7 +42,7 @@ func runCoveredCallCommand(dbPath, table, underlying string, capital, otmPct flo
 		Commission: commission, SlipPerShare: slip,
 	}, bySym[underlying], chains)
 	if len(res.Equity) == 0 {
-		log.Fatalf("no simulable window: option data starts after the underlying's last bar or every roll lacked quotes")
+		return fmt.Errorf("no simulable window: option data starts after the underlying's last bar or every roll lacked quotes")
 	}
 
 	cc := analytics.CalculatePerformanceMetrics(capital, res.Trades, res.Equity)
@@ -67,4 +66,6 @@ func runCoveredCallCommand(dbPath, table, underlying string, capital, otmPct flo
 	fmt.Printf("Return %.1f%% vs buy&hold %.1f%% · max drawdown %.1f%% vs %.1f%%\n",
 		cc.TotalReturnPct*100, bh.TotalReturnPct*100, cc.MaxDrawdownPct*100, bh.MaxDrawdownPct*100)
 	fmt.Println("Caveats: option prices are Polygon last-trade EOD bars (carried forward on no-trade days, floored at intrinsic), price = last trade − slippage, not a bid; dividends ignored for both legs; ITM expiry is modeled as cash settlement with shares kept.")
+
+	return nil
 }

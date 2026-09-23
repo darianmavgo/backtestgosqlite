@@ -1,16 +1,11 @@
 package runner
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
-	"io"
 	"log"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -20,12 +15,6 @@ import (
 	"github.com/olekukonko/tablewriter"
 	_ "modernc.org/sqlite"
 )
-
-// ReinvestDividends controls total-return strategies (see strategy.TotalReturnProvider).
-// true (default): simulate on dividend-adjusted prices, i.e. dividends reinvested.
-// false: simulate on raw prices and pay dividends into cash, uninvested.
-// Set once from the backtest -no-reinvest-dividends flag before running.
-var ReinvestDividends = true
 
 type RunResult struct {
 	Strat       strategy.Strategy
@@ -315,6 +304,8 @@ func scopeDatesToStrategy(
 	return scoped
 }
 
+// ExecuteStrategy runs one strategy with dividends reinvested (the default for
+// total-return strategies); see ExecuteStrategyWithDividends.
 func ExecuteStrategy(
 	strat strategy.Strategy,
 	cfg strategy.StrategyConfig,
@@ -324,6 +315,25 @@ func ExecuteStrategy(
 	symbolFilter string,
 	outDir string,
 	marketDBPath string,
+) RunResult {
+	return ExecuteStrategyWithDividends(strat, cfg, barsBySymbol, sortedDates, capital, symbolFilter, outDir, marketDBPath, true)
+}
+
+// ExecuteStrategyWithDividends is ExecuteStrategy with an explicit dividend
+// treatment for total-return strategies (see strategy.TotalReturnProvider).
+// reinvestDividends=true: simulate on dividend-adjusted prices, i.e. dividends
+// reinvested. false: simulate on raw prices and pay dividends into cash,
+// uninvested.
+func ExecuteStrategyWithDividends(
+	strat strategy.Strategy,
+	cfg strategy.StrategyConfig,
+	barsBySymbol map[string][]models.Bar,
+	sortedDates []string,
+	capital float64,
+	symbolFilter string,
+	outDir string,
+	marketDBPath string,
+	reinvestDividends bool,
 ) RunResult {
 	// 1. Create unique SQLite database matching strategy name FIRST
 	outDBPath, outDB, err := storage.CreateUniqueDB(outDir, strat.ID())
@@ -343,7 +353,7 @@ func ExecuteStrategy(
 	// 2b. Dividend-inclusive strategies run on adjusted-price copies of their bars.
 	var tr *totalReturnInfo
 	if p, ok := strat.(strategy.TotalReturnProvider); ok && p.UsesTotalReturn() {
-		barsBySymbol, tr = toTotalReturnBars(strat, cfg, barsBySymbol, ReinvestDividends)
+		barsBySymbol, tr = toTotalReturnBars(strat, cfg, barsBySymbol, reinvestDividends)
 	}
 
 	// 3. Generate signals (calculations will now write natively into outDBPath if applicable)
@@ -630,64 +640,5 @@ func DetectAndDownloadMissingData(
 	}
 
 	fmt.Printf("\n✅ Successfully updated market data for %v in %s (%s).\n", missingSymbols, targetDb, tableName)
-	return nil
-}
-
-func RunDownload(targetDb, targetTable string, symbols []string, years int) error {
-	if len(symbols) == 0 {
-		return nil
-	}
-
-	symArg := strings.Join(symbols, ",")
-	yearsArg := strconv.Itoa(years)
-
-	// Look for download binary
-	candidates := []string{
-		filepath.Join("bin", "download"),
-		"download",
-	}
-
-	if execPath, err := os.Executable(); err == nil {
-		candidates = append([]string{filepath.Join(filepath.Dir(execPath), "download")}, candidates...)
-	}
-
-	var downloadBin string
-	for _, c := range candidates {
-		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
-			downloadBin = c
-			break
-		}
-		if lp, err := exec.LookPath(c); err == nil {
-			downloadBin = lp
-			break
-		}
-	}
-
-	var cmd *exec.Cmd
-	if downloadBin != "" {
-		cmd = exec.Command(downloadBin, "-db", targetDb, "-target-table", targetTable, "-symbols", symArg, "-years", yearsArg)
-	} else {
-		cmd = exec.Command("go", "run", "./cmd/download", "-db", targetDb, "-target-table", targetTable, "-symbols", symArg, "-years", yearsArg)
-	}
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = strings.TrimSpace(stdout.String())
-		}
-		if detail == "" {
-			detail = err.Error()
-		}
-		bin := downloadBin
-		if bin == "" {
-			bin = "go run ./cmd/download"
-		}
-		return fmt.Errorf("%s -db %s -target-table %s -symbols %s -years %s: %s", bin, targetDb, targetTable, symArg, yearsArg, detail)
-	}
 	return nil
 }

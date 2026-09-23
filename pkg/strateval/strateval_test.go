@@ -58,7 +58,7 @@ func TestStoreAndAllowlistDiff(t *testing.T) {
 	row := EvalRow{
 		RunID: "r1", StrategyID: "demo_a", ParamsJSON: "{}",
 		Split: Split{ISStart: "a", ISEnd: "b", OOSStart: "c", OOSEnd: "d"},
-		IS: Metrics{Sharpe: 1}, OOS: Metrics{Sharpe: 0.8, Trades: 40, AvgTradePct: 0.01, MaxDD: 0.1},
+		IS:    Metrics{Sharpe: 1}, OOS: Metrics{Sharpe: 0.8, Trades: 40, AvgTradePct: 0.01, MaxDD: 0.1},
 		Tier: "A", Reasons: []string{"ok"}, CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Insert(row); err != nil {
@@ -92,7 +92,7 @@ func TestSyncAllowlistAndStatus(t *testing.T) {
 	row := EvalRow{
 		RunID: "r1", StrategyID: "alpha", ParamsJSON: "{}",
 		Split: Split{ISStart: "a", ISEnd: "b", OOSStart: "c", OOSEnd: "d"},
-		IS: Metrics{Sharpe: 1}, OOS: Metrics{Sharpe: 0.9, Trades: 40, AvgTradePct: 0.01, MaxDD: 0.1},
+		IS:    Metrics{Sharpe: 1}, OOS: Metrics{Sharpe: 0.9, Trades: 40, AvgTradePct: 0.01, MaxDD: 0.1},
 		Tier: "A", Reasons: []string{"ok"}, CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Insert(row); err != nil {

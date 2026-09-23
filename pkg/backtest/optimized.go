@@ -1,4 +1,4 @@
-package main
+package backtest
 
 import (
 	"fmt"
@@ -60,15 +60,15 @@ func bestParamsFor(gdb *sqlx.DB, strategyID string) (optimizedParams, bool) {
 // DefaultConfig() instead (there's no "optimized" params to apply) and are
 // called out explicitly, since a silent fallback would look like every
 // strategy got optimized when some didn't.
-func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath string, capital float64, symbolFilter string, autoDownload bool, downloadYears, concurrency int) {
+func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath string, capital float64, symbolFilter string, autoDownload bool, downloadYears, concurrency int, reinvestDividends bool) error {
 	targets, err := runner.ResolveStrategies(stratArg, "all")
 	if err != nil {
-		log.Fatalf("%v. Run with -list to see available strategies.", err)
+		return fmt.Errorf("%v. Run with -list to see available strategies.", err)
 	}
 
 	gdb, err := storage.OpenSQLite(gridDBPath)
 	if err != nil {
-		log.Fatalf("Failed to open gridsearch DB %s: %v", gridDBPath, err)
+		return fmt.Errorf("Failed to open gridsearch DB %s: %v", gridDBPath, err)
 	}
 	// Look up every target's best config up front, before opening the market
 	// DB or starting the worker pool — sqlite3 handles concurrent readers
@@ -106,19 +106,19 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 	fmt.Println()
 
 	if err := runner.DetectAndDownloadMissingData(targetDb, tableName, targets, symbolFilter, autoDownload, downloadYears); err != nil {
-		log.Fatalf("Market data resolution error: %v", err)
+		return fmt.Errorf("Market data resolution error: %v", err)
 	}
 
 	db, err := storage.OpenSQLite(targetDb)
 	if err != nil {
-		log.Fatalf("Failed to open source DB %s: %v", targetDb, err)
+		return fmt.Errorf("Failed to open source DB %s: %v", targetDb, err)
 	}
 	defer db.Close()
 
 	fmt.Printf("⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", tableName, capital)
 	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, nil, backtestStart, "")
 	if err != nil {
-		log.Fatalf("Error loading historical bars for simulation: %v", err)
+		return fmt.Errorf("Error loading historical bars for simulation: %v", err)
 	}
 
 	workers := concurrency
@@ -162,7 +162,7 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 					cfg = s.DefaultConfig()
 				}
 
-				res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, symbolFilter, outDir, targetDb)
+				res := runner.ExecuteStrategyWithDividends(s, cfg, barsBySymbol, sortedDates, capital, symbolFilter, outDir, targetDb, reinvestDividends)
 				results[idx] = res
 				if res.Err != nil {
 					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
@@ -180,4 +180,6 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 	wg.Wait()
 
 	runner.PrintComparisonTable(results)
+
+	return nil
 }

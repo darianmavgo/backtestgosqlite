@@ -1,4 +1,7 @@
-# backtestgosqlite: High-Performance Algorithmic Trading & Multi-Strategy Backtesting Platform
+
+All the commands in this repo are thin wrappers for the packages
+
+For example cmd/backtest/main.go imports pkg/backtest executes the corresponding capability 
 
 [![Go Version](https://img.shields.io/badge/Go-1.18+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

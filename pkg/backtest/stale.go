@@ -1,4 +1,4 @@
-package main
+package backtest
 
 import (
 	"fmt"
@@ -12,12 +12,12 @@ import (
 // runStaleCommand implements `backtest stale`: assess every strategy with a
 // usable result in outDir for staleness (see runner.AssessOne) and print a
 // report. No backtests are run.
-func runStaleCommand(outDir, marketDBPath string, concurrency int) {
+func runStaleCommand(outDir, marketDBPath string, concurrency int) error {
 	fmt.Println("🔎 Checking", outDir, "for strategies with results to assess...")
 	byStrategy, _, _, _, _ := runner.ScanAndValidate(outDir, concurrency)
 	if len(byStrategy) == 0 {
 		fmt.Println("No usable results found — nothing to assess. Run some backtests first.")
-		return
+		return nil
 	}
 
 	marketDB, err := storage.OpenSQLite(marketDBPath)
@@ -38,4 +38,6 @@ func runStaleCommand(outDir, marketDBPath string, concurrency int) {
 	}
 
 	runner.PrintStalenessReport(outDir, entries, runner.MissingStrategies(byStrategy))
+
+	return nil
 }

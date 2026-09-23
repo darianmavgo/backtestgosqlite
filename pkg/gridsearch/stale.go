@@ -1,6 +1,7 @@
-package main
+package gridsearch
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -13,14 +14,14 @@ import (
 // runStaleCommand implements `gridsearch stale`: assess every strategy with a
 // completed sweep in gridDBPath for staleness (see runner.AssessOne) and
 // print a report. No sweeps are run.
-func runStaleCommand(gridDBPath, marketDBPath string) {
+func runStaleCommand(gridDBPath, marketDBPath string) error {
 	gdb, err := storage.OpenSQLite(gridDBPath)
 	if err != nil {
-		log.Fatalf("Failed to open gridsearch pipeline DB %s: %v", gridDBPath, err)
+		return fmt.Errorf("Failed to open gridsearch pipeline DB %s: %v", gridDBPath, err)
 	}
 	defer gdb.Close()
 	if err := ensureGridSearchSchema(gdb); err != nil {
-		log.Fatalf("Failed to initialize gridsearch pipeline schema: %v", err)
+		return fmt.Errorf("Failed to initialize gridsearch pipeline schema: %v", err)
 	}
 
 	type row struct {
@@ -30,11 +31,11 @@ func runStaleCommand(gridDBPath, marketDBPath string) {
 	}
 	var rows []row
 	if err := gdb.Select(&rows, `SELECT strategy_id, finished_at, COALESCE(data_max_date, '') AS data_max_date FROM gridsearch_runs WHERE status = 'done'`); err != nil {
-		log.Fatalf("Failed to query gridsearch_runs: %v", err)
+		return fmt.Errorf("Failed to query gridsearch_runs: %v", err)
 	}
 	if len(rows) == 0 {
 		log.Println("No completed sweeps found in", gridDBPath, "— nothing to assess. Run some sweeps first.")
-		return
+		return nil
 	}
 
 	marketDB, err := storage.OpenSQLite(marketDBPath)
@@ -65,4 +66,6 @@ func runStaleCommand(gridDBPath, marketDBPath string) {
 	sort.Strings(neverSwept)
 
 	runner.PrintStalenessReport(gridDBPath, entries, neverSwept)
+
+	return nil
 }

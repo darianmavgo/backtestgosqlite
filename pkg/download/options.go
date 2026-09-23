@@ -1,8 +1,9 @@
-package main
+package download
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,7 +43,7 @@ func parseOTMList(s string) ([]float64, error) {
 // covered-call roll would pick (nearest to spot*(1+otm%) at the prior monthly
 // expiry), and pulls bars from that roll date to E. Anything already stored is
 // skipped, so reruns and interrupted runs cost no calls for finished work.
-func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlying string, start, end time.Time,
+func downloadOptionHistory(ctx context.Context, out io.Writer, db *sqlx.DB, barTable, underlying string, start, end time.Time,
 	otms []float64, apiKey string, callsPerMin, maxCalls int) error {
 
 	if err := storage.EnsureOptionTables(db); err != nil {
@@ -78,13 +79,16 @@ func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlyin
 	budget := func() bool { return maxCalls > 0 && cli.Calls >= maxCalls }
 
 	expiries := options.MonthlyExpiries(start, end)
-	fmt.Printf("Option history for %s: %d monthly expiries %s ➔ %s, strikes nearest OTM %v%%, %d calls/min\n",
+	fmt.Fprintf(out, "Option history for %s: %d monthly expiries %s ➔ %s, strikes nearest OTM %v%%, %d calls/min\n",
 		underlying, len(expiries), start.Format("2006-01-02"), end.Format("2006-01-02"), otms, callsPerMin)
 
 	var newContracts, newBars, cached, noQuote int
 	for i, nominal := range expiries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if budget() {
-			fmt.Printf("⏸  Stopped at -max-calls %d (rerun to continue; finished work is skipped).\n", maxCalls)
+			fmt.Fprintf(out, "⏸  Stopped at -max-calls %d (rerun to continue; finished work is skipped).\n", maxCalls)
 			break
 		}
 		sell := options.PrevMonthly(nominal).Format("2006-01-02")
@@ -129,7 +133,7 @@ func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlyin
 			}
 		}
 		if expiry == "" {
-			fmt.Printf("[%d/%d] %s : no listed calls\n", i+1, len(expiries), nominal.Format("2006-01-02"))
+			fmt.Fprintf(out, "[%d/%d] %s : no listed calls\n", i+1, len(expiries), nominal.Format("2006-01-02"))
 			continue
 		}
 
@@ -183,11 +187,11 @@ func downloadOptionHistory(ctx context.Context, db *sqlx.DB, barTable, underlyin
 			if len(bars) == 0 {
 				noQuote++
 			}
-			fmt.Printf("[%d/%d] %s  %s K=%.2f (spot %.2f @ %s): %d bars\n", i+1, len(expiries), expiry, c.Ticker, k, ref, sell, len(bars))
+			fmt.Fprintf(out, "[%d/%d] %s  %s K=%.2f (spot %.2f @ %s): %d bars\n", i+1, len(expiries), expiry, c.Ticker, k, ref, sell, len(bars))
 		}
 	}
 
-	fmt.Printf("\n✨ Options summary: %d contracts listed, %d bars added, %d contracts already cached, %d never traded in window, %d API calls.\n",
+	fmt.Fprintf(out, "\n✨ Options summary: %d contracts listed, %d bars added, %d contracts already cached, %d never traded in window, %d API calls.\n",
 		newContracts, newBars, cached, noQuote, cli.Calls)
 	return nil
 }
