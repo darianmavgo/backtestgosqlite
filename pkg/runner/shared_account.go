@@ -38,11 +38,11 @@ type SharedRunResult struct {
 // makes the underlying strategy names visible directly in the ID, matching the
 // output DB's own filename convention (shared_<primary>_<secondaries...>.db).
 func SharedAccountID(primary strategy.Strategy, secondaries []strategy.Strategy) string {
-	id := primary.ID()
+	ids := []string{primary.ID()}
 	for _, sec := range secondaries {
-		id += "+" + sec.ID()
+		ids = append(ids, sec.ID())
 	}
-	return id
+	return strategy.StackID(ids...)
 }
 
 // StackRequest is a first-class multi-strategy run on one cash ledger.

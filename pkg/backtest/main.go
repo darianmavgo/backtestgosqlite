@@ -231,7 +231,7 @@ func Run(conf Config) error {
 
 	// -signals-only: same path as cmd/livescan (wrapper around RunSignalScan).
 	if conf.SignalsOnly {
-		if conf.SharedAccount || conf.Primary != "" || conf.Secondary != "" || strings.Contains(stratArg, "+") {
+		if conf.SharedAccount || conf.Primary != "" || conf.Secondary != "" || strategy.IsStack(stratArg) {
 			return fmt.Errorf("-signals-only does not support shared-account / + stacks; use livescan or plain -strategy lists")
 		}
 		selected, err := runner.ResolveStrategies(stratArg, "bb-capitulation")
@@ -269,7 +269,7 @@ func Run(conf Config) error {
 	}
 
 	// Detect if user requested Shared Account Mode
-	isSharedAccount := conf.SharedAccount || conf.Primary != "" || conf.Secondary != "" || strings.Contains(stratArg, "+")
+	isSharedAccount := conf.SharedAccount || conf.Primary != "" || conf.Secondary != "" || strategy.IsStack(stratArg)
 
 	if isSharedAccount {
 		var primaryStrat strategy.Strategy
@@ -292,7 +292,7 @@ func Run(conf Config) error {
 					secondaryStrats = append(secondaryStrats, sec)
 				}
 			}
-		} else if strings.Contains(stratArg, "+") {
+		} else if strategy.IsStack(stratArg) {
 			parts := strings.Split(stratArg, "+")
 			pID := strings.TrimSpace(parts[0])
 			pStrat, exists := strategy.Get(pID)

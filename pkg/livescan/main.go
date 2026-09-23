@@ -53,7 +53,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		DB:           cliutils.GetDefaultMarketDB(),
-		Table:        "backtest_start",
+		Table:        runner.DefaultBarsTable,
 		OutDir:       appenv.Reports(),
 		AutoDownload: true,
 		Concurrency:  runtime.NumCPU(),
