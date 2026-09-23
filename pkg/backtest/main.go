@@ -148,7 +148,7 @@ func Main() {
 	flag.Float64Var(&conf.Commission, "commission", d.Commission, "(covered-call) $ per option contract sold (IBKR tiered ≈ $0.65)")
 	flag.Float64Var(&conf.OptSlip, "opt-slip", d.OptSlip, "(covered-call) $ per share given up vs the last-trade option price when selling")
 	flag.BoolVar(&conf.NoReinvestDividends, "no-reinvest-dividends", d.NoReinvestDividends, "Total-return strategies (e.g. schd-buy-hold): take dividends as idle cash instead of reinvesting them")
-	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "coveredcall": "covered-call", "stale": "stale", "optimized": "optimized", "stack-eval": "stack-eval", "stackeval": "stack-eval"})
+	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack-eval": "stack-eval"})
 	flag.Parse()
 	conf.Args = flag.Args()
 	if err := Run(conf); err != nil {

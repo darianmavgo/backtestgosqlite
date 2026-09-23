@@ -48,9 +48,6 @@ func NewSigVooBuyTecl() *SigVooBuyTecl {
 		ShortHoldingWindow: 2,
 	}
 	Register(s)
-	RegisterAlias("sig-voo-buy-tecl", s)
-	RegisterAlias("sigvoobuytecl", s)
-	RegisterAlias("SigVooBuyTecl", s)
 	return s
 }
 

@@ -28,10 +28,6 @@ type MARATreeStrategy struct {
 func NewMARATreeStrategy() *MARATreeStrategy {
 	s := &MARATreeStrategy{}
 	Register(s)
-	RegisterAlias("mara_tree", s)
-	RegisterAlias("mara-tree", s)
-	RegisterAlias("MARATree", s)
-	RegisterAlias("maratree", s)
 	return s
 }
 

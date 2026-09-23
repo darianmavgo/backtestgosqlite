@@ -28,8 +28,6 @@ func NewVOOUp3Strategy() *VOOUp3Strategy {
 		Hold:        8,
 	}
 	Register(s)
-	RegisterAlias("voo-up3", s)
-	RegisterAlias("voo_up3", s)
 	return s
 }
 

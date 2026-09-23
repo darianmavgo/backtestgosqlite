@@ -17,7 +17,6 @@ type TSLLDailyOneShareStrategy struct{}
 func init() {
 	s := &TSLLDailyOneShareStrategy{}
 	Register(s)
-	RegisterAlias("tsll_daily_one_share", s)
 	RegisterAlias("tsll-daily", s)
 }
 

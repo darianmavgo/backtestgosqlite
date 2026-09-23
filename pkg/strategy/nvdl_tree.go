@@ -25,9 +25,6 @@ type NVDLTreeStrategy struct {
 func NewNVDLTreeStrategy() *NVDLTreeStrategy {
 	s := &NVDLTreeStrategy{}
 	Register(s)
-	RegisterAlias("nvdl_tree", s)
-	RegisterAlias("nvdl-tree", s)
-	RegisterAlias("NVDLTree", s)
 	return s
 }
 

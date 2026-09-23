@@ -72,7 +72,6 @@ type Config struct {
 	Limit, Years                            int
 	Start, End, Timeframe, TargetTable      string
 	Force                                   bool
-	SeedDB                                  string
 	Concurrency                             int
 	OTM                                     string    // polygon-options: comma-separated % OTM
 	Rate, MaxCalls                          int       // polygon-options
@@ -89,7 +88,7 @@ func DefaultConfig() Config {
 	return Config{
 		DB: appenv.MarketDB(), SettingsDB: appenv.RefDB(), Source: "yahoo",
 		Table: "leveraged_etf", Limit: 50, Years: 4, Timeframe: "1d",
-		TargetTable: "backtest_start", SeedDB: appenv.DataFile("leveraged_backtest.db"),
+		TargetTable: "backtest_start",
 		Concurrency: runtime.NumCPU(), OTM: "0,2,5", Rate: 5,
 	}
 }
@@ -113,7 +112,6 @@ func Main() {
 	flag.StringVar(&cfg.Timeframe, "timeframe", d.Timeframe, "Bar timeframe (1d, 1h, 5m, 1m)")
 	flag.StringVar(&cfg.TargetTable, "target-table", d.TargetTable, "Target table name in target SQLite DB")
 	flag.BoolVar(&cfg.Force, "force", d.Force, "Force re-downloading all bars even if already present in database")
-	flag.StringVar(&cfg.SeedDB, "seed-db", d.SeedDB, "Legacy database to seed from if target DB doesn't exist")
 	flag.IntVar(&cfg.Concurrency, "concurrency", d.Concurrency, "Number of symbols to fetch concurrently (network-bound; DB writes are serialized internally). Defaults to all CPU cores.")
 	flag.StringVar(&cfg.OTM, "otm", d.OTM, "(polygon-options) call strikes to pull, as % OTM vs spot at the roll date (nearest listed strike each)")
 	flag.IntVar(&cfg.Rate, "rate", d.Rate, "(polygon-options) API calls per minute; 5 = Polygon free tier, 0 = unthrottled (paid)")
@@ -123,28 +121,8 @@ func Main() {
 	if strings.TrimSpace(cfg.PolygonKey) == "" {
 		cfg.PolygonKey = datasource.ResolvePolygonAPIKey() // POLYGON_API_KEY / .env: CLI only, Run never reads the environment
 	}
-	seedFromLegacy(cfg)
 	if _, err := Run(context.Background(), cfg); err != nil {
 		log.Fatal(err)
-	}
-}
-
-// seedFromLegacy is a CLI convenience: if the default market DB does not
-// exist yet, initialise it from an existing leveraged_backtest.db.
-func seedFromLegacy(cfg Config) {
-	if cfg.DB != appenv.MarketDB() {
-		return
-	}
-	if _, err := os.Stat(cfg.DB); !os.IsNotExist(err) {
-		return
-	}
-	if _, err := os.Stat(cfg.SeedDB); err != nil {
-		return
-	}
-	if input, err := os.ReadFile(cfg.SeedDB); err == nil {
-		_ = os.MkdirAll(appenv.Data(), 0755)
-		_ = os.WriteFile(cfg.DB, input, 0644)
-		fmt.Printf("📦 Initialized %s from existing historical data cache.\n", cfg.DB)
 	}
 }
 

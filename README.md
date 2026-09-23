@@ -92,7 +92,6 @@ Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strateg
 * **`voo-buy-hold`**: Passive VOO (S&P 500) buy-and-hold baseline for computing active Alpha & Beta. (Formerly `buy-and-hold` — renamed after it was found to buy an arbitrary basket of symbols rather than VOO once the ETF universe grew past a few hundred symbols; still resolvable under the old ID via alias.)
 * **`dt_<symbol>`**: One auto-generated CloudForest decision-tree strategy per qualifying ETF (e.g. `dt_fxr`), produced by `cmd/etf_decision_trees` and registered automatically at startup from the `etf_dt_strategies` table in `refdata/settings.db`.
 
-> `wc` / `wc-4d` / `whitings_creek-sql` (Whitings Creek short-term capitulation mean-reversion) were archived — unregistered and moved to [`_archive/`](file:///Users/darianhickman/Documents/backtestgosqlite/_archive) (excluded from the Go build via the leading underscore). They converged to the exact same generic-fallback gridsearch result as several other strategies with no real distinguishing signal, while taking 2-4 minutes per sweep. See `_archive/README.md` to restore.
 
 **Decline-window and exit rules as real parameters**: `gld-decline`, `sig-voo-buy-tecl`, and `voo-tecl-spxu-combo` all enter on a consecutive-day price decline (or, for a short leg, rally) streak, and embed per-signal take-profit/stop-loss/hold-days directly in their SQL pipeline. Every one of those values is now a genuine config field on the strategy struct — `DeclineDays` (streak length), `TakeProfitPct`/`StopLossPct`/`HoldingWindow` (long leg), and `ShortTakeProfitPct`/`ShortStopLossPct`/`ShortHoldingWindow` (short leg, combo strategies only) — flowing through `StrategyConfig` into `__DECLINE_DAYS__`/`__TAKE_PROFIT_MULT__`/`__STOP_LOSS_MULT__`/`__HOLD_DAYS__`/`__SHORT_*__` placeholders that `SQLPipelineStrategy` substitutes into the SQL pipeline at run time, rather than being separately hardcoded literals that `DefaultConfig()` had no actual effect on. `TakeProfitPct`/`ShortTakeProfitPct` are fractional offsets (0.08 = +8%); `StopLossPct`/`ShortStopLossPct` are direct multipliers (0.98 = -2%), matching every other strategy's `StopLossPct` convention. Set fields before calling `GenerateSignals`/`SetDatabases` (e.g. `s := strategy.NewGLDDeclineStrategy(); s.DeclineDays = 4; s.TakeProfitPct = 0.10`) to backtest different values.
 > `millwharf` was completely removed (code, SQL pipeline, and docs) rather than fixed — three of its four declared config fields (`HoldingWindow`, `TakeProfitLookback`, `MaxProfitCap`) were dead/unwired, and its computed take-profit never even reached the final signals table, so its real behavior silently diverged from its own description.
@@ -318,7 +317,6 @@ Cache-first OHLCV downloader; see [Quickstart §3](#3-download--cache-market-dat
 | `-timeframe` | `1d` | `1d`, `1h`, `5m`, `1m` |
 | `-target-table` | `backtest_start` | Destination table name |
 | `-force` | `false` | Re-download bars even if already cached |
-| `-seed-db` | `data/leveraged_backtest.db` | Legacy DB to seed from if the target DB doesn't exist yet |
 | `-concurrency` | all CPU cores | Concurrent symbol fetches (network-bound) |
 
 #### `cmd/backtest` — Strategy simulation & tear sheets
@@ -368,7 +366,7 @@ Output: `<out-dir>/livescan.db` (`livescan_status` table, upserted by `strategy_
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
 | `-db` | `data/market_history.db` | Source bars DB |
-| `-strategy` (or `-strat`, `-mode`) | *(empty)* | Strategy ID, comma-list, or `all` |
+| `-strategy` | *(empty)* | Strategy ID, comma-list, or `all` |
 | `-list` | `false` | List registered strategies with baked-in parameters |
 | `-signal`, `-symbol` | *(empty)* | Single-strategy mode overrides for signal/trade symbol |
 | `-capital` | `100000` | Starting cash |
@@ -581,8 +579,6 @@ See [`docs/strategies/writing_a_strategy.md`](file:///Users/darianhickman/Docume
 backtestgosqlite/
 ├── Makefile                          # Root automation (build, list, backtest, download, livescan, ui, study, example-csv)
 ├── README.md                         # Main documentation
-├── Comparison.md                     # Performance & architecture comparison
-├── ARCHITECTURE_PROPOSALS.md         # Future architecture notes
 │
 ├── cmd/                               # CLI executable entrypoints (one dir per binary)
 │   ├── backtest/                     # Multi-strategy backtester & tear sheet CLI
@@ -621,12 +617,10 @@ backtestgosqlite/
 │   ├── architecture.md, SQLvsGOModels.md, TechProgress.md, FinancialProgress.md
 │   └── strategies/                   # Per-strategy write-ups & the "writing a strategy" tutorial
 │
-├── python/                            # Auxiliary Python tooling (e.g. deap_optimizer.py for genetic parameter search)
 ├── config/                            # Local config (config.example.json; real config.json is git-ignored)
 ├── data/                              # Local SQLite caches & symbol lists (all *.db git-ignored — see README.md in this dir)
 ├── reports/                           # Generated backtest/study/gridsearch results & HTML dashboards (git-ignored)
 ├── bin/                               # Compiled binaries (git-ignored)
-├── _archive/                          # Retired strategies/studies excluded from the build (leading underscore)
 │
 └── examples/                          # Standalone runnable examples
     └── custom_csv_backtest/          # CSV ingestion and backtest walkthrough
@@ -643,10 +637,6 @@ backtestgosqlite/
 - **Frontend**: HTML5, Vanilla CSS, Vanilla JavaScript, Chart.js, Tablewriter
 
 ---
-
-## 🔮 Future Architecture Proposals
-
-For future improvements regarding report organization, historical data storage, and signal sharing with external execution suites (e.g., `trading_schwab`), please see [ARCHITECTURE_PROPOSALS.md](ARCHITECTURE_PROPOSALS.md).
 
 ### VOO 3-Up ETF comparison (`voo_up3_etf` study)
 `./bin/study -study voo_up3_etf` buys every ETF in the `sweep` universe (`refdata/settings.db`) the day VOO closes up 3 days in a row, with one fixed exit (3-day hold, +5% TP, -10% SL) — no parameter grid, 8-worker bounded pool. Results land in `reports/voo_up3_etf.db`: `etf_results` (one row per ETF), `etf_trades` (every trade), `voo_signals`, `run_params`, and the `etf_compare` view (ranked by avg per-trade return and CAGR).

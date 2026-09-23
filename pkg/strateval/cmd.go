@@ -110,7 +110,7 @@ func Main() {
 	log.SetFlags(0)
 	conf := DefaultConfig()
 	d := conf
-	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"report": "report", "status": "status", "browse": "status", "sync-deployed": "sync-deployed", "path": "path"})
+	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"report": "report", "status": "status", "sync-deployed": "sync-deployed", "path": "path"})
 	flag.StringVar(&conf.Db, "db", d.Db, "strategies SQLite ledger")
 	flag.StringVar(&conf.Allowlist, "allowlist", d.Allowlist, "current STRATEGY_ALLOWLIST CSV")
 	flag.StringVar(&conf.RunId, "run-id", d.RunId, "optional run id filter")

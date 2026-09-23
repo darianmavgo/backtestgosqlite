@@ -91,7 +91,7 @@ go run cmd/combo/main.go -html reports/combo.html
 go run cmd/dip/main.go -signal VOO -trade TECL -days 3 -hold 8 -tp 0.05 -alloc 0.65
 
 # Grid search (parallel parameter sweep):
-go run cmd/gridsearch/main.go -mode bear -top 20 -html reports/bear_grid.html
+go run cmd/gridsearch/main.go -strategy sig-voo-buy-tecl -top 20 -html reports/bear_grid.html
 
 # Export all studies to SQLite + HTML:
 go run cmd/export_studies/main.go

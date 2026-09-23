@@ -36,10 +36,6 @@ type GLDDeclineStrategy struct {
 func NewGLDDeclineStrategy() *GLDDeclineStrategy {
 	s := &GLDDeclineStrategy{DeclineDays: 2, TakeProfitPct: 0.08, StopLossPct: 0.98, HoldingWindow: 12}
 	Register(s)
-	RegisterAlias("gld-decline", s)
-	RegisterAlias("gld_decline", s)
-	RegisterAlias("GLDDecline", s)
-	RegisterAlias("glddecline", s)
 	return s
 }
 

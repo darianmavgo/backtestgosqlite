@@ -26,7 +26,7 @@ func TestAllStrategiesHaveAllocationPct(t *testing.T) {
 func TestSQLPipelinesRegisterOnlyWithGoStrategy(t *testing.T) {
 	AutoRegisterSQLStrategies("../..", "../../data/market_history.db")
 
-	for _, dir := range []string{"failed_training", "shared_account", "voo_tecl_spxu_combo", "bb_capitulation"} {
+	for _, dir := range []string{"shared_account", "bb_capitulation"} {
 		if _, ok := Get(dir + "-sql"); ok {
 			t.Errorf("%s-sql must not be registered (no Go strategy in pkg/strategy)", dir)
 		}

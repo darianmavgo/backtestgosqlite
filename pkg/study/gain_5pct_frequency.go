@@ -146,12 +146,6 @@ func init() {
 		description: "Ranks all available tickers by frequency of >= 5% single-day gains and marks Leveraged ETFs.",
 	}
 	Register(s)
-	// Register alias for convenience
-	Register(&Gain5PctFrequencyStudy{
-		id:          "daily_gain_5pct_frequency",
-		name:        s.name,
-		description: s.description,
-	})
 }
 
 func (s *Gain5PctFrequencyStudy) ID() string {

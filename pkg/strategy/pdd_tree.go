@@ -24,9 +24,6 @@ type PDDTreeStrategy struct {
 func NewPDDTreeStrategy() *PDDTreeStrategy {
 	s := &PDDTreeStrategy{}
 	Register(s)
-	RegisterAlias("pdd_tree", s)
-	RegisterAlias("pdd-tree", s)
-	RegisterAlias("PDDTree", s)
 	return s
 }
 

@@ -22,7 +22,6 @@ type SigQqqUp1BuySqqq struct {
 func NewSigQqqUp1BuySqqq() *SigQqqUp1BuySqqq {
 	s := &SigQqqUp1BuySqqq{TradeSymbol: "SQQQ", TP: 0.08, Hold: 1}
 	Register(s)
-	RegisterAlias("sigqqqup1buysqqq", s)
 	return s
 }
 

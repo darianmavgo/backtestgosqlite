@@ -21,10 +21,7 @@ type TreeBounceCombo struct {
 func NewTreeBounceCombo() *TreeBounceCombo {
 	s := &TreeBounceCombo{}
 	Register(s)
-	RegisterAlias("tree_bounce_combo", s)
-	RegisterAlias("tree-bounce-combo", s)
 	RegisterAlias("mara_pdd_nvdl_combo", s)
-	RegisterAlias("TreeBounceCombo", s)
 	return s
 }
 

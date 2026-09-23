@@ -84,3 +84,6 @@ venv/
 ENV/
 reports/strategies.db
 reports/strategy_evals.db
+
+# built binaries at repo root
+/compare_annual_report

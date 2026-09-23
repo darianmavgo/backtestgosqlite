@@ -134,8 +134,6 @@ func DefaultConfig() Config {
 		Start:        storage.DefaultStartDate,
 		Db:           appenv.MarketDB(),
 		Strategy:     "",
-		Strat:        "",
-		Mode:         "",
 		List:         false,
 		Signal:       "",
 		Symbol:       "",
@@ -174,8 +172,6 @@ func Main() {
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to sweep; earlier bars only warm up SMAs. Empty = full history")
 	flag.StringVar(&conf.Db, "db", d.Db, "Path to SQLite database")
 	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "Strategy ID (comma-separated list, or 'all') to assess and optimize")
-	flag.StringVar(&conf.Strat, "strat", d.Strat, "Alias for -strategy")
-	flag.StringVar(&conf.Mode, "mode", d.Mode, "Legacy compatibility alias for -strategy")
 	flag.BoolVar(&conf.List, "list", d.List, "List registered strategies with baked-in parameters")
 	flag.StringVar(&conf.Signal, "signal", d.Signal, "Signal generation symbol override (single-strategy mode only)")
 	flag.StringVar(&conf.Symbol, "symbol", d.Symbol, "Trade symbol override; comma-separated list allowed (single-strategy mode only)")
@@ -227,27 +223,11 @@ func Run(conf Config) error {
 		return nil
 	}
 
-	// Resolve strategy selection from flag, positional argument, or legacy mode
+	// Resolve strategy selection from flag or positional argument
 	stratArg := strings.TrimSpace(conf.Strategy)
-	if stratArg == "" {
-		stratArg = strings.TrimSpace(conf.Strat)
-	}
 	if stratArg == "" && len(conf.Args) > 0 {
 		stratArg = strings.TrimSpace(conf.Args[0])
 	}
-	if stratArg == "" && conf.Mode != "" {
-		switch strings.ToLower(conf.Mode) {
-		case "gld", "gld_decline", "gld-decline":
-			stratArg = "gld_decline"
-		case "bull", "voo", "sig_voo_buy_tecl":
-			stratArg = "sig-voo-buy-tecl"
-		case "bear":
-			stratArg = "sig-voo-buy-tecl"
-		default:
-			stratArg = conf.Mode
-		}
-	}
-
 	if stratArg == "" {
 		fmt.Println()
 		fmt.Println("⚠️  No strategy specified! Please specify a strategy to optimize.")

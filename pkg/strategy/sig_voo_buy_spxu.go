@@ -44,9 +44,6 @@ func NewSigVooBuySpxu() *SigVooBuySpxu {
 		HoldingWindow: 2,
 	}
 	Register(s)
-	RegisterAlias("sig-voo-buy-spxu", s)
-	RegisterAlias("sigvoobuyspxu", s)
-	RegisterAlias("SigVooBuySpxu", s)
 	return s
 }
 
