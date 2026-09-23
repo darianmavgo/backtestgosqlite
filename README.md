@@ -179,7 +179,7 @@ The platform cleanly separates market data caching from backtest calculation sto
 | **`<study_id>.db`** *(e.g. `gain_5pct_frequency.db`, `march_april_voo_gld_uten.db`)* | `reports/` | **Ad-hoc Study Output** | Study-specific tables (e.g. `granger_causality`) | `cmd/study` | `cmd/granger_chart`, external analysis |
 | **`settings.db`** | `data/` | **Optional Universe/Config Seed** | `leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d` (seeded manually; ships empty) | Seed scripts / Admin | `cmd/download -table` |
 | **`sample.db`** | `data/` | **Testing & Custom CSV Sandbox** | `backtest_start` | `cmd/download -csv` | `examples/custom_csv_backtest` |
-| **`sp500_etfs_study.db`** | `data/` | **Multi-Scenario Study Matrix** | `tecl_allocation_matrix`, `compare_3x_etfs_matrix`, plus a local `backtest_start` bar cache for VOO/TECL/SPXU | `cmd/export_studies` (both reads and writes this file) | Study reports |
+| **`sp500_etfs_study.db`** | `data/` | **Multi-Scenario Study Matrix** | `tecl_allocation_matrix`, `compare_3x_etfs_matrix`, plus a local `backtest_start` bar cache for VOO/TECL/SPXU | (formerly `cmd/export_studies`, which no longer exists) | Study reports |
 
 > `data/*.db` and `reports/*.db` are all git-ignored (see `.gitignore`) — every database above is regenerated locally by running the corresponding command, never committed.
 
@@ -408,9 +408,6 @@ Subcommands (default `run`): `./bin/scoreboard` backtests every registered strat
 
 Registered studies: `gain_5pct_frequency`, `daily_gain_5pct_frequency`, `mara_decision_tree`, `mu_decision_tree`, `march_april_voo_gld_uten` (Granger-causality lead/lag analysis — feeds `cmd/granger_chart`), `etf_study` (decline/streak prep slice for a "Top 5 S&P 500 ETFs 4-Day Position Study" — moved here from a `sql/strategies/etf_study/` pipeline that `AutoRegisterSQLStrategies` was auto-registering as a phantom, always-zero-signal strategy; incomplete — builds the prep slice and result-table schema but no buy-signal rule was ever written, so `study_buy_signals` stays empty).
 
-#### `cmd/export_studies` — SP500/ETF study matrix export
-No flags; hardcoded to `data/sp500_etfs_study.db`, which it both reads (a local `backtest_start` bar cache for VOO/TECL/SPXU it maintains) and writes (`tecl_allocation_matrix`, `compare_3x_etfs_matrix`). Run with `./bin/export_studies`.
-
 #### `cmd/etf_decision_trees` — Per-ETF decision-tree fitting
 Fits a CloudForest decision tree per symbol, sweeps a TP/SL/hold grid on the tree's BUY predictions, and writes the best config per symbol to `-out` — which `pkg/strategy/etf_decision_tree.go` reads at startup to register a `dt_<symbol>` strategy per qualifying ETF.
 | Flag | Default | Meaning |
@@ -577,54 +574,88 @@ See [`docs/strategies/writing_a_strategy.md`](file:///Users/darianhickman/Docume
 
 ```
 backtestgosqlite/
-├── Makefile                          # Root automation (build, list, backtest, download, livescan, ui, study, example-csv)
-├── README.md                         # Main documentation
-│
-├── cmd/                               # CLI executable entrypoints (one dir per binary)
-│   ├── backtest/                     # Multi-strategy backtester & tear sheet CLI
-│   ├── download/                     # Multi-source data loader (CSV, Yahoo, Stooq, Polygon)
-│   ├── livescan/                     # Live today/tomorrow signal scanner
-│   ├── ui/                           # Local web dashboard server (legacy dataset, see caveat above)
-│   ├── gridsearch/                   # Multi-core parameter optimization sweep
-│   ├── scoreboard/                   # Cross-strategy leaderboard compiler
-│   ├── study/                        # Ad-hoc statistical study runner
-│   ├── export_studies/               # SP500/ETF study matrix export
-│   ├── etf_decision_trees/           # Per-ETF CloudForest decision-tree fitting
-│   ├── etf_universe/                 # Polygon.io ETF ticker universe discovery
-│   ├── ticker_scan/                  # Pattern-generalization scan across symbols
-│   ├── compare_annual_report/        # Standalone vs. shared-account annual comparison
-│   ├── audit_shared/                 # Shared-account SQL audit/diagnostic
-│   ├── candlesticks/                 # Go-ECharts candlestick visualizer
-│   ├── granger_chart/                # Granger-causality tutorial dashboard
-│   └── dataflare/                    # Dataflare SQLite GUI launcher
-│
-├── pkg/                               # Modular core Go packages
-│   ├── models/                       # Domain types (Bar, Signal, Position, Trade, Report)
-│   ├── datasource/                   # Pluggable data layer (CSV, Yahoo, Stooq, SQLite)
-│   ├── strategy/                     # Strategy registry, indicators (RSI, BB, MACD, Donchian, ATR) & all Go strategies
-│   ├── simulator/                    # Portfolio ledger, execution models, sizing, concurrent runner
-│   ├── analytics/                    # Performance metrics (Sharpe, Sortino, Calmar, Omega, Ulcer, Alpha/Beta) & HTML reports
-│   ├── charting/                     # Reusable Chart.js HTML report components
-│   ├── storage/                      # SQLite WAL helpers, bar loading, signal/trade persistence
-│   ├── runner/                       # Shared strategy-execution/coverage helpers used by backtest, gridsearch & scoreboard
-│   ├── study/                        # Registered ad-hoc statistical studies (run via cmd/study), incl. etf_study.go
-│   └── cliutils/                     # Small shared CLI helpers (e.g. default market DB resolution)
-│
-├── sql/                               # SQL pipeline strategies
-│   └── strategies/                   # Auto-discovered SQL strategy pipelines (one dir per strategy) + authoring README
-│
-├── docs/                              # In-depth guides & strategy specs
-│   ├── architecture.md, SQLvsGOModels.md, TechProgress.md, FinancialProgress.md
-│   └── strategies/                   # Per-strategy write-ups & the "writing a strategy" tutorial
-│
-├── config/                            # Local config (config.example.json; real config.json is git-ignored)
-├── data/                              # Local SQLite caches & symbol lists (all *.db git-ignored — see README.md in this dir)
-├── reports/                           # Generated backtest/study/gridsearch results & HTML dashboards (git-ignored)
-├── bin/                               # Compiled binaries (git-ignored)
-│
-└── examples/                          # Standalone runnable examples
-    └── custom_csv_backtest/          # CSV ingestion and backtest walkthrough
+├── cmd/          16 binaries, each a 5-line wrapper that calls pkg/<name>.Main()
+├── pkg/          all the logic (below); reusable by trade_orchestrator too
+├── sql/strategies/   SQL pipeline strategies, one directory each (auto-discovered)
+├── docs/         guides and per-strategy write-ups
+├── config/       config.example.json (real config.json is git-ignored)
+├── data/         local SQLite caches and symbol lists (*.db git-ignored)
+├── reports/      generated backtest, study and gridsearch results (git-ignored)
+├── bin/          compiled binaries (git-ignored)
+├── examples/     custom_csv_backtest
+└── Makefile
 ```
+
+## 📦 Packages (`pkg/`)
+
+Rule for this repo: **Go controls execution and the calculation lives in SQL.** Go opens databases, orders steps, runs `.sql` files and prints results; indicators, joins and aggregates belong in SQL, written as a chain of named slice tables rather than nested queries. Each command in `cmd/` is a thin wrapper over the package of the same name.
+
+**Foundations**
+
+| Package | Purpose |
+|---|---|
+| `models` | Domain types shared by everything: `Bar`, `Signal`, `Position`, `Trade`, `PerformanceReport`, and the option types. |
+| `appenv` | Resolves configuration from the environment and `.env`: `POLYGON_API_KEY`, `APP_FOLDER`, `APP_REPORTS`, `APP_REF`, `APP_DATA`. `appenv.MarketDB()` is the one authority on where `market_history.db` lives. |
+| `calendar` | NYSE trading days: full-day holidays (with weekend observance and Good Friday) and `TradingDaysBetween`. |
+| `cliutils` | Small CLI helpers: the default market DB path and `PopSubcommand`, which pulls a subcommand off `os.Args` so `flag.Parse` still works. |
+| `storage` | SQLite access (WAL, `sqlx`): bar upsert and fetch, signal, trade, equity-curve and performance persistence, unique per-run result DBs (`name.db`, `name_2.db`, ...), and the option-history tables. |
+| `refdb` | The reference database `settings.db`: ETF universes and the fitted per-ETF decision-tree configs. |
+| `datasource` | Pluggable market-data providers: CSV, Yahoo Finance, Stooq, an existing SQLite table, and Polygon (equity bars and option reference and end-of-day data). |
+
+**The engine**
+
+| Package | Purpose |
+|---|---|
+| `strategy` | The `Strategy` interface and central registry (case, dash and underscore insensitive lookup), `StrategyConfig`, the technical indicators (SMA, EMA, RSI, Bollinger, MACD, Donchian, ATR), stack helpers (`IsStack`, `ParseStack`, `StackID` for `a+b+c` priority stacks), decision-tree fitting, every Go strategy, and the loader that registers SQL-pipeline strategies from `sql/strategies/`. |
+| `simulator` | The day-by-day portfolio simulation: `PortfolioSimulator` for one strategy and `SharedAccountSimulator` for a priority stack on one cash ledger, position sizers, stop and target evaluation, idle-cash statistics, the concurrent runner, and the live entry model (`NextDayLimitEntry`) that fills like the live pipeline does. |
+| `analytics` | Performance metrics (CAGR, Sharpe, Sortino, Calmar, Omega, Ulcer, alpha and beta) and the multi-strategy HTML comparison report. |
+| `charting` | Reusable Chart.js HTML report components. |
+| `options` | Option-history download planning, the covered-call cycle simulation, and dividend recovery from adjusted-close data. |
+| `runner` | Shared execution helpers used by `backtest`, `gridsearch`, `scoreboard`, `livescan` and `trade_orchestrator`: run one strategy or a stack, stack evaluation with overlay candidates, the live signal scan (`RunSignalScan`, `RunLiveScan`), as-of session resolution (refuses stale data), coverage and staleness checks for cached results, download orchestration, and tear-sheet printing. |
+
+**Command implementations** (each has a matching `cmd/` binary, listed below)
+
+| Package | Purpose |
+|---|---|
+| `backtest` | The main backtester and its subcommands (`covered-call`, `optimized`, `stale`, `stack-eval`). |
+| `download` | The multi-source market-data loader, including option history. |
+| `livescan` | Today's or tomorrow's ENTER or NO_SIGNAL status for each strategy, over the same signal code the backtest uses. |
+| `gridsearch` | Multi-core parameter sweeps, with a persisted pipeline controller so interrupted runs resume, plus `params` and `stale` subcommands. |
+| `scoreboard` | The cross-strategy leaderboard. |
+| `strateval` | Additive in-sample and out-of-sample evaluation, tier A to D gating, and a lifecycle ledger. It never changes `STRATEGY_ALLOWLIST`. |
+| `study` | The registry of ad-hoc statistical studies (decision-tree reverse engineering, leveraged-ETF gain frequency, Granger causality, ETF comparisons) and their runner. |
+| `etf_decision_trees` | Fits a CloudForest decision tree per ETF and saves the best-found config to `settings.db`. |
+| `etf_universe` | Discovers active US ETF tickers through Polygon and saves them to `settings.db`. |
+| `ticker_scan` | Applies the MARA "Precision 200-SMA Bounce" tree across every symbol to see where the pattern generalizes. |
+| `audit_shared` | SQL audit of a shared-account result database. |
+| `compare_annual_report` | Standalone versus shared-account annual comparison report. |
+| `granger_chart` | Granger-causality dashboard from a study's results. |
+| `candlesticks` | A candlestick chart for a fixed set of symbols (Go-ECharts). |
+| `ui` | The local web dashboard server. |
+| `dataflare` | Launches the macOS Dataflare SQLite GUI on a database. |
+
+## ⌨️ Commands (`cmd/`)
+
+Every binary is `cmd/<name>/main.go`, five lines that call `pkg/<name>.Main()`. Build them all with `make build`; they land in `bin/`. Flags and examples for each are in the "Full Command Reference" above.
+
+| Command | What it does |
+|---|---|
+| `download` | Loads daily (or 1h, 5m, 1m) bars into the market DB from CSV, Yahoo, Stooq or Polygon, skipping ranges already cached. Also pulls option history. |
+| `backtest` | Runs one strategy, a comma list, `all`, or a stack (`a+b+c`) on a shared cash ledger, and writes a per-strategy SQLite result database plus tear sheet and HTML report. Subcommands: `covered-call`, `optimized` (uses the best gridsearch parameters), `stale` (which cached results are out of date), `stack-eval` (tries overlay strategies under a primary). |
+| `livescan` | Shows which strategies have a buy signal as of the latest completed session. It refuses to scan stale market data. |
+| `gridsearch` | Sweeps stop, target, hold and regime parameters across many strategies on all cores and stores the results. Subcommands: `params` (print the grid) and `stale`. |
+| `scoreboard` | Backtests what is missing, then compiles a leaderboard across all strategies into `reports/scoreboard.db`. Subcommands: `compile` (from existing results) and `status`. |
+| `strateval` | Evaluates a strategy in-sample and out-of-sample, assigns a tier, and keeps a lifecycle ledger. Subcommands: `report`, `status`, `sync-deployed` (record which strategies are live), `path`. |
+| `study` | Runs a registered statistical study (`-study <id>`). |
+| `etf_decision_trees` | Fits per-ETF decision trees and registers each qualifying ETF as a `dt_<symbol>` strategy. |
+| `etf_universe` | Refreshes the ETF ticker universe from Polygon. |
+| `ticker_scan` | Scans every symbol for the MARA tree-bounce pattern. |
+| `audit_shared` | Audits a shared-account run's SQL results. |
+| `compare_annual_report` | Compares standalone and shared-account annual results in one HTML report. |
+| `granger_chart` | Renders the Granger-causality dashboard (run the `march_april_voo_gld_uten` study first). |
+| `candlesticks` | Writes `reports/candlesticks_go.html`, a candlestick chart (symbols and dates are constants in the source). |
+| `ui` | Serves the local dashboard (default port 8085, `-port` to change). |
+| `dataflare` | `dataflare [path_to_db]` opens the macOS Dataflare app. |
 
 ---
 
