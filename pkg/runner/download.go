@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -111,6 +112,11 @@ func RunDownloadContext(ctx context.Context, targetDb, targetTable string, symbo
 				if ferr != nil {
 					if cov.BarCount == 0 {
 						fail(fmt.Errorf("%s: fetch %s..%s: %w", sym, win.StartDate.Format("2006-01-02"), win.EndDate.Format("2006-01-02"), ferr))
+					} else {
+						// Tolerated (the cached bars stay usable), but say so: a stale
+						// tip otherwise surfaces only as STALE_MARKET_DATA downstream.
+						log.Printf("[download] %s: top-up %s..%s failed, keeping cached bars through %s: %v",
+							sym, win.StartDate.Format("2006-01-02"), win.EndDate.Format("2006-01-02"), cov.MaxDate, ferr)
 					}
 					continue
 				}

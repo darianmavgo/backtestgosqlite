@@ -99,12 +99,12 @@ func executeOverlay(strat strategy.Strategy, spec strategy.OverlaySpec, cfg stra
 			log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
 		}
 		if err := storage.SaveRunMetrics(db, strat.ID(), []storage.RunMetric{
-			{"calls_sold", float64(len(res.Trades))}, {"calls_skipped_no_quote", float64(res.Skipped)},
-			{"exercised", float64(res.Assigned)}, {"rebuys", float64(res.Rebuys)},
-			{"premium_collected", res.Premium}, {"upside_surrendered", res.Settlement},
-			{"dividends_withdrawn", res.WithdrawnDividends}, {"account_value_end", res.FinalAccountValue},
-			{"avg_otm_pct_at_sale", avgOTM},
-			{"buyhold_total_return_pct", bh.TotalReturnPct * 100}, {"buyhold_max_drawdown_pct", bh.MaxDrawdownPct * 100},
+			{Name: "calls_sold", Value: float64(len(res.Trades))}, {Name: "calls_skipped_no_quote", Value: float64(res.Skipped)},
+			{Name: "exercised", Value: float64(res.Assigned)}, {Name: "rebuys", Value: float64(res.Rebuys)},
+			{Name: "premium_collected", Value: res.Premium}, {Name: "upside_surrendered", Value: res.Settlement},
+			{Name: "dividends_withdrawn", Value: res.WithdrawnDividends}, {Name: "account_value_end", Value: res.FinalAccountValue},
+			{Name: "avg_otm_pct_at_sale", Value: avgOTM},
+			{Name: "buyhold_total_return_pct", Value: bh.TotalReturnPct * 100}, {Name: "buyhold_max_drawdown_pct", Value: bh.MaxDrawdownPct * 100},
 		}); err != nil {
 			log.Printf("Warning: Failed to save run metrics to %s: %v", outDBPath, err)
 		}

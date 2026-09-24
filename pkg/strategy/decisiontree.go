@@ -3,8 +3,6 @@ package strategy
 import (
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -317,7 +315,7 @@ func computeDecisionTreeSamplesSQL(marketDBPath, calcDBPath, pipelineDir, symbol
 
 	cfg := StrategyConfig{Benchmark: symbol}
 	for _, fileName := range []string{"01_schema.sql", "02_calc_features.sql"} {
-		content, err := os.ReadFile(filepath.Join(pipelineDir, fileName))
+		content, err := readPipelineFile(pipelineDir, fileName)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", fileName, err)
 		}

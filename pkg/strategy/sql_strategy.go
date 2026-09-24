@@ -161,7 +161,7 @@ func (s *SQLPipelineStrategy) RequiredSymbols() []string {
 	if s.pipelineDir == "" {
 		return nil
 	}
-	files, err := os.ReadDir(s.pipelineDir)
+	files, err := readPipelineDir(s.pipelineDir)
 	if err != nil {
 		return nil
 	}
@@ -171,7 +171,7 @@ func (s *SQLPipelineStrategy) RequiredSymbols() []string {
 
 	for _, f := range files {
 		if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
-			content, err := os.ReadFile(filepath.Join(s.pipelineDir, f.Name()))
+			content, err := readPipelineFile(s.pipelineDir, f.Name())
 			if err != nil {
 				continue
 			}
@@ -202,6 +202,16 @@ func (s *SQLPipelineStrategy) RequiredSymbols() []string {
 // market-DB-as-source-of-truth setup without duplicating the DSN/attach
 // boilerplate.
 func openAttachedCalcDB(marketDBPath, calcDBPath string) (*sqlx.DB, error) {
+	// The calc DB's directory may not exist yet (livescan writes to a fresh temp
+	// directory on App Engine). Without it the ATTACH below fails with "unable to
+	// open database file", the pipeline returns no signals, and a real entry signal
+	// is reported as NO_SIGNAL.
+	if dir := filepath.Dir(calcDBPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create calc DB dir %s: %w", dir, err)
+		}
+	}
+
 	dsn := calcDBPath
 	if !strings.Contains(dsn, "?") {
 		dsn += "?_busy_timeout=15000&_journal_mode=WAL"
@@ -246,8 +256,12 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 	defer db.Close()
 
 	// Execute pipeline scripts in lexical order
-	files, err := os.ReadDir(s.pipelineDir)
-	if err == nil {
+	files, err := readPipelineDir(s.pipelineDir)
+	if err != nil {
+		// Never fail silently: with no SQL run there are no slice tables, and a
+		// real entry signal would be reported as NO_SIGNAL.
+		log.Printf("[sql_strategy %s] ERROR: cannot read pipeline %s, no signals will be produced: %v", s.id, s.pipelineDir, err)
+	} else {
 		var sqlFiles []string
 		for _, f := range files {
 			if !f.IsDir() && strings.HasSuffix(f.Name(), ".sql") {
@@ -256,13 +270,13 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 				if strings.Contains(lower, "audit") || strings.Contains(lower, "annual") || strings.Contains(lower, "report") || strings.Contains(lower, "compare") {
 					continue
 				}
-				sqlFiles = append(sqlFiles, filepath.Join(s.pipelineDir, f.Name()))
+				sqlFiles = append(sqlFiles, f.Name())
 			}
 		}
 		sort.Strings(sqlFiles)
 
 		for _, sqlFile := range sqlFiles {
-			content, err := os.ReadFile(sqlFile)
+			content, err := readPipelineFile(s.pipelineDir, sqlFile)
 			if err != nil {
 				log.Printf("[sql_strategy %s] failed to read %s: %v", s.id, sqlFile, err)
 				continue

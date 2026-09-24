@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -15,7 +16,9 @@ type YFResponse struct {
 	Chart struct {
 		Result []struct {
 			Meta struct {
-				Symbol string `json:"symbol"`
+				Symbol             string  `json:"symbol"`
+				RegularMarketPrice float64 `json:"regularMarketPrice"`
+				RegularMarketTime  int64   `json:"regularMarketTime"`
 			} `json:"meta"`
 			Timestamp  []int64 `json:"timestamp"`
 			Indicators struct {
@@ -114,8 +117,20 @@ func (y *YahooDataSource) Fetch(ctx context.Context, req FetchRequest) ([]models
 
 	var bars []models.Bar
 	for i, ts := range timestamps {
-		if i >= len(quotes.Open) || quotes.Open[i] == nil || quotes.Close[i] == nil {
+		if i >= len(quotes.Open) || quotes.Open[i] == nil {
 			continue
+		}
+		if quotes.Close[i] == nil {
+			// Yahoo leaves the just-closed session's close (and adjclose) null for
+			// a while but carries open/high/low/volume. Without this the bar is
+			// dropped and the market DB tip stays a session behind.
+			c, ok := settledCloseFromMeta(i == len(timestamps)-1, ts, quotes.High[i], quotes.Low[i], res.Meta.RegularMarketPrice, res.Meta.RegularMarketTime)
+			if !ok {
+				continue
+			}
+			log.Printf("[yahoo] %s %s: close is null; using settled regularMarketPrice %.4f (a later refresh replaces it with Yahoo's own close)",
+				req.Symbol, time.Unix(ts, 0).UTC().Format("2006-01-02"), c)
+			quotes.Close[i] = &c
 		}
 		t := time.Unix(ts, 0).UTC()
 		dateStr := t.Format("2006-01-02")
@@ -154,4 +169,33 @@ func (y *YahooDataSource) Fetch(ctx context.Context, req FetchRequest) ([]models
 	}
 
 	return bars, nil
+}
+
+// settledCloseFromMeta returns the regular-session close for a daily bar whose
+// close Yahoo left null, taken from the response's regularMarketPrice. It only
+// does so when that price is safe to treat as the official close:
+//   - the bar is the last one returned (an older bar with a null close is a real
+//     data gap, not a pending close);
+//   - regularMarketTime is on the bar's own America/New_York date and at or after
+//     the 16:00 ET close, so an in-progress session never yields a partial bar;
+//   - the price is positive and inside the bar's own high/low range.
+//
+// Early-close days (13:00 ET) fail the 16:00 test and are left to Yahoo.
+func settledCloseFromMeta(isLast bool, barTS int64, high, low *float64, price float64, marketTS int64) (float64, bool) {
+	if !isLast || price <= 0 || marketTS <= 0 || high == nil || low == nil {
+		return 0, false
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return 0, false
+	}
+	bar := time.Unix(barTS, 0).In(loc)
+	mkt := time.Unix(marketTS, 0).In(loc)
+	if bar.Format("2006-01-02") != mkt.Format("2006-01-02") || mkt.Hour() < 16 {
+		return 0, false
+	}
+	if price < *low || price > *high {
+		return 0, false
+	}
+	return price, true
 }
