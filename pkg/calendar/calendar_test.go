@@ -51,3 +51,35 @@ func TestTradingDaysBetween(t *testing.T) {
 		t.Errorf("reversed = %d, want 0", got)
 	}
 }
+
+func TestAddTradingDaysInvertsTradingDaysBetween(t *testing.T) {
+	d := func(y int, m time.Month, day int) time.Time { return time.Date(y, m, day, 0, 0, 0, 0, time.UTC) }
+	cases := []struct {
+		name  string
+		start time.Time
+		n     int
+		want  time.Time
+	}{
+		{"zero days is the same date", d(2026, 9, 24), 0, d(2026, 9, 24)},
+		{"Thursday + 1 = Friday", d(2026, 9, 24), 1, d(2026, 9, 25)},
+		{"Friday + 1 skips the weekend", d(2026, 9, 25), 1, d(2026, 9, 28)},
+		{"Friday + 5 is next Friday", d(2026, 9, 25), 5, d(2026, 10, 2)},
+		{"skips a holiday: day before Labor Day + 1", d(2026, 9, 4), 1, d(2026, 9, 8)},
+		{"a Saturday start: the next session is Monday", d(2026, 9, 26), 1, d(2026, 9, 28)},
+	}
+	for _, c := range cases {
+		got := AddTradingDays(c.start, c.n)
+		if !got.Equal(c.want) {
+			t.Errorf("%s: AddTradingDays(%s, %d) = %s, want %s", c.name, c.start.Format("2006-01-02"), c.n, got.Format("2006-01-02"), c.want.Format("2006-01-02"))
+		}
+	}
+	// Round trip against the counting function, for every start day of a month.
+	for day := 1; day <= 28; day++ {
+		start := d(2026, 9, day)
+		for n := 1; n <= 7; n++ {
+			if got := TradingDaysBetween(start, AddTradingDays(start, n)); got != n {
+				t.Errorf("round trip from %s with n=%d gave %d", start.Format("2006-01-02"), n, got)
+			}
+		}
+	}
+}

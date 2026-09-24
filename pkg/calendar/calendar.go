@@ -46,6 +46,20 @@ func TradingDaysBetween(start, end time.Time) int {
 	return days
 }
 
+// AddTradingDays returns the date n sessions after start's date, the inverse of
+// TradingDaysBetween: TradingDaysBetween(start, AddTradingDays(start, n)) == n.
+// n <= 0 returns start's date. The result is midnight UTC of that date.
+func AddTradingDays(start time.Time, n int) time.Time {
+	cur := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	for n > 0 {
+		cur = cur.AddDate(0, 0, 1)
+		if IsSession(cur) {
+			n--
+		}
+	}
+	return cur
+}
+
 // holidays returns the observed NYSE full-day closures for year.
 func holidays(year int) []time.Time {
 	d := func(m time.Month, day int) time.Time { return time.Date(year, m, day, 0, 0, 0, 0, time.UTC) }
