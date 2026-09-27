@@ -30,7 +30,7 @@ streak_grp AS (
     -- down_grp is 0 for non-down rows (not the running sum) so a non-down day
     -- never shares a group with the down-streak that starts right after it —
     -- see sql/strategies/gld_decline/02_calc_gld_streaks_slice.sql for the
-    -- same boundary-row fix.
+    -- same boundary-row logic.
     SELECT
         *,
         CASE WHEN is_down = 1
