@@ -20,9 +20,7 @@ type Study interface {
 	Run() error
 }
 
-// ClusterDBSetter is implemented by studies that read regime labels from a
-// database other than the market-bar source. study.Run calls SetClusterDB
-// when the study implements it.
-type ClusterDBSetter interface {
-	SetClusterDB(path string)
+// SymbolAware is an optional interface for studies that can accept a target symbol via CLI.
+type SymbolAware interface {
+	SetSymbol(sym string)
 }
