@@ -1,4 +1,4 @@
-.PHONY: all build clean test tidy backtest download livescan ui study example-csv list
+.PHONY: all build clean test tidy backtest download ui server compare example-csv list
 
 # Go Parameters
 GOCMD=go
@@ -19,12 +19,16 @@ build: tidy
 	$(GOBUILD) -o $(BIN_DIR)/download ./cmd/download
 	@echo "Building cmd/backtest..."
 	$(GOBUILD) -o $(BIN_DIR)/backtest ./cmd/backtest
-	@echo "Building cmd/livescan..."
-	$(GOBUILD) -o $(BIN_DIR)/livescan ./cmd/livescan
 	@echo "Building cmd/ui..."
 	$(GOBUILD) -o $(BIN_DIR)/ui ./cmd/ui
-	@echo "Building cmd/study..."
-	$(GOBUILD) -o $(BIN_DIR)/study ./cmd/study
+	@echo "Building cmd/server..."
+	$(GOBUILD) -o $(BIN_DIR)/server ./cmd/server
+	@echo "Building cmd/compare..."
+	$(GOBUILD) -o $(BIN_DIR)/compare ./cmd/compare
+	@echo "Building cmd/scan_check..."
+	$(GOBUILD) -o $(BIN_DIR)/scan_check ./cmd/scan_check
+	@echo "Building cmd/stop_prob..."
+	$(GOBUILD) -o $(BIN_DIR)/stop_prob ./cmd/stop_prob
 	@echo "✅ All binaries built successfully in $(BIN_DIR)/"
 
 tidy:
@@ -33,34 +37,26 @@ tidy:
 
 test:
 	@echo "Running tests..."
-	go test -v ./pkg/... ./cmd/...
+	$(GOTEST) -v ./internal/... ./cmd/...
 
 list: build
 	./$(BIN_DIR)/backtest -list
 
 backtest: build
-	@echo "Running default backtest (sig-voo-buy-tecl)..."
-	./$(BIN_DIR)/backtest -strategy sig-voo-buy-tecl -capital 100000
-
-livescan: build
-	@echo "Running live scan for entry signals today/tomorrow..."
-	./$(BIN_DIR)/livescan -strategy sig-voo-buy-tecl -capital 100000
+	@echo "Running default backtest (BB-Capitulation)..."
+	./$(BIN_DIR)/backtest -strategy bb-capitulation -capital 100000
 
 example-csv: build
 	@echo "Running custom CSV ingestion and backtest example..."
 	./examples/custom_csv_backtest/run_example.sh
 
 download: build
-	@echo "Downloading 4 years of history for top 50 symbols into market_history.db..."
-	./$(BIN_DIR)/download -db data/market_history.db -settings refdata/settings.db -table leveraged_etf -limit 50 -years 4
+	@echo "Downloading 4 years of history for top 50 symbols..."
+	./$(BIN_DIR)/download -db data/leveraged_backtest.db -settings data/settings.db -table leveraged_etf -limit 50 -years 4
 
 ui: build
 	@echo "Launching UI server on http://localhost:8080..."
-	./$(BIN_DIR)/ui -port 8080 -master data/wc_master_backtest.db -settings refdata/settings.db
-
-study: build
-	@echo "Running Daily 5% Gain Frequency & Leveraged ETF Study..."
-	./$(BIN_DIR)/study -study gain_5pct_frequency
+	./$(BIN_DIR)/ui -port 8080 -master data/wc_master_backtest.db -settings data/settings.db
 
 server: build
 	@echo "Launching live trading GAE server on http://localhost:8080..."
@@ -73,20 +69,3 @@ compare: build
 clean:
 	@echo "Cleaning binaries..."
 	rm -rf $(BIN_DIR)/*
-
-# --- strategy eval loop (additive; does not touch live allowlist) ---
-.PHONY: strateval strateval-list strateval-report
-strateval-list:
-	go run ./cmd/strateval -list
-strateval:
-	go run ./cmd/strateval -strategy "$(or $(STRATEGY),all)" $(if $(OPTIMIZE),-optimize,) -allowlist "$(STRATEGY_ALLOWLIST)"
-strateval-report:
-	go run ./cmd/strateval report -allowlist "$(STRATEGY_ALLOWLIST)"
-
-.PHONY: strateval-status strateval-sync strateval-path
-strateval-status:
-	go run ./cmd/strateval status
-strateval-sync:
-	go run ./cmd/strateval sync-deployed -allowlist "$(STRATEGY_ALLOWLIST)"
-strateval-path:
-	go run ./cmd/strateval path
