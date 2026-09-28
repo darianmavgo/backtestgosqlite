@@ -23,6 +23,21 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// parseSymbolArgs reads leftover CLI args as tickers. Commas are separators,
+// not part of the symbol, so "VOO," "IEF," and "VOO,IEF" all parse.
+func parseSymbolArgs(args []string) []string {
+	var out []string
+	for _, arg := range args {
+		for _, part := range strings.Split(arg, ",") {
+			part = strings.ToUpper(strings.TrimSpace(part))
+			if part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
+}
+
 func getSymbolsFromTable(settingsDbPath, tableName string, limit int) ([]string, error) {
 	db, err := sqlx.Open("sqlite", settingsDbPath)
 	if err != nil {
@@ -102,7 +117,7 @@ func Main() {
 	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, polygon-options, stooq, csv")
 	flag.StringVar(&cfg.PolygonKey, "polygon-key", d.PolygonKey, "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	flag.StringVar(&cfg.CSV, "csv", d.CSV, "Path to CSV file or directory of CSV files (used with -source csv)")
-	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated list of symbols to download/import (e.g. SPY,QQQ,TQQQ)")
+	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated symbols to download (e.g. SPY,QQQ). Bare arguments work too: download VOO, IEF, GLD")
 	flag.StringVar(&cfg.Universe, "list", d.Universe, "etf_universe list in the settings DB to download (all, 6yr, sweep)")
 	flag.StringVar(&cfg.Table, "table", d.Table, "Table name in settings.db with symbols (fallback if no symbols specified)")
 	flag.IntVar(&cfg.Limit, "limit", d.Limit, "Limit number of symbols (0 for all)")
@@ -117,6 +132,13 @@ func Main() {
 	flag.IntVar(&cfg.Rate, "rate", d.Rate, "(polygon-options) API calls per minute; 5 = Polygon free tier, 0 = unthrottled (paid)")
 	flag.IntVar(&cfg.MaxCalls, "max-calls", d.MaxCalls, "(polygon-options) stop after this many API calls (0 = no cap); reruns resume, finished contracts are skipped")
 	flag.Parse()
+	// ./bin/download VOO, IEF, GLD  — the shell splits on spaces, so each
+	// ticker arrives as its own arg, often with a trailing comma.
+	if strings.TrimSpace(cfg.Symbols) == "" {
+		if syms := parseSymbolArgs(flag.Args()); len(syms) > 0 {
+			cfg.Symbols = strings.Join(syms, ",")
+		}
+	}
 	cfg.Out = os.Stdout
 	if strings.TrimSpace(cfg.PolygonKey) == "" {
 		cfg.PolygonKey = datasource.ResolvePolygonAPIKey() // POLYGON_API_KEY / .env: CLI only, Run never reads the environment
@@ -257,7 +279,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 	}
 
 	if len(symbols) == 0 {
-		return nil, fmt.Errorf("No symbols resolved. Specify -symbols SPY,QQQ or -list <name> or -table <name>")
+		return nil, fmt.Errorf("No symbols resolved. Pass tickers (download VOO, IEF, GLD) or -symbols SPY,QQQ or -list <name> or -table <name>")
 	}
 
 	fmt.Fprintf(out, "Database: %s (Table: %s)\n", cfg.DB, cfg.TargetTable)

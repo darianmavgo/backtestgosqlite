@@ -13,9 +13,10 @@ import (
 
 // Config holds the settings of a study run.
 type Config struct {
-	DB     string // source market DB
-	Study  string // study ID
-	OutDir string // directory for the results DB
+	DB        string // source market DB
+	Study     string // study ID
+	OutDir    string // directory for the results DB
+	ClusterDB string // regime-label DB for studies that implement ClusterDBSetter
 }
 
 // DefaultConfig returns the CLI defaults.
@@ -34,6 +35,13 @@ func Run(cfg Config) (string, error) {
 	}
 	resultsDBPath := filepath.Join(cfg.OutDir, fmt.Sprintf("%s.db", s.ID()))
 	s.SetDatabases(cfg.DB, resultsDBPath)
+	if setter, ok := s.(ClusterDBSetter); ok {
+		clusterDB := cfg.ClusterDB
+		if clusterDB == "" {
+			clusterDB = filepath.Join(cfg.OutDir, "market_context_20d.db")
+		}
+		setter.SetClusterDB(clusterDB)
+	}
 	if err := s.Run(); err != nil {
 		return "", fmt.Errorf("study execution failed: %w", err)
 	}
@@ -46,6 +54,7 @@ func Main() {
 	flag.StringVar(&cfg.DB, "db", cfg.DB, "Path to source SQLite DB containing historical market bars")
 	flag.StringVar(&cfg.Study, "study", "", "Study ID to run (e.g. march_april_voo_gld_uten)")
 	flag.StringVar(&cfg.OutDir, "out-dir", cfg.OutDir, "Directory to write study results (SQLite database)")
+	flag.StringVar(&cfg.ClusterDB, "cluster-db", "", "Regime-label database for studies that use one (default: <out-dir>/market_context_20d.db)")
 	listFlag := flag.Bool("list", false, "List all registered studies")
 	flag.Parse()
 

@@ -8,6 +8,27 @@ import (
 	"testing"
 )
 
+func TestParseSymbolArgs(t *testing.T) {
+	got := parseSymbolArgs([]string{"VOO,", "IEF,", "GLD,", "USO,", "HYG"})
+	want := []string{"VOO", "IEF", "GLD", "USO", "HYG"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	got = parseSymbolArgs([]string{"voo,ief", " gld "})
+	want = []string{"VOO", "IEF", "GLD"}
+	if len(got) != len(want) || got[0] != "VOO" || got[1] != "IEF" || got[2] != "GLD" {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if len(parseSymbolArgs(nil)) != 0 {
+		t.Fatal("empty args should yield no symbols")
+	}
+}
+
 func TestRunRequiresDBAndPolygonKey(t *testing.T) {
 	if _, err := Run(context.Background(), Config{}); err == nil {
 		t.Fatal("expected error for empty DB")

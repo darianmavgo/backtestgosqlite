@@ -19,3 +19,10 @@ type Study interface {
 	// Run executes the study logic.
 	Run() error
 }
+
+// ClusterDBSetter is implemented by studies that read regime labels from a
+// database other than the market-bar source. study.Run calls SetClusterDB
+// when the study implements it.
+type ClusterDBSetter interface {
+	SetClusterDB(path string)
+}
