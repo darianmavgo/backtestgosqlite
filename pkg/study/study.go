@@ -19,3 +19,8 @@ type Study interface {
 	// Run executes the study logic.
 	Run() error
 }
+
+// SymbolAware is an optional interface for studies that can accept a target symbol via CLI.
+type SymbolAware interface {
+	SetSymbol(sym string)
+}

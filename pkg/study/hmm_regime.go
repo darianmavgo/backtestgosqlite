@@ -13,6 +13,7 @@ import (
 type HMMRegimeStudy struct {
 	marketDBPath  string
 	resultsDBPath string
+	symbol        string
 }
 
 func init() {
@@ -28,7 +29,7 @@ func (s *HMMRegimeStudy) Name() string {
 }
 
 func (s *HMMRegimeStudy) Description() string {
-	return "Uses a Hidden Markov Model to detect Bull, Sideways, and Bear regimes for a target asset (QQQ) based on returns."
+	return "Uses a Hidden Markov Model to detect Bull, Sideways, and Bear regimes for a target asset (defaults to QQQ) based on returns."
 }
 
 func (s *HMMRegimeStudy) SetDatabases(marketDB, resultsDB string) {
@@ -36,9 +37,16 @@ func (s *HMMRegimeStudy) SetDatabases(marketDB, resultsDB string) {
 	s.resultsDBPath = resultsDB
 }
 
+func (s *HMMRegimeStudy) SetSymbol(sym string) {
+	s.symbol = sym
+}
+
 func (s *HMMRegimeStudy) Run() error {
-	symbol := "QQQ"
-	fmt.Printf("Running HMM Regime Detection Study for %s...\n", symbol)
+	targetSymbol := "QQQ"
+	if s.symbol != "" {
+		targetSymbol = s.symbol
+	}
+	fmt.Printf("Running HMM Regime Detection Study for %s...\n", targetSymbol)
 
 	marketDB, err := storage.OpenSQLite(s.marketDBPath)
 	if err != nil {
@@ -46,14 +54,14 @@ func (s *HMMRegimeStudy) Run() error {
 	}
 	defer marketDB.Close()
 
-	barsBySymbol, _, err := storage.FetchBars(marketDB, "backtest_start", []string{symbol}, "1d", "equity")
+	barsBySymbol, _, err := storage.FetchBars(marketDB, "backtest_start", []string{targetSymbol}, "1d", "equity")
 	if err != nil {
-		return fmt.Errorf("failed to fetch bars for %s: %w", symbol, err)
+		return fmt.Errorf("failed to fetch bars for %s: %w", targetSymbol, err)
 	}
-	bars := barsBySymbol[symbol]
+	bars := barsBySymbol[targetSymbol]
 
 	if len(bars) < 100 {
-		return fmt.Errorf("not enough bars for %s", symbol)
+		return fmt.Errorf("not enough bars for %s", targetSymbol)
 	}
 
 	sort.Slice(bars, func(i, j int) bool { return bars[i].Date < bars[j].Date })
@@ -142,7 +150,7 @@ func (s *HMMRegimeStudy) Run() error {
 		return err
 	}
 	for i := 0; i < len(returns); i++ {
-		_, err = stmt.Exec(bars[i+1].Date, symbol, returns[i], path[i])
+		_, err = stmt.Exec(bars[i+1].Date, targetSymbol, returns[i], path[i])
 		if err != nil {
 			return err
 		}
