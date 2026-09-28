@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/internal/models"
 )
 
 //go:embed report_template.html
@@ -17,7 +17,6 @@ var reportTemplateHTML string
 
 type MultiStrategyHTMLData struct {
 	Title          string                   `json:"title"`
-	GeneratedAt    string                   `json:"generated_at"`
 	Symbol         string                   `json:"symbol"`
 	StartDate      string                   `json:"start_date"`
 	EndDate        string                   `json:"end_date"`
@@ -40,14 +39,19 @@ type StrategyReportData struct {
 
 // GenerateComparisonHTML creates a rich, modern, interactive HTML report with Chart.js charts.
 func GenerateComparisonHTML(outputPath string, data MultiStrategyHTMLData) error {
+	// Inject date-partitioned subdirectory based on today's date
 	dir := filepath.Dir(outputPath)
-	if dir != "" {
-		_ = os.MkdirAll(dir, 0755)
+	base := filepath.Base(outputPath)
+	today := time.Now().Format("2006-01-02")
+
+	// Create partitioned directory path
+	partitionedDir := filepath.Join(dir, today)
+	if partitionedDir != "" {
+		_ = os.MkdirAll(partitionedDir, 0755)
 	}
 
-	if data.GeneratedAt == "" {
-		data.GeneratedAt = time.Now().Format("2006-01-02 15:04:05 MST")
-	}
+	// Reconstruct the full output path
+	partitionedOutputPath := filepath.Join(partitionedDir, base)
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
@@ -55,14 +59,13 @@ func GenerateComparisonHTML(outputPath string, data MultiStrategyHTMLData) error
 	}
 
 	replacements := map[string]string{
-		"{{TITLE}}":        data.Title,
-		"{{GENERATED_AT}}": data.GeneratedAt,
-		"{{START_DATE}}":   data.StartDate,
-		"{{END_DATE}}":     data.EndDate,
-		"{{TOTAL_YEARS}}":  fmt.Sprintf("%.1f", data.TotalYears),
-		"{{TOTAL_DAYS}}":   fmt.Sprintf("%d", data.TotalDays),
-		"{{INITIAL_CAP}}":  fmt.Sprintf("%.2f", data.InitialCap),
-		"{{JSON_DATA}}":    string(jsonBytes),
+		"{{TITLE}}":       data.Title,
+		"{{START_DATE}}":  data.StartDate,
+		"{{END_DATE}}":    data.EndDate,
+		"{{TOTAL_YEARS}}": fmt.Sprintf("%.1f", data.TotalYears),
+		"{{TOTAL_DAYS}}":  fmt.Sprintf("%d", data.TotalDays),
+		"{{INITIAL_CAP}}": fmt.Sprintf("%.2f", data.InitialCap),
+		"{{JSON_DATA}}":   string(jsonBytes),
 	}
 
 	outputContent := reportTemplateHTML
@@ -70,5 +73,5 @@ func GenerateComparisonHTML(outputPath string, data MultiStrategyHTMLData) error
 		outputContent = strings.ReplaceAll(outputContent, k, v)
 	}
 
-	return os.WriteFile(outputPath, []byte(outputContent), 0644)
+	return os.WriteFile(partitionedOutputPath, []byte(outputContent), 0644)
 }
