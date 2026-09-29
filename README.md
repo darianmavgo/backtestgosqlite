@@ -308,11 +308,11 @@ backtestgosqlite/
 
 ## Validation
 
-Two analyst commands test a strategy on data it has not trained on. They are not scheduled jobs. Each binary in `cmd/` calls the same function in `pkg/`.
+Four checks compare a live strategy with its backtest. Each one is a `pkg/` function with a thin `cmd/` wrapper, and each writes its own table. Run them from the CLI when you want a report. They are not on the cron schedule. Walk-forward and the curve-fit check live in this repo. Trade reconciliation and the slippage audit live in `trade_orchestrator`.
 
-### `walk_forward`
+### Walk-forward
 
-Rolling in-sample and out-of-sample windows. Signals are generated once on the full bar history. Each window is simulated from a flat book, and only that window's dates count. Writes `walk_forward_fold` and `walk_forward_summary`. Returns in those tables are fractions (0.05 is five percent).
+Rolls an in-sample window forward and simulates each out-of-sample window from a flat book. Signals are generated once on the full history. Only that window's dates are simulated. Writes `walk_forward_fold` and `walk_forward_summary`. Returns in those tables are fractions (`0.05` is five percent).
 
 ```bash
 go run ./cmd/walk_forward -strategy tsll-daily-one-share -market-db data/market.db -table backtest_start -db reports/walk_forward.db -train-months 24 -test-months 6 -step-months 6 -capital 100000
@@ -329,9 +329,9 @@ go run ./cmd/walk_forward -strategy tsll-daily-one-share -market-db data/market.
 | `-step-months` | 6 | How far the next fold moves forward |
 | `-capital` | 100000 | Starting capital for each window |
 
-### `check_overfit`
+### Curve-fit check
 
-Reads `walk_forward_summary` and writes `check_overfit`. It does not re-simulate. Run `walk_forward` first.
+Reads `walk_forward_summary` and writes `check_overfit`. It does not re-simulate. Run `walk_forward` first. Verdicts are `HOLDS`, `DECAYS`, `CURVE_FIT`, and `INSUFFICIENT`.
 
 ```bash
 go run ./cmd/check_overfit -db reports/walk_forward.db -min-oos-trades 8 -trial-cutoff 20 -decay 0.25
@@ -344,7 +344,38 @@ go run ./cmd/check_overfit -db reports/walk_forward.db -min-oos-trades 8 -trial-
 | `-trial-cutoff` | 20 | A parameter grid at least this large can be `CURVE_FIT` |
 | `-decay` | 0.25 | Out-of-sample Sharpe below this fraction of in-sample Sharpe has collapsed |
 
-Verdicts: `INSUFFICIENT` (too few out-of-sample trades), `CURVE_FIT` (many trials, in-sample Sharpe above 0.5, out-of-sample Sharpe below the decay fraction), `DECAYS` (out-of-sample Sharpe collapsed), `HOLDS` (out-of-sample Sharpe stays positive and at least half of in-sample).
+`INSUFFICIENT` means too few out-of-sample trades. `CURVE_FIT` means many trials, an in-sample Sharpe above 0.5, and an out-of-sample Sharpe below the decay fraction of in-sample. `DECAYS` means the out-of-sample Sharpe collapsed. `HOLDS` means the out-of-sample Sharpe stays positive and at least half of in-sample.
+
+### Trade reconciliation
+
+In `trade_orchestrator`, `reconcile_trades` rebuilds `reconcile_trade`: one row per account, strategy, symbol, and signal date. The live fill is compared with a one-share replay of that same signal through the backtest's entry and exit rules.
+
+```bash
+go run ./cmd/orchestrator reconcile_trades --account 123 --market-db /path/market.db --table backtest_start
+```
+
+`--market-db` defaults to `MARKET_DB`. If that file is missing, the live side is still written and `model_outcome` is `NO_BARS`. `--account` limits staged orders and managed trades to one account. Signals that were never staged are still included. `--table` defaults to `backtest_start`.
+
+### Slippage and latency
+
+`audit_slippage` summarizes that ledger into `audit_slippage`: average entry and exit slippage, the worst entry slippage, slippage versus the limit sent, average sessions from the intended session to the fill, and fees. Run `reconcile_trades` first.
+
+```bash
+go run ./cmd/orchestrator audit_slippage
+```
+
+### How to read a row
+
+- Returns are fractions. `0.05` is five percent.
+- `entry_slippage_bps` is positive when the live entry paid more than the model. `exit_slippage_bps` is positive when the live exit sold higher than the model.
+- `fill_delay_sessions` counts trading sessions from `next_session` to the entry fill. A negative number means the fill was before that session. A fill price of `0` means the broker price is still unknown.
+- Only `mara_tree`, `pdd_tree`, and `sig-voo-buy-tecl` enter on the next session's limit. Every other strategy, including `tsll-daily-one-share`, is replayed on the signal bar, which is how that strategy's backtest fills. The row shows that difference.
+
+### What the live book stores
+
+`manage_exit` keeps the decision key (`strategy_id`, `as_of_date`, `next_session`, the signal ids, and the stage id) plus `entry_fill_price`, `exit_fill_price`, `filled_qty`, `fees`, and `exit_reason_code`. The Schwab order mirror stores `execution_price`. The transaction mirror stores `fees` and `symbol`. Reconciliation copies the broker fill off the order, including a sell nested under the entry, when the managed trade does not already have one. The managed-trades page shows the new columns.
+
+`go build ./...` in this repo still stops on `cmd/backtest`, `cmd/download`, and `internal/storage`. Those files import `internal/` packages that are not in the tree. `./pkg/...`, `cmd/walk_forward`, and `cmd/check_overfit` build.
 
 ## 🛠️ Tech Stack
 
