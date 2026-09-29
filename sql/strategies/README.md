@@ -1,25 +1,24 @@
-# SQL Pipeline Strategies Guide
+# SQL pipelines
 
-`backtestgosqlite` allows trading strategies to be written entirely in standard SQL queries executed directly inside high-performance SQLite in-memory or WAL databases.
+A strategy is defined in Go (`pkg/strategy`) and calculated here. A folder under `sql/strategies/<id>/` is the signal math for the Go strategy with that id. It is not a second strategy type.
 
 ## Directory Structure
 
-To create a new SQL-based strategy:
-1. Create a subdirectory under `sql/strategies/<your_strategy_name>/`.
-2. Add `.sql` script files that execute sequentially (e.g. `01_schema.sql`, `02_calculate_signals.sql`).
-3. The engine automatically discovers all folders in `sql/strategies/` and registers them as CLI strategies named `<your_strategy_name>-sql`.
+1. Register the Go strategy in `pkg/strategy`.
+2. Add `sql/strategies/<id>/` with `.sql` files that run in name order (`01_schema.sql`, `02_calc_signals.sql`, …).
+3. `GenerateSignals` runs that pipeline when the market and calc databases are set.
+
+A folder with no Go strategy is not registered. `AutoRegisterSQLStrategies` still inserts a `<dir>-sql` lookup for a pipeline that already has a Go owner. That id is the same pipeline. Run the Go id.
 
 ```
 sql/strategies/
-├── rsi_oversold/
+├── sig_voo_buy_tecl/
 │   ├── 01_schema.sql
-│   └── 02_calc_rsi_signals.sql
-└── macd_breakout/
+│   └── 03_calc_combo_signals.sql
+└── gld_decline/
     ├── 01_schema.sql
-    └── 02_signals.sql
+    └── 03_calc_signals.sql
 ```
-
-(A prior example strategy here, `whitings_creek/`, was archived — see `_archive/README.md` at the repo root for why and how to restore it.)
 
 ## Contract & Signal Extraction
 
@@ -31,12 +30,9 @@ The backtester looks for an output table containing trade triggers:
   - `rsi_oversold_signals`
   - `entry`
 
-## Running Your SQL Strategy
+## Running
 
 ```bash
-# List all registered Go and SQL strategies
 ./bin/backtest -list
-
-# Execute your SQL strategy
-./bin/backtest -strategy your_strategy_name-sql -capital 100000
+./bin/backtest -strategy sig-voo-buy-tecl -capital 100000
 ```

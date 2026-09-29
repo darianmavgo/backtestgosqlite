@@ -21,13 +21,14 @@ type TreeBounceCombo struct {
 func NewTreeBounceCombo() *TreeBounceCombo {
 	s := &TreeBounceCombo{}
 	Register(s)
+	RegisterAlias("tree_bounce_combo", s)
 	RegisterAlias("mara_pdd_nvdl_combo", s)
 	return s
 }
 
-func (s *TreeBounceCombo) ID() string { return "tree_bounce_combo" }
+func (s *TreeBounceCombo) ID() string { return "mara_pdd_nvdl" }
 
-func (s *TreeBounceCombo) Name() string { return "MARA+PDD+NVDL Tree-Bounce Combo" }
+func (s *TreeBounceCombo) Name() string { return "MARA + PDD + NVDL" }
 
 func (s *TreeBounceCombo) Description() string {
 	return "Runs the Precision 200-SMA Bounce decision tree concurrently on MARA (+5%TP/-8%SL/1d), " +

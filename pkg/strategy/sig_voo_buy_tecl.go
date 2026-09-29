@@ -9,7 +9,7 @@ import (
 //   - LONG TECL when VOO closes down 3 consecutive days
 //     (+5% take-profit, 0% stop-loss, 8-day max hold, 65% allocation)
 //
-// The SPXU short leg lives on in voo-tecl-spxu-combo.
+// The SPXU leg is sig-voo-buy-spxu.
 //
 // T-bill yield on idle cash is configured via DefaultConfig().CashYieldAnnual
 // and applied by the PortfolioSimulator.

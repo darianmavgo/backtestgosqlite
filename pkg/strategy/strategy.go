@@ -89,7 +89,7 @@ func MinHistoryBarsFor(s Strategy) int {
 // DeclineDaysConfigurable is optionally implemented by strategies whose
 // consecutive decline/rally-day window is a tunable field (see
 // StrategyConfig.DeclineDays) — gld-decline, sig-voo-buy-tecl,
-// voo-tecl-spxu-combo. Lets a caller (e.g. `backtest optimized`) apply a
+// sig-voo-buy-spxu. Lets a caller (e.g. `backtest optimized`) apply a
 // gridsearch-discovered decline-day window before running the strategy,
 // without needing to know its concrete type.
 type DeclineDaysConfigurable interface {
@@ -131,15 +131,15 @@ type StrategyConfig struct {
 	// up-closes) required in the signal symbol before a decline/rally-streak
 	// strategy enters. Only meaningful for strategies whose entry is defined by
 	// a consecutive-day streak (e.g. gld-decline, sig-voo-buy-tecl,
-	// voo-tecl-spxu-combo); substituted into their SQL pipeline via the
+	// sig-voo-buy-spxu); substituted into their SQL pipeline via the
 	// __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted for
 	// every other strategy.
 	DeclineDays int `json:"decline_days,omitempty"`
 
 	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow mirror
 	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg
-	// (e.g. sig-voo-buy-tecl's/voo-tecl-spxu-combo's SPXU short), since a single
-	// StrategyConfig can't otherwise represent two different exit rules for
+	// (e.g. sig-voo-buy-spxu), since a single StrategyConfig can't otherwise
+	// represent two different exit rules for
 	// one strategy's two legs. Same conventions as their long-leg
 	// counterparts: ShortTakeProfitPct is a fractional offset (0.06 for +6%),
 	// ShortStopLossPct is a direct multiplier (0.95 for -5%). Substituted via

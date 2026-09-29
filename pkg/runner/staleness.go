@@ -91,7 +91,7 @@ func formatAge(computedAt, changedAt time.Time) string {
 // pipelineDirFor returns the directory of .sql scripts backing s, if any —
 // either s itself is a *strategy.SQLPipelineStrategy (the auto-registered
 // "<dir>-sql" strategies), or it delegates to one via the "<id>-sql" sibling
-// convention established by gld-decline/sig-voo-buy-tecl/voo-tecl-spxu-combo
+// convention established by gld-decline/sig-voo-buy-tecl/sig-voo-buy-spxu
 // (see pkg/strategy/*.go's GenerateSignals).
 func pipelineDirFor(s strategy.Strategy) (string, bool) {
 	if sp, ok := s.(*strategy.SQLPipelineStrategy); ok {

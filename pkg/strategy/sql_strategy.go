@@ -21,7 +21,7 @@ import (
 // (and, for two-leg combos, its short-leg equivalents) are real tunable
 // parameters instead of hardcoded literals baked into the .sql file — the
 // same problem __DECLINE_DAYS__ solves for the consecutive decline/rally-day
-// window (e.g. sql/strategies/gld_decline, sig_voo_buy_tecl, voo_tecl_spxu_combo).
+// window (e.g. sql/strategies/gld_decline, sig_voo_buy_tecl).
 const (
 	declineDaysPlaceholder         = "__DECLINE_DAYS__"
 	takeProfitMultPlaceholder      = "__TAKE_PROFIT_MULT__"
@@ -379,8 +379,8 @@ var (
 
 // AutoRegisterSQLStrategies registers the SQL pipeline behind each Go strategy
 // defined in pkg/strategy. A sql/strategies folder with no matching Go
-// strategy in this package (archived, failed_training, audit-only, or
-// abandoned) is NOT registered: strategies come only from pkg/strategy, never
+// strategy in this package (archived under failed_training, or abandoned)
+// is NOT registered: strategies come only from pkg/strategy, never
 // from other folders or subfolders.
 //
 // It is idempotent: repeated calls with the same rootDir and default DB path
@@ -521,8 +521,8 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.HoldingWindow = 1
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
-			case "sig_voo_buy_tecl", "voo_tecl_spxu_combo":
-				// Matches SigVooBuyTecl's/VOOTECLSPXUCombo's own defaults.
+			case "sig_voo_buy_tecl":
+				// Matches SigVooBuyTecl's own defaults.
 				cfg.AllocationPct = 0.65
 				cfg.TargetPct = 1.05
 				cfg.TakeProfitPct = 0.05

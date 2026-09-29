@@ -115,7 +115,7 @@ Re-run strategies with the highest-resilience row in `reports/gridsearch.db` (`h
 
 Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
 
-Default candidates skip `*-sql` twins, `voo-buy-hold`, `genetic-momentum`, `dt_*` trees, and any strategy that does not name its symbols. `-include-dt` adds the top `-dt-top` (15) ETF trees. `-include-universe` adds symbol-scanning strategies. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
+Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`, `dt_*` trees, and any strategy that does not name its symbols. `-include-dt` adds the top `-dt-top` (15) ETF trees. `-include-universe` adds symbol-scanning strategies. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
 
 ```bash
 ./bin/backtest stack-eval -primary sig-voo-buy-tecl

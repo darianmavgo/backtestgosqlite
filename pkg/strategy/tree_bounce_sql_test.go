@@ -70,6 +70,19 @@ func TestPDDTree_SQLPipeline_MatchesGoFallback(t *testing.T) {
 	treeBounceParity(t, "PDD", NewPDDTreeStrategy(), 0.05, 0.06, 3)
 }
 
+func TestMaraPddNvdl_Aliases(t *testing.T) {
+	s := NewTreeBounceCombo()
+	if s.ID() != "mara_pdd_nvdl" {
+		t.Fatalf("id = %s", s.ID())
+	}
+	for _, alias := range []string{"tree_bounce_combo", "mara_pdd_nvdl_combo"} {
+		got, ok := Get(alias)
+		if !ok || got.ID() != s.ID() {
+			t.Fatalf("alias %s did not resolve to mara_pdd_nvdl", alias)
+		}
+	}
+}
+
 func TestTreeBounceCombo_SQLPipeline(t *testing.T) {
 	AutoRegisterSQLStrategies("../..", "../../data/market_history.db")
 	s := NewTreeBounceCombo()

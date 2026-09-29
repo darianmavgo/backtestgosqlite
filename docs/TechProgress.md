@@ -37,10 +37,10 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
                                          │
                                          ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│               2. DUAL-ENGINE STRATEGY SYSTEM (GO & PURE SQL)                    │
-│  - Vectorized Go Strategy Library (RSI, BB, MACD, Donchian, ATR, Streaks)        │
-│  - Pure SQL Pipeline Strategies in sql/strategies/ (auto-discovered as *-sql)   │
-│  - Strategy Isolation: Each backtest writes to its own reports/<strategy>.db    │
+│          2. STRATEGIES: DEFINED IN GO, CALCULATED IN SQL                        │
+│  - Go types in pkg/strategy own the id, config, and symbols                     │
+│  - Signal math is the SQL pipeline in sql/strategies/<id>/                      │
+│  - Each backtest writes to its own reports/<strategy>.db                        │
 └────────────────────────────────────────┬────────────────────────────────────────┘
                                          │
                                          ▼

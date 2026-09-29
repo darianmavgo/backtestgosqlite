@@ -42,7 +42,7 @@ type Signal struct {
 	AssetClass string             `db:"asset_class" json:"asset_class,omitempty"`
 
 	// Direction indicates whether this is a LONG or SHORT entry signal.
-	// Set by strategies that trade multiple directions (e.g. VOOTECLSPXUCombo).
+	// Set by strategies that trade multiple directions (e.g. sig-voo-buy-spxu).
 	Direction string `db:"direction" json:"direction,omitempty"` // "LONG" or "SHORT"
 
 	// Regime records the market regime in effect when the signal fired.

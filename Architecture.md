@@ -111,7 +111,7 @@ Optional interfaces, checked by the runner:
 
 `StrategyConfig` holds sizing (`fixed_pct`, `fixed_dollar`, `fixed_shares`, `kelly`), hold, slippage, commission, cash yield, and the two profit/stop fields. `TargetPct` / `TakeProfitPct`: the portfolio uses `TargetPct` when it is greater than 1, otherwise `TakeProfitPct`. `StopLossPct` is a price multiplier (`0.93` is −7%), not an offset. `NextDayLimitEntry` means the signal is known after the close and the order is a next-session limit at the signal price. It fills on that next bar only if the low is at or below the limit (at the limit, or at the open if the open is already through it). The booked price is the fill times `(1+SlippagePct)`. An unmet limit opens nothing. Signals saved in the result DB are the pre-simulator signals, so a dropped next-day order is still in `signals`.
 
-`AutoRegisterSQLStrategies(root, marketDB)` walks `sql/strategies/` and registers `<dir>-sql` only when a Go strategy in this package already has the same normalized id. `failed_training/` and `shared_account/` have no matching Go strategy, so they stay unregistered. `failed_training` SQL is archived; the Go package is behind `//go:build ignore` plus a `doc.go` stub. Registration is once per `(root, db)` for the process.
+There is one strategy type. It is defined in Go (`pkg/strategy`) and its signals are calculated by the SQL pipeline in `sql/strategies/<id>/`. `AutoRegisterSQLStrategies(root, marketDB)` still inserts a `<dir>-sql` registry entry for a pipeline directory that already has a Go owner. That entry is the same pipeline, used to resolve the directory, not a second strategy. `failed_training/` has no matching Go strategy, so it stays unregistered. That SQL is archived; the Go package is behind `//go:build ignore` plus a `doc.go` stub. Registration is once per `(root, db)` for the process.
 
 A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrategy`. `pipelinefs.go` reads the directory on disk when it exists and otherwise the embedded FS in `sql/embed.go`, keyed by the directory's base name. Placeholders substituted from `StrategyConfig` before execution:
 
@@ -128,7 +128,21 @@ A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrat
 
 Each strategy gets its own calc DB (`calc_<id>.db`) so pipeline tables do not collide. `SetDatabases(market, calc)` is called before `GenerateSignals`.
 
-Go strategies registered from this tree include `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `sig-voo-up1-buy-tqqq`, `sig-qqq-up1-buy-tqqq`, `sig-qqq-up1-buy-sqqq`, `voo-up3`, `gld-decline`, `mara_tree`, `nvdl_tree`, `pdd_tree`, `tree_bounce_combo`, `voo-buy-hold`, `biggest-winner`, `tsll-daily-one-share`, dividend buy-and-hold ids (`<symbol>-buy-hold`), dividend covered calls, and `dt_<symbol>` from `etf_dt_strategies`. `./bin/backtest -list` is the live set. SQL twins appear as `<dir>-sql`.
+Registered from this tree: `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `sig-voo-up1-buy-tqqq`, `sig-qqq-up1-buy-tqqq`, `sig-qqq-up1-buy-sqqq`, `voo-up3`, `gld-decline`, `mara_tree`, `nvdl_tree`, `pdd_tree`, `mara_pdd_nvdl` (aliases `tree_bounce_combo` and `mara_pdd_nvdl_combo`), `voo-buy-hold`, `biggest-winner`, `tsll-daily-one-share`, dividend buy-and-hold ids (`<symbol>-buy-hold`), dividend covered calls, and `dt_<symbol>` from `etf_dt_strategies`. `./bin/backtest -list` is the live set.
+
+`sig-voo-buy-tecl` and `sig-voo-buy-spxu` always calculate in SQL. `voo-up3`, `gld-decline`, the three up-volume strategies, `mara_tree`, `pdd_tree`, `nvdl_tree`, and `mara_pdd_nvdl` calculate in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
+
+These are defined in Go and do not calculate their signals in SQL:
+
+| ID | What runs instead |
+|---|---|
+| `voo-buy-hold` | one market signal built in Go from the first VOO bar |
+| `schd-buy-hold`, `vym-buy-hold`, `dvy-buy-hold` | one market signal built in Go |
+| `tsll-daily-one-share` | one market signal per TSLL bar, in Go |
+| `biggest-winner` | annual-return ranking in Go |
+| `schd-covered-call`, `vym-covered-call`, `dvy-covered-call`, and the three `-5pct` ids | `GenerateSignals` returns nil; the covered-call overlay is Go in `pkg/options` |
+| `dt_<symbol>` | feature rows can come from `sql/strategies/decision_tree_features`; the CloudForest tree is grown in Go |
+| `<dir>-sql` | duplicate registry id for a pipeline that already has a Go strategy. `stack-eval` drops these ids |
 
 ## Simulation
 
@@ -170,7 +184,7 @@ Written by `pkg/storage` into each strategy or shared DB:
 
 Stack-eval candidate filter (`runner.OverlayCandidates`), when `-secondary` is empty:
 
-- drop the primary, `*-sql` ids, `voo-buy-hold`, `genetic-momentum`
+- drop the primary, duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`
 - drop the sibling pair `sig-voo-buy-tecl` / `voo-tecl-spxu-combo`
 - `dt_*` only with `-include-dt`, and only the top `-dt-top` by score
 - strategies that do not implement `RequiredSymbolsProvider` only with `-include-universe`
@@ -221,7 +235,7 @@ It records the gates in `check_overfit_gate`.
 
 ## Other commands
 
-`audit_shared` runs Go queries against one shared result DB (newest `reports/shared_*.db` by mtime). The SQL files in `sql/strategies/shared_account/` are standalone audits (`01_shared_account_audit.sql`, `02_compare_annual_returns_standalone_vs_shared.sql`); the command does not execute them.
+`audit_shared` runs Go queries against one shared result DB (newest `reports/shared_*.db` by mtime).
 
 `dataflare` is `open -a Dataflare [db]`.
 
@@ -233,4 +247,4 @@ It records the gates in `check_overfit_gate`.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
 - Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
 - `dt_*` registration depends on `refdata/settings.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
-- `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training` or `shared_account`.
+- `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training`.
