@@ -306,6 +306,46 @@ backtestgosqlite/
 
 ---
 
+## Validation
+
+Two analyst commands test a strategy on data it has not trained on. They are not scheduled jobs. Each binary in `cmd/` calls the same function in `pkg/`.
+
+### `walk_forward`
+
+Rolling in-sample and out-of-sample windows. Signals are generated once on the full bar history. Each window is simulated from a flat book, and only that window's dates count. Writes `walk_forward_fold` and `walk_forward_summary`. Returns in those tables are fractions (0.05 is five percent).
+
+```bash
+go run ./cmd/walk_forward -strategy tsll-daily-one-share -market-db data/market.db -table backtest_start -db reports/walk_forward.db -train-months 24 -test-months 6 -step-months 6 -capital 100000
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-strategy` | required | Strategy id, or a comma-separated list |
+| `-market-db` | `MARKET_DB` | Bars SQLite |
+| `-table` | `backtest_start` | Bars table |
+| `-db` | `reports/walk_forward.db` | Where fold rows and the summary are written |
+| `-train-months` | 24 | In-sample window, calendar months immediately before each out-of-sample window |
+| `-test-months` | 6 | Out-of-sample window |
+| `-step-months` | 6 | How far the next fold moves forward |
+| `-capital` | 100000 | Starting capital for each window |
+
+### `check_overfit`
+
+Reads `walk_forward_summary` and writes `check_overfit`. It does not re-simulate. Run `walk_forward` first.
+
+```bash
+go run ./cmd/check_overfit -db reports/walk_forward.db -min-oos-trades 8 -trial-cutoff 20 -decay 0.25
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-db` | `reports/walk_forward.db` | The database `walk_forward` wrote |
+| `-min-oos-trades` | 8 | Fewer out-of-sample trades than this is `INSUFFICIENT` |
+| `-trial-cutoff` | 20 | A parameter grid at least this large can be `CURVE_FIT` |
+| `-decay` | 0.25 | Out-of-sample Sharpe below this fraction of in-sample Sharpe has collapsed |
+
+Verdicts: `INSUFFICIENT` (too few out-of-sample trades), `CURVE_FIT` (many trials, in-sample Sharpe above 0.5, out-of-sample Sharpe below the decay fraction), `DECAYS` (out-of-sample Sharpe collapsed), `HOLDS` (out-of-sample Sharpe stays positive and at least half of in-sample).
+
 ## 🛠️ Tech Stack
 
 - **Language & Runtime**: Go (1.18+)

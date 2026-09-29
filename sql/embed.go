@@ -11,3 +11,9 @@ import "embed"
 //
 //go:embed strategies
 var Strategies embed.FS
+
+// Validation holds the walk-forward and curve-fit summary scripts,
+// addressed as "validation/<file>.sql".
+//
+//go:embed validation
+var Validation embed.FS
