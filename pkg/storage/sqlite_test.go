@@ -11,7 +11,7 @@ import (
 )
 
 func TestValidateTableName(t *testing.T) {
-	valid := []string{"backtest_start", "trades", "wc_summary", "test_123", ""}
+	valid := []string{"backtest_start", "trades", "equity_curve", "test_123", ""}
 	for _, name := range valid {
 		if err := ValidateTableName(name); err != nil {
 			t.Errorf("expected %q to be valid, got %v", name, err)
@@ -42,35 +42,35 @@ func TestTradePersistenceAndSQLAggregates(t *testing.T) {
 
 	trades := []models.Trade{
 		{
-			Symbol:         "AAPL",
-			OrderType:      "limit",
-			EntryDate:      "2023-01-05",
-			EntryPrice:     150.0,
-			ExitDate:       "2023-01-10",
-			ExitPrice:      165.0,
-			ExitReason:     models.ExitReasonProfitTarget,
-			Shares:         100,
-			NetPnL:         1500.0,
-			ReturnPct:      0.10,
-			HoldDays:       5,
-			CommissionPaid: 2.0,
-			MaxAdverseExcursion: -0.01,
+			Symbol:                "AAPL",
+			OrderType:             "limit",
+			EntryDate:             "2023-01-05",
+			EntryPrice:            150.0,
+			ExitDate:              "2023-01-10",
+			ExitPrice:             165.0,
+			ExitReason:            models.ExitReasonProfitTarget,
+			Shares:                100,
+			NetPnL:                1500.0,
+			ReturnPct:             0.10,
+			HoldDays:              5,
+			CommissionPaid:        2.0,
+			MaxAdverseExcursion:   -0.01,
 			MaxFavorableExcursion: 0.11,
 		},
 		{
-			Symbol:         "MSFT",
-			OrderType:      "limit",
-			EntryDate:      "2023-01-06",
-			EntryPrice:     240.0,
-			ExitDate:       "2023-01-11",
-			ExitPrice:      228.0,
-			ExitReason:     models.ExitReasonStopLoss,
-			Shares:         50,
-			NetPnL:         -600.0,
-			ReturnPct:      -0.05,
-			HoldDays:       5,
-			CommissionPaid: 2.0,
-			MaxAdverseExcursion: -0.05,
+			Symbol:                "MSFT",
+			OrderType:             "limit",
+			EntryDate:             "2023-01-06",
+			EntryPrice:            240.0,
+			ExitDate:              "2023-01-11",
+			ExitPrice:             228.0,
+			ExitReason:            models.ExitReasonStopLoss,
+			Shares:                50,
+			NetPnL:                -600.0,
+			ReturnPct:             -0.05,
+			HoldDays:              5,
+			CommissionPaid:        2.0,
+			MaxAdverseExcursion:   -0.05,
 			MaxFavorableExcursion: 0.01,
 		},
 	}
@@ -357,6 +357,3 @@ func TestFetchRecentBars(t *testing.T) {
 		t.Errorf("expected range 2024-01-08 to 2024-01-10, got %s to %s", spyBars[0].Date, spyBars[2].Date)
 	}
 }
-
-
-

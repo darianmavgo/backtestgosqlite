@@ -7,7 +7,7 @@ type Bar struct {
 	Idx        int       `db:"idx" json:"idx,omitempty"`
 	Symbol     string    `db:"symbol" json:"symbol"`
 	Date       string    `db:"Date" json:"date"`
-	Timeframe  string    `db:"timeframe" json:"timeframe,omitempty"`   // e.g. "1d", "1h", "5m" (defaults to "1d")
+	Timeframe  string    `db:"timeframe" json:"timeframe,omitempty"`     // e.g. "1d", "1h", "5m" (defaults to "1d")
 	AssetClass string    `db:"asset_class" json:"asset_class,omitempty"` // e.g. "equity"
 	Open       float64   `db:"open" json:"open"`
 	High       float64   `db:"high" json:"high"`
@@ -124,14 +124,14 @@ type Position struct {
 
 // Account encapsulates the real-time financial ledger.
 type Account struct {
-	InitialCash    float64 `json:"initial_cash"`
-	Cash           float64 `json:"cash"`
-	PortfolioValue float64 `json:"portfolio_value"`
-	TotalEquity    float64 `json:"total_equity"`
-	RealizedPnL    float64 `json:"realized_pnl"`
-	UnrealizedPnL  float64 `json:"unrealized_pnl"`
-	TotalReturnPct float64 `json:"total_return_pct"`
-	PeakEquity     float64 `json:"peak_equity"`
+	InitialCash     float64 `json:"initial_cash"`
+	Cash            float64 `json:"cash"`
+	PortfolioValue  float64 `json:"portfolio_value"`
+	TotalEquity     float64 `json:"total_equity"`
+	RealizedPnL     float64 `json:"realized_pnl"`
+	UnrealizedPnL   float64 `json:"unrealized_pnl"`
+	TotalReturnPct  float64 `json:"total_return_pct"`
+	PeakEquity      float64 `json:"peak_equity"`
 	CurrentDrawdown float64 `json:"current_drawdown"`
 }
 
@@ -144,20 +144,6 @@ type DailyEquityPoint struct {
 	DailyReturn    float64 `json:"daily_return"`
 	DrawdownPct    float64 `json:"drawdown_pct"`
 	OpenPositions  int     `json:"open_positions"`
-}
-
-// SummaryRow represents symbol-level statistical performance from the relational screening stage.
-type SummaryRow struct {
-	Symbol        string  `db:"symbol" json:"symbol"`
-	Entries       int     `db:"entries" json:"entries"`
-	SumWin3       int     `db:"sum_win3" json:"sum_win3"`
-	SumWin5       int     `db:"sum_win5" json:"sum_win5"`
-	Wins2010d     int     `db:"wins_20_10d" json:"wins_20_10d"`
-	Win2010dRate  float64 `db:"win20_10d_rate" json:"win20_10d_rate"`
-	AvgMaxGain10d float64 `db:"avg_max_gain_10d" json:"avg_max_gain_10d"`
-	MaxMaxGain10d float64 `db:"max_max_gain_10d" json:"max_max_gain_10d"`
-	AvgHighGapPct float64 `db:"avg_highgappct" json:"avg_highgappct"`
-	Category      string  `json:"category,omitempty"`
 }
 
 // PerformanceReport aggregates institutional quantitative performance metrics.

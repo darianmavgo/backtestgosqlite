@@ -64,57 +64,6 @@ func ExecuteSQLFile(db *sqlx.DB, filePath string) error {
 	return nil
 }
 
-// FetchSummaryRows queries `wc_summary` for all symbols with trades.
-func FetchSummaryRows(db *sqlx.DB, limit int) ([]models.SummaryRow, error) {
-	query := `
-		SELECT symbol, entries, sum_win3, sum_win5, wins_20_10d, win20_10d_rate, 
-		       round(avg_max_gain_10d, 4) as avg_max_gain_10d, 
-		       round(max_max_gain_10d, 4) as max_max_gain_10d,
-		       round(avg_highgappct, 4) as avg_highgappct
-		FROM wc_summary 
-		WHERE entries > 0 
-		ORDER BY win20_10d_rate DESC, entries DESC
-	`
-	if limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", limit)
-	}
-
-	var rows []models.SummaryRow
-	err := db.Select(&rows, query)
-	return rows, err
-}
-
-// FetchHighConfidenceSymbols queries `backtested_win_20_10d` for live candidates.
-func FetchHighConfidenceSymbols(db *sqlx.DB) ([]models.SummaryRow, error) {
-	query := `
-		SELECT symbol, entries, wins_20_10d, win20_10d_rate, 
-		       round(avg_max_gain_10d, 4) as avg_max_gain_10d,
-		       round(avg_highgappct, 4) as avg_highgappct
-		FROM backtested_win_20_10d
-		ORDER BY win20_10d_rate DESC, wins_20_10d DESC;
-	`
-	var rows []models.SummaryRow
-	err := db.Select(&rows, query)
-	if err != nil {
-		// Table might not exist if pipeline hasn't run yet
-		return nil, err
-	}
-	return rows, nil
-}
-
-// FetchDetailedSignals queries `wc_backtest_details` for all entry signals.
-func FetchDetailedSignals(db *sqlx.DB) ([]models.Signal, error) {
-	query := `
-		SELECT idx, symbol, date, open, high, low, close, volume, buylimit, entry
-		FROM wc_backtest_details
-		WHERE entry = 1
-		ORDER BY date ASC, idx ASC;
-	`
-	var signals []models.Signal
-	err := db.Select(&signals, query)
-	return signals, err
-}
-
 // EnsureBarTable creates the standard bar table schema if it does not exist.
 func EnsureBarTable(db *sqlx.DB, tableName string) error {
 	if tableName == "" {

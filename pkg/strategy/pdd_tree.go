@@ -7,8 +7,8 @@ import (
 )
 
 // PDDTreeStrategy applies the "Precision 200-SMA Re-test Bounce" decision tree
-// (originally discovered for MARA, see mara_tree.go) to PDD. It was surfaced by
-// cmd/ticker_scan as the best-generalizing, highest-trade-count ticker beyond MARA:
+// (originally discovered for MARA, see mara_tree.go) to PDD. A universe scan
+// found it the best-generalizing, highest-trade-count ticker beyond MARA:
 // nearly as many trades (98 vs 104) with a shallower max drawdown (~8% vs ~9-11%).
 //
 // Entry Logic (identical decision tree to mara_tree, tuned per-symbol):

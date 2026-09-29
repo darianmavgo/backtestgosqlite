@@ -44,7 +44,7 @@ reports/               one SQLite file per run, plus HTML
 | `RefDB()` | `Ref()/settings.db` |
 | `ReportFile(p)` | absolute paths pass through; a leading `reports/` is stripped and the rest is joined to `Reports()` |
 
-`cliutils.GetDefaultMarketDB` returns `MarketDB()` if the file exists, otherwise `Data()/leveraged_backtest.db`. `backtest`, `study`, `livescan`, and `candlesticks` use that helper. Download and the batch tools call `MarketDB()` directly.
+`cliutils.GetDefaultMarketDB` returns `MarketDB()` if the file exists, otherwise `Data()/leveraged_backtest.db`. `backtest`, `study`, and `livescan` use that helper. Download and the batch tools call `MarketDB()` directly.
 
 `strateval`'s ledger is special. It does not use `ReportFile`, because a deploy `.env` can set `APP_FOLDER` to a Linux path. Order: `STRATEGIES_DB`, then `STRATEVAL_DB`, then `<module root>/reports/strategies.db` found by walking up to `go.mod`.
 
@@ -194,7 +194,7 @@ Staleness (`pkg/runner/staleness.go`) is shared by `backtest stale` and `gridsea
 | `voo_up3_etf` | `reports/voo_up3_etf.db` | VOO 3-up days, then each sweep-list ETF. View `etf_compare` feeds `gridsearch -symbols-from` |
 | `hmm_regime` | `reports/hmm_regime.db` | HMM regimes; `-symbol` defaults to QQQ |
 | `qqq_tqqq_volume` | `reports/qqq_tqqq_volume.db` | daily QQQ vs TQQQ volume |
-| `march_april_voo_gld_uten` | `reports/march_april_voo_gld_uten.db` | 1-minute VOO/GLD/UTEN, Granger and spillover. `granger_chart` reads this file |
+| `march_april_voo_gld_uten` | `reports/march_april_voo_gld_uten.db` | 1-minute VOO/GLD/UTEN, Granger and spillover |
 | `mara_decision_tree` / `mu_decision_tree` | `reports/<id>.db` | CloudForest trees aimed at ±5% days |
 | `etf_study` | `reports/etf_study.db` | decline-slice study on top S&P ETFs |
 | `sp500_lead_lag` | `reports/sp500_lead_lag.db` | minute lead/lag into VOO |
@@ -221,15 +221,7 @@ It records the gates in `check_overfit_gate`.
 
 ## Other commands
 
-`ticker_scan` loads every daily symbol except VOO, GLD, TECL, SPXU, and UTEN, runs `strategy.TreeBounceSignals`, simulates each name, and prints resilience (`CAGR / ((1+maxDD) * (1+maxDDYears))`). `-optimize-top` re-sweeps TP, SL, and hold for the leaders. Nothing is written.
-
 `audit_shared` runs Go queries against one shared result DB (newest `reports/shared_*.db` by mtime). The SQL files in `sql/strategies/shared_account/` are standalone audits (`01_shared_account_audit.sql`, `02_compare_annual_returns_standalone_vs_shared.sql`); the command does not execute them.
-
-`compare_annual_report` joins a shared DB, a standalone DB, and VOO from the market DB into one HTML page.
-
-`candlesticks` and `granger_chart` are fixed-query HTML exporters (Go-Echarts). They do not take flags. Candles read `timeframe = '1m'` between `2025-03-01` and `2025-05-01`. Granger reads `reports/march_april_voo_gld_uten.db`.
-
-`ui` serves `pkg/ui/web/index.html` on port 8085. Summary and symbol routes read `data/wc_master_backtest.db` (`wc_summary`, `wc_backtest_details`, `backtest_start`). Categories come from `refdata/settings.db` `leveraged_etf`. `/api/backtest/run` shells out a backtest; `/api/query` runs SQL against a chosen DB.
 
 `dataflare` is `open -a Dataflare [db]`.
 
@@ -239,6 +231,6 @@ It records the gates in `check_overfit_gate`.
 - `id.db` is run 1. `id_N.db` is run N. The latest usable file is the highest N that still validates, not the newest mtime.
 - Shared-account priority is list order. Overlays do not preempt each other.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
-- Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until something queries `timeframe = '1m'` directly (`candlesticks`, `march_april_voo_gld_uten`, `sp500_lead_lag`).
+- Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
 - `dt_*` registration depends on `refdata/settings.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
 - `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training` or `shared_account`.

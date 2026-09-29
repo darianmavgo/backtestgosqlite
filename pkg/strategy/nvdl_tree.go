@@ -8,9 +8,9 @@ import (
 
 // NVDLTreeStrategy applies the "Precision 200-SMA Re-test Bounce" decision tree
 // (originally discovered for MARA, see mara_tree.go) to NVDL (GraniteShares 2x Long
-// NVDA Daily). cmd/ticker_scan found this to be the single highest-resilience-score
-// candidate across the full ticker universe once TP/SL/hold were tuned: 38.66% CAGR
-// with only a 58-day max drawdown duration (vs MARA's 188 days), on 36 trades.
+// NVDA Daily). A universe scan found it the highest-resilience candidate once
+// TP/SL/hold were tuned: 38.66% CAGR with only a 58-day max drawdown duration
+// (vs MARA's 188 days), on 36 trades.
 //
 // Entry Logic (identical decision tree to mara_tree, tuned per-symbol):
 //   - Volatility Compression Coil: Day's range <= 0.45 * 14-day ATR

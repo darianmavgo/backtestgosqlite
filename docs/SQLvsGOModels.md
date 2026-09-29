@@ -25,7 +25,7 @@ does what it is genuinely best at.
 
 Go models in this project live in `pkg/models/models.go`.
 They define the domain types that cross the Go/SQLite boundary: `Bar`, `Signal`, `Trade`,
-`Position`, `Account`, `DailyEquityPoint`, `SummaryRow`, `PerformanceReport`.
+`Position`, `Account`, `DailyEquityPoint`, `PerformanceReport`.
 
 ### ✅ Pros of Go-Defined Models
 

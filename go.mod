@@ -22,7 +22,6 @@ require (
 )
 
 require (
-	github.com/go-echarts/go-echarts/v2 v2.7.2
 	github.com/ryanbressler/CloudForest v0.0.0-20220205065429-8f151e494fd2
 	modernc.org/sqlite v1.58.0
 )

@@ -34,7 +34,7 @@ Default files:
 | Shared-account results | `reports/shared_<primary>_<secondary>_….db` |
 | HTML tear sheet | `reports/backtest_report.html` |
 
-Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`, `candlesticks`) use `data/market_history.db` when that file exists and `data/leveraged_backtest.db` when it does not. `download`, `gridsearch`, `scoreboard`, `ticker_scan`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
+Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db` when that file exists and `data/leveraged_backtest.db` when it does not. `download`, `gridsearch`, `scoreboard`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
 
 The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack-eval -primary …`, not `backtest -primary … stack-eval`.
 
@@ -307,19 +307,6 @@ Fit a decision tree and a TP/SL/hold grid for each symbol in an ETF list.
 
 ---
 
-## ticker_scan
-
-Apply the 200-day SMA bounce tree to symbols in the market DB and print a resilience ranking. Stdout only.
-
-**Reads:** `data/market_history.db`, table `backtest_start`. Default universe is every symbol except `VOO`, `GLD`, `TECL`, `SPXU`, `UTEN`. Defaults: TP 5%, SL 8%, hold 1 day, allocation 0.65, yield 0.045, capital `$100,000`, `-min-trades 10`. `-optimize-top 3` sweeps TP/SL/hold for the best names (`0` disables).
-
-```bash
-./bin/ticker_scan
-./bin/ticker_scan -symbols SOXL,TQQQ,COIN
-```
-
----
-
 ## audit_shared
 
 Print exit-reason and preemption audits for one shared-account result.
@@ -330,58 +317,6 @@ Print exit-reason and preemption audits for one shared-account result.
 ./bin/audit_shared
 ./bin/audit_shared -db reports/shared_sig-voo-buy-tecl_mara_tree_2.db
 ```
-
-## compare_annual_report
-
-Annual table of one shared book versus one standalone book, plus VOO from the market DB.
-
-**Reads:** `-shared-db` default `reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db`, `-standalone-db` default `reports/sig-voo-buy-tecl_4.db`, `-market-db` `data/market_history.db`.
-
-**Writes:** `reports/annual_comparison_standalone_vs_shared.html`.
-
-```bash
-./bin/compare_annual_report \
-  -shared-db reports/shared_sig-voo-buy-tecl_mara_tree.db \
-  -standalone-db reports/sig-voo-buy-tecl.db
-```
-
-## candlesticks
-
-One-minute candlestick chart for March–April 2025. No flags.
-
-**Reads:** market DB, `backtest_start`, `timeframe = '1m'`, dates `2025-03-01` through `2025-04-30`.
-
-**Writes:** `reports/candlesticks_go.html`.
-
-```bash
-./bin/candlesticks
-```
-
-## granger_chart
-
-Chart Granger rows from the March/April study. No flags.
-
-**Reads:** `reports/march_april_voo_gld_uten.db`.
-
-**Writes:** `reports/granger_causality_go.html`.
-
-```bash
-./bin/study -study march_april_voo_gld_uten
-./bin/granger_chart
-```
-
-## ui
-
-Local review server for the Whitings Creek cache. Default port `8085`.
-
-**Reads:** `data/wc_master_backtest.db` (`wc_summary`, `wc_backtest_details`, `backtest_start`) and `refdata/settings.db` (`leveraged_etf`).
-
-```bash
-./bin/ui
-./bin/ui -port 8085
-```
-
-Open `http://localhost:8085`.
 
 ## dataflare
 

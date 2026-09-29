@@ -127,8 +127,8 @@ Once saved, rebuild and execute:
 # Run backtest with tear sheet & HTML report
 ./bin/backtest -strategy sma-cross -capital 100000
 
-# Benchmark side-by-side with other strategies
-./bin/compare -db data/wc_master_backtest.db
+# Rank every strategy that already has a result database
+./bin/scoreboard compile
 ```
 
 ---

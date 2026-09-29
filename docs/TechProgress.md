@@ -56,11 +56,11 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
                  ▼                                               ▼
 ┌───────────────────────────────────┐   ┌─────────────────────────────────────────┐
 │       4. LIVE SCANNING & UI       │   │     5. MACRO & CAUSALITY STUDIES        │
-│ - cmd/livescan: Evaluates live    │   │ - cmd/study: Aligns 1-minute bars into  │
-│   market bars & writes actionable │   │   prototyping tables                    │
-│   orders to live_scan.db          │   │ - cmd/granger_chart: Go-Echarts         │
-│ - cmd/scoreboard: Comparative     │   │   visualizer testing lead-lag causality │
-│   leaderboard (Sharpe, Drawdown)  │   │   (VOO -> GLD / UTEN)                   │
+│ - cmd/livescan: Evaluates live    │   │ - cmd/study: research studies,          │
+│   market bars & writes actionable │   │   including 1-minute Granger lead-lag   │
+│   orders to livescan.db           │   │   for VOO, GLD, and UTEN                │
+│ - cmd/scoreboard: Comparative     │   │                                         │
+│   leaderboard (Sharpe, Drawdown)  │   │                                         │
 └───────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
 
@@ -87,14 +87,12 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
 * Built a dedicated live market scanner that connects to the latest market data, evaluates active setups across all registered strategies, and outputs categorized signals (`ACTIONABLE_NOW` vs `RECENT_SETUP`).
 * Calculates exact limit entry prices, target profit prices, and stop-loss levels, saving results into `live_scan.db` and printing clean CLI tables.
 
-### 5. High-Frequency Lead-Lag & Granger Causality Studies (`cmd/study` & `cmd/granger_chart`)
+### 5. High-Frequency Lead-Lag & Granger Causality Studies (`cmd/study`)
 * **1-Minute Bar Ingestion**: Ingested high-resolution 1-minute historical bars for March–April to study intraday price discovery and market reaction to news.
 * **Macro Transmission (VOO &rarr; GLD / UTEN)**:
   * Pivoted 1-minute data across equities (VOO), gold (GLD), and 10-year Treasuries (UTEN).
   * Evaluated **Granger Causality** to see whether S&P 500 shocks lead gold or bond yield movements.
-* **Interactive Visualization**:
-  * Built native **Go-Echarts** visualization tools (`cmd/granger_chart`) to generate institutional-grade HTML dashboards.
-  * Added the **Tutorial Mode** dashboard explaining p-values, lag horizons, and real-world trading rules.
+  * Results land in `reports/march_april_voo_gld_uten.db` from `study -study march_april_voo_gld_uten`.
 
 ### 6. Codebase Hardening & Refactoring Quality
 * Refactored hardcoded database and report paths into configurable CLI flags (`-db`, `-out-dir`).
@@ -113,7 +111,7 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
 | **Performance Tear Sheets** | `pkg/analytics`, `reports/` | 🟢 Complete | Standalone HTML tear sheets, SQLite result DBs, and Scoreboard |
 | **Live Scanner** | `cmd/livescan` | 🟢 Complete | `cmd/livescan` outputs trade-ready orders with targets and stops |
 | **Comparative Scoreboard** | `cmd/scoreboard` | 🟢 Complete | Concurrent multi-strategy benchmarking and ranking engine |
-| **Microstructure Studies** | `cmd/study`, `cmd/granger_chart` | 🟢 Active | 1-minute Granger lead-lag analytics and volatility spillover modeling |
+| **Microstructure Studies** | `cmd/study` | 🟢 Active | 1-minute Granger lead-lag analytics and volatility spillover modeling |
 
 ---
 
