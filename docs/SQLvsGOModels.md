@@ -23,7 +23,7 @@ does what it is genuinely best at.
 
 ## Part 1 — Models Defined in Go
 
-Go models in this project live in `internal/models/models.go`.
+Go models in this project live in `pkg/models/models.go`.
 They define the domain types that cross the Go/SQLite boundary: `Bar`, `Signal`, `Trade`,
 `Position`, `Account`, `DailyEquityPoint`, `SummaryRow`, `PerformanceReport`.
 
@@ -366,7 +366,7 @@ evaporates at the query boundary and must be reconstructed in Go.
 
 **Go owns the verbs. SQLite owns the nouns and the math.**
 
-The Go models in `internal/models/models.go` are not duplicating the SQL schema — they are
+The Go models in `pkg/models/models.go` are not duplicating the SQL schema — they are
 the typed, safe, IDE-navigable representation of what SQLite computed. They are the handoff
 point between the database's set-based world and Go's imperative, stateful world. Both
 layers are necessary. Neither should fully absorb the other.

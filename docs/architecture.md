@@ -13,7 +13,7 @@
         ┌──────────────┼──────────────────────┐
         ▼              ▼                      ▼
 ┌───────────────┐ ┌───────────────────┐ ┌──────────────────────┐
-│internal/      │ │internal/strategy/ │ │internal/simulator/   │
+│ pkg/storage   │ │ pkg/strategy      │ │ pkg/simulator        │
 │storage/       │ │                   │ │                       │
 │               │ │ Strategy (iface)  │ │ PortfolioSimulator    │
 │ FetchSymbol   │ │ StrategyConfig    │ │   - chronological     │
@@ -34,7 +34,7 @@
         │       ┌───────────┘
         │       ▼
 ┌────────────────────────┐
-│internal/models/        │
+│ pkg/models             │
 │                        │
 │  Bar      (+ SMA200)   │
 │  Signal   (+ Direction │
@@ -60,7 +60,7 @@
 
 ## The Sig VOO Buy TECL Strategy (formerly "VOO-TECL")
 
-**File:** [`internal/strategy/sig_voo_buy_tecl.go`](../internal/strategy/sig_voo_buy_tecl.go)
+**File:** [`pkg/strategy/sig_voo_buy_tecl.go`](../pkg/strategy/sig_voo_buy_tecl.go)
 
 Implements the `Strategy` interface with two legs shared in one `GenerateSignals` call:
 
@@ -73,7 +73,7 @@ Implements the `Strategy` interface with two legs shared in one `GenerateSignals
 
 ## Engine: PortfolioSimulator
 
-**File:** [`internal/simulator/portfolio.go`](../internal/simulator/portfolio.go)
+**File:** [`pkg/simulator/portfolio.go`](../pkg/simulator/portfolio.go)
 
 - Knows nothing about VOO, TECL, or SPXU
 - Iterates `sortedDates` chronologically
@@ -99,7 +99,7 @@ go run cmd/export_studies/main.go
 
 ## Adding a New Strategy
 
-1. Create `internal/strategy/my_strategy.go`
+1. Create `pkg/strategy/my_strategy.go`
 2. Implement the `Strategy` interface: `ID()`, `Name()`, `Description()`, `Validate()`, `DefaultConfig()`, `GenerateSignals(barsBySymbol)`
 3. Call `Register(s)` in the constructor (or `NewMyStrategy()`)
 4. Add a `cmd/my_strategy/main.go` that calls `storage.FetchBarsWithSMA`, `GenerateSignals`, then `simulator.NewPortfolioSimulator`

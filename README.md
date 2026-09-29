@@ -66,7 +66,7 @@ It pairs the raw execution speed and goroutine concurrency of compiled Go with t
 * **SQLite Storage Engine**: High-speed batch insertion into SQLite tables with indexed lookups and WAL concurrency.
 
 ### 3. Built-in Technical Indicator Library
-Zero external C dependencies. Pure Go vectorized indicator math in [`internal/strategy/indicators.go`](file:///Users/darianhickman/Documents/backtestgosqlite/internal/strategy/indicators.go):
+Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strategy/indicators.go`](pkg/strategy/indicators.go):
 * **Moving Averages**: `CalcSMA`, `CalcEMA`
 * **Oscillators**: `CalcRSI` (Wilder's smoothing)
 * **Volatility**: `CalcBollinger`, `CalcATR`, `CalcDonchian`
@@ -148,14 +148,14 @@ make ui
 
 ## 🛠️ Writing Your Own Strategy in Go (Under 35 Lines)
 
-Create `internal/strategy/my_strategy.go`:
+Create `pkg/strategy/my_strategy.go`:
 
 ```go
 package strategy
 
 import (
     "sort"
-    "github.com/darianmavgo/backtestgosqlite/internal/models"
+    "github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
 type MyStrategy struct{}
@@ -271,7 +271,7 @@ backtestgosqlite/
 │   ├── ui/main.go                    # Local Web Dashboard UI Server
 │   └── server/main.go                # Automated execution HTTP server
 │
-├── internal/                         # Modular Core Go Packages
+├── pkg/                              # Libraries and CLI logic
 │   ├── models/models.go              # Domain types (Bar, Signal, Position, Trade, Report)
 │   ├── datasource/                   # Pluggable data layer (CSV, Yahoo, Stooq, SQLite)
 │   ├── strategy/                     # Unified strategy registry, indicators & algorithms
@@ -374,8 +374,6 @@ go run ./cmd/orchestrator audit_slippage
 ### What the live book stores
 
 `manage_exit` keeps the decision key (`strategy_id`, `as_of_date`, `next_session`, the signal ids, and the stage id) plus `entry_fill_price`, `exit_fill_price`, `filled_qty`, `fees`, and `exit_reason_code`. The Schwab order mirror stores `execution_price`. The transaction mirror stores `fees` and `symbol`. Reconciliation copies the broker fill off the order, including a sell nested under the entry, when the managed trade does not already have one. The managed-trades page shows the new columns.
-
-`go build ./...` in this repo still stops on `cmd/backtest`, `cmd/download`, and `internal/storage`. Those files import `internal/` packages that are not in the tree. `./pkg/...`, `cmd/walk_forward`, and `cmd/check_overfit` build.
 
 ## 🛠️ Tech Stack
 
