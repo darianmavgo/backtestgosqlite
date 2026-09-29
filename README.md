@@ -1,384 +1,394 @@
-# backtestgosqlite: High-Performance Algorithmic Trading & Multi-Strategy Backtesting Platform
+# backtestgosqlite
 
-[![Go Version](https://img.shields.io/badge/Go-1.18+-00ADD8?style=flat&logo=go)](https://golang.org/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Architecture](https://img.shields.io/badge/Engine-Go%20%2B%20SQLite%20WAL-brightgreen)]()
+Go backtester. Market bars, reference lists, signals, trades, and reports live in SQLite. Build the binaries, then run a command from the repository root so `.env` and the default paths resolve.
 
-**`backtestgosqlite`** is a high-speed, general-purpose quantitative backtesting and algorithmic trading engine engineered in **Go** and backed by **SQLite WAL (Write-Ahead Logging)**.
-
-It pairs the raw execution speed and goroutine concurrency of compiled Go with the relational query power of SQLite to evaluate universe-wide portfolios, multi-asset strategies, and path-dependent risk analytics in milliseconds.
-
----
-
-## 🏛️ System Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          1. FLEXIBLE DATA LAYER                             │
-│  - Pluggable DataSource interface: CSV, Yahoo Finance Chart API, Stooq     │
-│  - Multi-asset OHLCV bars indexed in SQLite WAL memory/disk tables          │
-│  - Bring any CSV dataset (Polygon, Alpaca, custom feeds) zero Go required  │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                 2. UNIFIED STRATEGY ENGINE (GO & SQL)                       │
-│  - 30-line Go Strategy interface with automatic CLI discovery               │
-│  - Built-in Vectorized Technical Indicators (RSI, BB, MACD, Donchian, ATR)   │
-│  - Pure SQL Pipeline Strategies executed sequentially from sql/strategies/  │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ Entry Signals & Limits
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│            3. CHRONOLOGICAL MULTI-ASSET PORTFOLIO SIMULATOR                 │
-│  - Real-time Cash Ledger & Portfolio Equity Curve                           │
-│  - Order Types: Market, Limit, Stop-Limit                                   │
-│  - Dynamic Risk: Trailing Stops, ATR Stops, Dual-Barrier Fixed Stops        │
-│  - Configurable Position Sizing: Fixed %, Fixed $, Fixed Shares, Kelly      │
-│  - Concurrent multi-strategy benchmarking across Goroutines                 │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ Realized Trades & Equity Series
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│              4. INSTITUTIONAL QUANTITATIVE TEAR SHEET & UI                  │
-│  - Metrics: Sharpe, Sortino, Calmar, Omega, Ulcer Index, Alpha & Beta       │
-│  - Trade Metrics: Win Rate, Profit Factor, Payoff Ratio, MAE & MFE          │
-│  - Interactive Local Web Dashboard & Standalone HTML Reports                │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🚀 Key Capabilities
-
-### 1. General-Purpose Multi-Asset Backtesting
-* **Multiple Order Execution Models**: Supports `market` (next open/close), `limit` (intraday price crossing), and `stop_limit` orders.
-* **Flexible Position Sizing**: Choose between `fixed_pct` (e.g. 20% equity), `fixed_dollar` ($10,000/trade), `fixed_shares` (100 shares), or risk-based `kelly` sizing.
-* **Dynamic Stop-Loss Systems**:
-  * **Trailing Stops**: Lock in unrealized gains by trailing peaks at a configurable percentage.
-  * **ATR Dynamic Stops**: Protect against volatility expansion using multiples of Average True Range.
-  * **Dual-Barrier Path Checking**: Walks day-by-day to simulate real-world intraday stops before profit targets.
-* **Concurrent Strategy Benchmarking**: Run any number of strategies in parallel across Go goroutines (`make compare`).
-
-### 2. Pluggable Market Data Sources (`cmd/download`)
-* **Bring Your Own CSV**: Ingest any standard OHLCV CSV file (from Polygon.io, Alpaca, Interactive Brokers, or manual export) with automatic column header detection.
-* **Automated Data Feed Downloads**: Multi-source daily data downloader with Yahoo Finance API v8 and Stooq fallback.
-* **SQLite Storage Engine**: High-speed batch insertion into SQLite tables with indexed lookups and WAL concurrency.
-
-### 3. Built-in Technical Indicator Library
-Zero external C dependencies. Pure Go vectorized indicator math in [`pkg/strategy/indicators.go`](pkg/strategy/indicators.go):
-* **Moving Averages**: `CalcSMA`, `CalcEMA`
-* **Oscillators**: `CalcRSI` (Wilder's smoothing)
-* **Volatility**: `CalcBollinger`, `CalcATR`, `CalcDonchian`
-* **Trend & Momentum**: `CalcMACD` (MACD line, Signal line, Histogram)
-
-### 4. Built-in Strategy Library
-* **`bb-capitulation`**: Lower Bollinger Band exhaustion pierces with RSI(5) oversold confirmation.
-* **`macd-crossover`**: Classic MACD (12, 26, 9) signal-line bullish crossover.
-* **`donchian-breakout`**: Turtle-style 20-day high momentum breakout with trailing stop.
-* **`trend-bb`**: Macro trend-gated Bollinger dips (Close > SMA50).
-* **`rsi2`**: Connors RSI(2) deep pullback strategy.
-* **`wc` / `wc-4d`**: Whitings Creek short-term capitulation mean-reversion.
-* **`buy-and-hold`**: Benchmark buy-and-hold baseline for computing active Alpha & Beta.
-
----
-
-## ⚡ Quickstart Guide
-
-### 1. Build All Binaries
 ```bash
-make build
+make build          # every cmd/* binary into bin/
+make test           # go test ./pkg/... ./cmd/...
+make list           # ./bin/backtest -list
 ```
 
-### 2. View All Available Strategies
+`go run ./cmd/<name>` is the same program as `./bin/<name>`.
+
+## Paths
+
+`pkg/appenv` reads the environment, then the nearest `.env`. A real environment variable wins.
+
+| Variable | Default | Used for |
+|---|---|---|
+| `APP_FOLDER` | `.` | repository root |
+| `APP_DATA` | `data` | market history, under `APP_FOLDER` |
+| `APP_REF` | `refdata` | reference DB, under `APP_FOLDER` |
+| `APP_REPORTS` | `reports` | result DBs and HTML, under `APP_FOLDER` |
+| `POLYGON_API_KEY` | empty | Polygon equity and option downloads, ETF universe |
+| `STRATEGY_ALLOWLIST` | empty | `strateval` live-list snapshot |
+| `STRATEGIES_DB` or `STRATEVAL_DB` | empty | overrides the strateval ledger path |
+
+Default files:
+
+| Role | Path |
+|---|---|
+| Market bars | `data/market_history.db`, table `backtest_start` |
+| Reference lists and ETF trees | `refdata/settings.db` |
+| Per-strategy results | `reports/<id>.db`, then `reports/<id>_2.db`, `reports/<id>_3.db`, … |
+| Shared-account results | `reports/shared_<primary>_<secondary>_….db` |
+| HTML tear sheet | `reports/backtest_report.html` |
+
+Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`, `candlesticks`) use `data/market_history.db` when that file exists and `data/leveraged_backtest.db` when it does not. `download`, `gridsearch`, `scoreboard`, `ticker_scan`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
+
+The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack-eval -primary …`, not `backtest -primary … stack-eval`.
+
+Daily simulations load rows with `length(Date) = 10`. Minute bars stay in the same table and are skipped by the daily bar query.
+
+---
+
+## download
+
+Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Polygon is opt-in.
+
+**Reads:** `refdata/settings.db` when no tickers are passed (table `leveraged_etf`, limit 50) or when `-list` names an `etf_universe` list (`all`, `6yr`, `sweep`).
+
+**Writes:** `data/market_history.db`, table `backtest_start`. Option history uses the same DB, tables `option_contracts`, `option_bars`, `option_expiry_scan`. Missing dates are filled; `-force` replaces the range.
+
+| Flag | Default |
+|---|---|
+| `-db` | `data/market_history.db` |
+| `-settings` | `refdata/settings.db` |
+| `-source` | `yahoo` (`polygon`, `polygon-options`, `stooq`) |
+| `-target-table` | `backtest_start` |
+| `-timeframe` | `1d` |
+| `-years` | `4` |
+| `-table` | `leveraged_etf` (settings DB symbol table) |
+| `-limit` | `50` (only the settings-table fallback) |
+| `-otm` | `0,2,5` (polygon-options, percent OTM) |
+| `-rate` | `5` API calls/minute (polygon-options) |
+
 ```bash
-make list
-# or:
+./bin/download VOO IEF GLD
+./bin/download -symbols PDD -years 6
+./bin/download -list 6yr -years 6
+./bin/download -source polygon -symbols VOO -timeframe 1m -polygon-key "$POLYGON_API_KEY"
+./bin/download -source polygon-options -symbols VOO
+```
+
+`-start YYYY-MM-DD` overrides `-years`. `-end` defaults to today.
+
+---
+
+## backtest
+
+Run one strategy, many strategies, or a shared cash account.
+
+**Reads:** market DB (`-db`, table `-table` `backtest_start`). `optimized` also reads `reports/gridsearch.db`. SQL pipelines read `sql/strategies/<id>/` when that directory exists, otherwise the copy embedded in the binary.
+
+**Writes:** `reports/<id>.db` (next free `reports/<id>_N.db` if the name is taken). Tables `signals`, `trades`, `equity_curve`, `performance_summary`, and when relevant `return_breakdown` and `run_metrics`. HTML at `reports/backtest_report.html`. Auto-download (`-auto-download`, default on) writes missing bars into the market DB. Window starts `2021-01-01` (`-start`); earlier bars warm up SMAs only. Capital default `$100,000`. `-download-years` default `5`.
+
+```bash
 ./bin/backtest -list
+./bin/backtest -strategy sig-voo-buy-tecl -capital 100000
+./bin/backtest -strategy sig-voo-buy-tecl,mara_tree
+./bin/backtest -strategy all
+./bin/backtest -primary sig-voo-buy-tecl -secondary mara_tree,pdd_tree -capital 100000
+./bin/backtest sig-voo-buy-tecl+mara_tree
 ```
 
-### 3. Run Custom CSV Backtest
-Ingest your own OHLCV CSV file and run an immediate backtest:
+`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, and `-max-positions` override the strategy config when set (non-zero). `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
+
+### backtest stale
+
+Print which `reports/*.db` results are stale (unknown strategy, newer market bars, or an edited SQL pipeline). No simulation.
+
 ```bash
-make example-csv
-# or:
-./bin/download -csv examples/custom_csv_backtest/sample_stocks.csv -db data/sample.db
-./bin/backtest -db data/sample.db -strategy donchian-breakout -capital 50000
+./bin/backtest stale
 ```
 
-### 4. Run Strategy Backtests
+### backtest optimized
+
+Re-run strategies with the highest-resilience row in `reports/gridsearch.db` (`hold_days` must be set; older rows without it are ignored). No `-strategy` means every registered strategy. A strategy with no usable sweep runs on its own defaults and is named in the output.
+
 ```bash
-# High-Performance BB-Capitulation Strategy
-./bin/backtest -strategy bb-capitulation -capital 100000
-
-# MACD Crossover Strategy
-./bin/backtest -strategy macd-crossover -capital 100000
-
-# Donchian 20-Day Momentum Breakout with Trailing Stop
-./bin/backtest -strategy donchian-breakout -capital 100000
-
-# Single Symbol Filter (e.g. SOXL, AAPL, SPY)
-./bin/backtest -strategy bb-capitulation -symbol SOXL -capital 100000
+./bin/backtest optimized -strategy sig-voo-buy-tecl
+./bin/backtest optimized
 ```
 
-### 5. Multi-Strategy Comparative Benchmark
-Run all strategies concurrently against your dataset in parallel:
+### backtest stack-eval
+
+Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
+
+Default candidates skip `*-sql` twins, `voo-buy-hold`, `genetic-momentum`, `dt_*` trees, and any strategy that does not name its symbols. `-include-dt` adds the top `-dt-top` (15) ETF trees. `-include-universe` adds symbol-scanning strategies. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
+
 ```bash
-make compare
-# or:
-./bin/compare -db data/wc_master_backtest.db -capital 100000
+./bin/backtest stack-eval -primary sig-voo-buy-tecl
+./bin/backtest stack-eval -primary sig-voo-buy-tecl -secondary mara_tree,pdd_tree -persist-best
+./bin/backtest stack-eval -primary sig-voo-buy-tecl -include-dt -dt-top 15 -stack-depth 3
 ```
 
-### 6. Launch the Local Web Dashboard
+### backtest covered-call
+
+Hold one underlying (default `VOO`) and sell a monthly call. Prints the comparison on stdout. Does not write a strategy result DB.
+
+**Reads:** equity bars and `option_contracts` / `option_bars` in the market DB. Load the chains first with `download -source polygon-options`.
+
 ```bash
-make ui
-# Open http://localhost:8080 in your browser
+./bin/download -source polygon-options -symbols VOO
+./bin/backtest covered-call -symbol VOO -otm 2 -commission 0.65 -opt-slip 0.05
 ```
 
-### 7. Other Utilities
-```bash
-# Run Market Scanner (checks latest dates for signals)
-./bin/scan_check
+`-start` defaults to the first rollable month (option history is about two years on the Polygon free tier), not `2021-01-01`.
 
-# Run Empirical Stop-Loss Probability Analysis (on DFEN)
-./bin/stop_prob
+---
+
+## livescan
+
+Same signal generation as `backtest`, window fixed to the last completed session in the market DB. `ENTER` means a buy for the next session. Refresh failure aborts; it does not scan a stale tip.
+
+**Reads:** market DB, table `backtest_start`. `-bars 0` loads each strategy's minimum history.
+
+**Writes:** `reports/livescan.db` (`livescan_status`, `livescan_signals`). `-json` also prints the scan to stdout for `trade_orchestrator`.
+
+```bash
+./bin/livescan -list
+./bin/livescan -strategy sig-voo-buy-tecl,mara_tree
+./bin/livescan all
+./bin/livescan -strategy sig-voo-buy-tecl -json
+```
+
+`-auto-download` defaults on. `-download-years 0` derives the window from `-bars` or the strategy minimum.
+
+---
+
+## gridsearch
+
+Sweep hold, take-profit, stop, and the strategy's other axes. One strategy writes HTML. Several strategies share one worker pool and record progress so a rerun skips finished ids.
+
+**Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `reports/voo_up3_etf.db`) ranked by `rank_cagr`.
+
+**Writes:** `reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`.
+
+```bash
+./bin/gridsearch -list
+./bin/gridsearch -strategy sig-voo-buy-tecl -top 20
+./bin/gridsearch -strategy all -no-html
+./bin/gridsearch -strategy gld-decline -symbols-from reports/voo_up3_etf.db -top-cagr 10
+```
+
+`-force` redoes a strategy already marked done in `gridsearch_runs`.
+
+### gridsearch params
+
+Print the parameter grid. No database and no simulation.
+
+```bash
+./bin/gridsearch params sig-voo-buy-tecl
+./bin/gridsearch params all
+```
+
+### gridsearch stale
+
+Report which completed sweeps are stale. No new sweep.
+
+```bash
+./bin/gridsearch stale
 ```
 
 ---
 
-## 🛠️ Writing Your Own Strategy in Go (Under 35 Lines)
+## scoreboard
 
-Create `pkg/strategy/my_strategy.go`:
+Backtest every registered strategy that lacks a usable result, then rank them.
 
-```go
-package strategy
+**Reads:** `data/market_history.db` (`backtest_start`) and existing `reports/<id>[_N].db`.
 
-import (
-    "sort"
-    "github.com/darianmavgo/backtestgosqlite/pkg/models"
-)
+**Writes:** per-strategy `reports/<id>[_N].db` for anything it has to run, then `reports/scoreboard.db`. If that file is locked it writes `reports/scoreboard_N.db`. Capital `$100,000`, start `2021-01-01`, download horizon 5 years. No `-db` or `-out-dir` flag; both follow `APP_FOLDER`.
 
-type MyStrategy struct{}
-
-func init() {
-    Register(&MyStrategy{}) // Auto-registers in CLI & comparison suite
-}
-
-func (s *MyStrategy) ID() string          { return "my-strategy" }
-func (s *MyStrategy) Name() string        { return "My Custom Strategy" }
-func (s *MyStrategy) Description() string { return "Enters when RSI(14) < 30 and Close > SMA(200)." }
-
-func (s *MyStrategy) DefaultConfig() StrategyConfig {
-    return StrategyConfig{
-        ID:            "my-strategy",
-        Name:          s.Name(),
-        Description:   s.Description(),
-        TargetPct:     1.15,   // +15% profit target
-        StopLossPct:   0.93,   // -7% stop loss
-        HoldingWindow: 10,     // 10-day max holding
-        PositionCap:   5,      // Max 5 positions
-        AllocationPct: 0.20,   // 20% equity per position
-        SlippagePct:   0.0005, // 0.05% slippage
-    }
-}
-
-func (s *MyStrategy) Validate() error {
-    return ValidateConfig(s.DefaultConfig())
-}
-
-func (s *MyStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-    var signals []models.Signal
-
-    for sym, bars := range barsBySymbol {
-        if len(bars) < 200 { continue }
-        rsi := CalcRSI(bars, 14)
-        sma := CalcSMA(bars, 200)
-
-        for i := 200; i < len(bars); i++ {
-            if rsi[i] < 30.0 && bars[i].Close > sma[i] {
-                signals = append(signals, models.Signal{
-                    Idx: bars[i].Idx, Symbol: sym, Date: bars[i].Date,
-                    Close: bars[i].Close, BuyLimit: bars[i].Close,
-                    OrderType: "limit", Entry: 1,
-                })
-            }
-        }
-    }
-
-    sort.Slice(signals, func(i, j int) bool { return signals[i].Date < signals[j].Date })
-    return signals
-}
+```bash
+./bin/scoreboard
+./bin/scoreboard -force
+./bin/scoreboard compile
+./bin/scoreboard status
 ```
 
-Recompile with `make build` and run `./bin/backtest -strategy my-strategy`!
-
-See [`docs/strategies/writing_a_strategy.md`](file:///Users/darianhickman/Documents/backtestgosqlite/docs/strategies/writing_a_strategy.md) for full guide.
+`compile` only reads result DBs. `status` reports whether every registered strategy has a usable result and does not write `scoreboard.db`.
 
 ---
 
-## 📊 Sample Output: Quantitative Tear Sheet
+## study
 
+Run one research study.
+
+**Reads:** market DB (`-db`).
+
+**Writes:** `reports/<study-id>.db`.
+
+```bash
+./bin/study -list
+./bin/study -study market_context_20d
+./bin/study -study hmm_regime -symbol QQQ
+./bin/study -study gain_5pct_frequency
+./bin/study -study voo_up3_etf
 ```
-========================================================================================
-📊 QUANTITATIVE PORTFOLIO TEAR SHEET: DONCHIAN 20-DAY MOMENTUM BREAKOUT
-📅 BACKTEST TIME WINDOW: 2020-01-02 ➔ 2024-01-02 (4.0 Years | 1008 Trading Days)
-========================================================================================
-+----------------------------+--------------------------+----------------------------------------+
-|           METRIC           |          VALUE           |          BENCHMARK / CONTEXT           |
-+----------------------------+--------------------------+----------------------------------------+
-| Backtest Time Window       | 2020-01-02 to 2024-01-02 | 1008 trading days (4.0 years)          |
-| Initial Capital            | $100000.00               | Starting portfolio cash                |
-| Ending Total Equity        | $148320.15               | Cash + open positions                  |
-| Net Realized Profit        | $48320.15                | 48.32% total return                    |
-| CAGR (Annualized Return)   | 10.35%                   | Compound Annual Growth Rate            |
-| Sharpe Ratio (Annualized)  |                     1.15 | Risk-adjusted return vs. 0% Rf         |
-| Sortino Ratio (Annualized) |                     1.82 | Downside volatility adjusted           |
-| Calmar Ratio               |                     0.85 | CAGR / Max Drawdown                    |
-| Omega Ratio                |                     1.38 | Gain-to-loss probability ratio         |
-| Ulcer Index                |                     3.12 | Depth & duration of drawdowns          |
-| 🔴 MAX DRAWDOWN (MDD %)    | 12.18%                   | Worst account decline from peak equity |
-| 🔴 MAX DRAWDOWN ($ LOSS)   | -$14250.00               | Peak: $117000 ➔ Trough: $102750        |
-| 🔴 MAX DRAWDOWN DATES      | 2022-04-12 ➔ 2022-09-20  | Longest drawdown duration: 112 days    |
-| Total Completed Trades     |                       64 | 41 Wins / 23 Losses                    |
-| Trade Win Rate             | 64.06%                   | Pct of closed trades in profit         |
-| Profit Factor              |                     2.31 | Gross Profits / Gross Losses           |
-| Win / Loss Payoff Ratio    |                     1.30 | Avg Win $ / Avg Loss $                 |
-| Average Win                | $2140.50                 | Per winning trade                      |
-| Average Loss               | $1646.50                 | Per losing trade                       |
-| Average MAE (Drawdown)     | -3.42%                   | Max Adverse Excursion during trade     |
-| Average MFE (Runup)        | 8.19%                    | Max Favorable Excursion during trade   |
-| Average Holding Period     | 11.4 days                | Holding horizon                        |
-| Total Commissions & Fees   | $12.45                   | Exchange / broker costs deducted       |
-+----------------------------+--------------------------+----------------------------------------+
+
+Registered ids: `market_context_20d`, `cluster_5pct`, `googl_market_context`, `gain_5pct_frequency`, `hmm_regime`, `etf_study`, `sp500_lead_lag`, `market_clustering`, `qqq_tqqq_volume`, `voo_up3_etf`, `mara_decision_tree`, `mu_decision_tree`, `march_april_voo_gld_uten`.
+
+`cluster_5pct` and `googl_market_context` need a cluster database supplied in code (`SetClusterDB`). The CLI does not pass one, so those two exit until a caller sets it. `cluster_5pct` also expects `data/gain_5pct_frequency.db` beside the market DB.
+
+---
+
+## strateval
+
+In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live jobs.
+
+**Reads:** `data/market_history.db`, table `backtest_start`. Allowlist from `-allowlist` or `STRATEGY_ALLOWLIST` (comma-separated ids).
+
+**Writes:** `reports/strategies.db` (`strategies`, `strategy_evals`, `deployments`), unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. Scratch artifacts under `reports/strateval_runs/`. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
+
+```bash
+./bin/strateval -list
+./bin/strateval -strategy sig-voo-buy-tecl
+./bin/strateval -strategy all -optimize -max-trials 50
+./bin/strateval report
+./bin/strateval status
+./bin/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+./bin/strateval path
+```
+
+`path` prints how to open the ledger. `sync-deployed` snapshots the allowlist into `deployments`. `-sync-deployed` on an eval run does the same snapshot after the eval.
+
+---
+
+## walk_forward
+
+Rolling train / test folds.
+
+**Reads:** `data/market_history.db`, table `backtest_start`.
+
+**Writes:** `reports/walk_forward.db` relative to the current directory (this default does not go through `APP_REPORTS`). Tables `walk_forward_fold` and `walk_forward_summary`. Train 24 months, test 6, step 6. Capital `$100,000`.
+
+```bash
+./bin/walk_forward -strategy sig-voo-buy-tecl
+./bin/walk_forward -strategy sig-voo-buy-tecl,mara_tree -train-months 24 -test-months 6 -step-months 6
+```
+
+## check_overfit
+
+Read a walk-forward DB and print a verdict per strategy: `HOLDS`, `DECAYS`, `CURVE_FIT`, or `INSUFFICIENT`.
+
+**Reads / writes:** `reports/walk_forward.db` (cwd-relative). Adds `check_overfit_gate` when it records the gates. Defaults: `-min-oos-trades 8`, `-trial-cutoff 20`, `-decay 0.25`.
+
+```bash
+./bin/check_overfit
+./bin/check_overfit -db reports/walk_forward.db -min-oos-trades 8
 ```
 
 ---
 
-## 📁 Repository Structure
+## etf_universe
 
+List active US ETFs from Polygon and store them.
+
+**Writes:** `refdata/settings.db`, table `etf_universe`, list `all`. Needs `POLYGON_API_KEY` or `-polygon-key`. Page size `-limit 1000`.
+
+```bash
+./bin/etf_universe
 ```
-backtestgosqlite/
-├── Makefile                          # Root automation (build, backtest, compare, test, ui)
-├── README.md                         # Main documentation
-├── Comparison.md                     # Performance & architecture comparison
-│
-├── cmd/                              # CLI Executable Entrypoints
-│   ├── backtest/main.go              # Single strategy backtester & tear sheet CLI
-│   ├── compare/main.go               # Concurrent multi-strategy benchmark suite
-│   ├── download/main.go              # Multi-source data loader (CSV, Yahoo, Stooq)
-│   ├── scan_check/main.go            # Market scanner & recent signal detection CLI
-│   ├── stop_prob/main.go             # Empirical stop-loss probability analysis CLI
-│   ├── ui/main.go                    # Local Web Dashboard UI Server
-│   └── server/main.go                # Automated execution HTTP server
-│
-├── pkg/                              # Libraries and CLI logic
-│   ├── models/models.go              # Domain types (Bar, Signal, Position, Trade, Report)
-│   ├── datasource/                   # Pluggable data layer (CSV, Yahoo, Stooq, SQLite)
-│   ├── strategy/                     # Unified strategy registry, indicators & algorithms
-│   │   ├── indicators.go             # Pure Go technical indicators (RSI, BB, MACD, Donchian, ATR)
-│   │   ├── bb_capitulation.go        # Bollinger Band Capitulation Strategy
-│   │   ├── macd_crossover.go         # MACD Bullish Crossover Strategy
-│   │   ├── donchian_breakout.go      # Donchian 20-Day Momentum Breakout
-│   │   ├── whitings_creek.go         # Whitings Creek Baseline Strategy
-│   │   ├── trend_bb.go               # Trend-Gated Bollinger Strategy
-│   │   └── rsi2_trend.go             # Connors RSI(2) Strategy
-│   ├── simulator/                    # Portfolio ledger, execution models & sizing
-│   │   ├── portfolio.go              # Chronological event simulator
-│   │   ├── sizer.go                  # Position sizing (Fixed %, Fixed $, Fixed Shares, Kelly)
-│   │   └── concurrent.go             # Multi-goroutine concurrent backtest runner
-│   ├── analytics/                    # Performance analytics & HTML report generator
-│   │   ├── metrics.go                # Sharpe, Sortino, Calmar, Omega, Ulcer, Alpha/Beta
-│   │   └── html_report.go            # Interactive HTML report generator
-│   └── storage/                      # SQLite WAL database helpers & query engine
-│
-├── sql/                              # SQL Pipeline Strategies
-│   ├── 01_schema/                    # Master database schema DDL
-│   └── strategies/                   # Auto-discovered SQL strategy pipelines
-│       ├── README.md                 # SQL strategy authoring guide
-│       └── whitings_creek/           # 25-stage relational pipeline
-│
-├── docs/                             # In-Depth Guides & Strategy Specs
-│   └── strategies/                   # Strategy documentation & tutorial
-│
-└── examples/                         # Standalone runnable examples
-    └── custom_csv_backtest/          # CSV ingestion and backtest walkthrough
+
+## etf_decision_trees
+
+Fit a decision tree and a TP/SL/hold grid for each symbol in an ETF list.
+
+**Reads:** `data/market_history.db` and `refdata/settings.db` list `6yr` (`-list all|6yr|sweep`).
+
+**Writes:** `refdata/settings.db` table `etf_dt_strategies` (registered later as `dt_<symbol>`), replacing that table with the merged fit. Skips symbols that already have a row unless `-force`. Capital `$100,000`, allocation `0.65`, yield `0.045`, `-min-trades 15`, prints `-top 40`.
+
+```bash
+./bin/etf_decision_trees
+./bin/etf_decision_trees -list sweep -min-trades 15 -force
 ```
 
 ---
 
-## Validation
+## ticker_scan
 
-Four checks compare a live strategy with its backtest. Each one is a `pkg/` function with a thin `cmd/` wrapper, and each writes its own table. Run them from the CLI when you want a report. They are not on the cron schedule. Walk-forward and the curve-fit check live in this repo. Trade reconciliation and the slippage audit live in `trade_orchestrator`.
+Apply the 200-day SMA bounce tree to symbols in the market DB and print a resilience ranking. Stdout only.
 
-### Walk-forward
-
-Rolls an in-sample window forward and simulates each out-of-sample window from a flat book. Signals are generated once on the full history. Only that window's dates are simulated. Writes `walk_forward_fold` and `walk_forward_summary`. Returns in those tables are fractions (`0.05` is five percent).
+**Reads:** `data/market_history.db`, table `backtest_start`. Default universe is every symbol except `VOO`, `GLD`, `TECL`, `SPXU`, `UTEN`. Defaults: TP 5%, SL 8%, hold 1 day, allocation 0.65, yield 0.045, capital `$100,000`, `-min-trades 10`. `-optimize-top 3` sweeps TP/SL/hold for the best names (`0` disables).
 
 ```bash
-go run ./cmd/walk_forward -strategy tsll-daily-one-share -market-db data/market.db -table backtest_start -db reports/walk_forward.db -train-months 24 -test-months 6 -step-months 6 -capital 100000
+./bin/ticker_scan
+./bin/ticker_scan -symbols SOXL,TQQQ,COIN
 ```
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `-strategy` | required | Strategy id, or a comma-separated list |
-| `-market-db` | `MARKET_DB` | Bars SQLite |
-| `-table` | `backtest_start` | Bars table |
-| `-db` | `reports/walk_forward.db` | Where fold rows and the summary are written |
-| `-train-months` | 24 | In-sample window, calendar months immediately before each out-of-sample window |
-| `-test-months` | 6 | Out-of-sample window |
-| `-step-months` | 6 | How far the next fold moves forward |
-| `-capital` | 100000 | Starting capital for each window |
+---
 
-### Curve-fit check
+## audit_shared
 
-Reads `walk_forward_summary` and writes `check_overfit`. It does not re-simulate. Run `walk_forward` first. Verdicts are `HOLDS`, `DECAYS`, `CURVE_FIT`, and `INSUFFICIENT`.
+Print exit-reason and preemption audits for one shared-account result.
+
+**Reads:** `-db`, or the newest `reports/shared_*.db` by modification time. Stdout only.
 
 ```bash
-go run ./cmd/check_overfit -db reports/walk_forward.db -min-oos-trades 8 -trial-cutoff 20 -decay 0.25
+./bin/audit_shared
+./bin/audit_shared -db reports/shared_sig-voo-buy-tecl_mara_tree_2.db
 ```
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `-db` | `reports/walk_forward.db` | The database `walk_forward` wrote |
-| `-min-oos-trades` | 8 | Fewer out-of-sample trades than this is `INSUFFICIENT` |
-| `-trial-cutoff` | 20 | A parameter grid at least this large can be `CURVE_FIT` |
-| `-decay` | 0.25 | Out-of-sample Sharpe below this fraction of in-sample Sharpe has collapsed |
+## compare_annual_report
 
-`INSUFFICIENT` means too few out-of-sample trades. `CURVE_FIT` means many trials, an in-sample Sharpe above 0.5, and an out-of-sample Sharpe below the decay fraction of in-sample. `DECAYS` means the out-of-sample Sharpe collapsed. `HOLDS` means the out-of-sample Sharpe stays positive and at least half of in-sample.
+Annual table of one shared book versus one standalone book, plus VOO from the market DB.
 
-### Trade reconciliation
+**Reads:** `-shared-db` default `reports/shared_sig-voo-buy-tecl_bb-capitulation_2.db`, `-standalone-db` default `reports/sig-voo-buy-tecl_4.db`, `-market-db` `data/market_history.db`.
 
-In `trade_orchestrator`, `reconcile_trades` rebuilds `reconcile_trade`: one row per account, strategy, symbol, and signal date. The live fill is compared with a one-share replay of that same signal through the backtest's entry and exit rules.
+**Writes:** `reports/annual_comparison_standalone_vs_shared.html`.
 
 ```bash
-go run ./cmd/orchestrator reconcile_trades --account 123 --market-db /path/market.db --table backtest_start
+./bin/compare_annual_report \
+  -shared-db reports/shared_sig-voo-buy-tecl_mara_tree.db \
+  -standalone-db reports/sig-voo-buy-tecl.db
 ```
 
-`--market-db` defaults to `MARKET_DB`. If that file is missing, the live side is still written and `model_outcome` is `NO_BARS`. `--account` limits staged orders and managed trades to one account. Signals that were never staged are still included. `--table` defaults to `backtest_start`.
+## candlesticks
 
-### Slippage and latency
+One-minute candlestick chart for March–April 2025. No flags.
 
-`audit_slippage` summarizes that ledger into `audit_slippage`: average entry and exit slippage, the worst entry slippage, slippage versus the limit sent, average sessions from the intended session to the fill, and fees. Run `reconcile_trades` first.
+**Reads:** market DB, `backtest_start`, `timeframe = '1m'`, dates `2025-03-01` through `2025-04-30`.
+
+**Writes:** `reports/candlesticks_go.html`.
 
 ```bash
-go run ./cmd/orchestrator audit_slippage
+./bin/candlesticks
 ```
 
-### How to read a row
+## granger_chart
 
-- Returns are fractions. `0.05` is five percent.
-- `entry_slippage_bps` is positive when the live entry paid more than the model. `exit_slippage_bps` is positive when the live exit sold higher than the model.
-- `fill_delay_sessions` counts trading sessions from `next_session` to the entry fill. A negative number means the fill was before that session. A fill price of `0` means the broker price is still unknown.
-- Only `mara_tree`, `pdd_tree`, and `sig-voo-buy-tecl` enter on the next session's limit. Every other strategy, including `tsll-daily-one-share`, is replayed on the signal bar, which is how that strategy's backtest fills. The row shows that difference.
+Chart Granger rows from the March/April study. No flags.
 
-### What the live book stores
+**Reads:** `reports/march_april_voo_gld_uten.db`.
 
-`manage_exit` keeps the decision key (`strategy_id`, `as_of_date`, `next_session`, the signal ids, and the stage id) plus `entry_fill_price`, `exit_fill_price`, `filled_qty`, `fees`, and `exit_reason_code`. The Schwab order mirror stores `execution_price`. The transaction mirror stores `fees` and `symbol`. Reconciliation copies the broker fill off the order, including a sell nested under the entry, when the managed trade does not already have one. The managed-trades page shows the new columns.
+**Writes:** `reports/granger_causality_go.html`.
 
-## 🛠️ Tech Stack
+```bash
+./bin/study -study march_april_voo_gld_uten
+./bin/granger_chart
+```
 
-- **Language & Runtime**: Go (1.18+)
-- **Database**: SQLite 3 with Write-Ahead Logging (WAL)
-- **Market Data Feeds**: Standard CSV Import, Yahoo Finance Chart API, Stooq
-- **Broker Execution**: Alpaca Trade API Go SDK
-- **Frontend**: HTML5, Vanilla CSS, Vanilla JavaScript, Chart.js, Tablewriter
+## ui
+
+Local review server for the Whitings Creek cache. Default port `8085`.
+
+**Reads:** `data/wc_master_backtest.db` (`wc_summary`, `wc_backtest_details`, `backtest_start`) and `refdata/settings.db` (`leveraged_etf`).
+
+```bash
+./bin/ui
+./bin/ui -port 8085
+```
+
+Open `http://localhost:8085`.
+
+## dataflare
+
+Open a SQLite file in the Dataflare macOS app. No flags. Pass the DB as the only argument, or pass none to launch the app.
+
+```bash
+./bin/dataflare
+./bin/dataflare data/market_history.db
+./bin/dataflare reports/sig-voo-buy-tecl.db
+```

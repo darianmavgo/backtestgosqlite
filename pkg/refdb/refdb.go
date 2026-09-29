@@ -1,6 +1,5 @@
 // Package refdb is the reference database (APP_REF/settings.db): ticker
-// universes and per-ETF decision-tree configs live here instead of in
-// text/CSV files.
+// universes and per-ETF decision-tree configs live in SQLite tables.
 package refdb
 
 import (

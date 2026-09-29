@@ -82,15 +82,15 @@ func fetchWithFallback(ctx context.Context, out io.Writer, primary, fallback dat
 // Config holds every setting of a download run. Zero values mean "unset";
 // DefaultConfig returns the CLI defaults.
 type Config struct {
-	DB, SettingsDB, Source, PolygonKey, CSV string
-	Symbols, Universe, Table                string
-	Limit, Years                            int
-	Start, End, Timeframe, TargetTable      string
-	Force                                   bool
-	Concurrency                             int
-	OTM                                     string    // polygon-options: comma-separated % OTM
-	Rate, MaxCalls                          int       // polygon-options
-	Out                                     io.Writer // progress output; nil discards
+	DB, SettingsDB, Source, PolygonKey string
+	Symbols, Universe, Table           string
+	Limit, Years                       int
+	Start, End, Timeframe, TargetTable string
+	Force                              bool
+	Concurrency                        int
+	OTM                                string    // polygon-options: comma-separated % OTM
+	Rate, MaxCalls                     int       // polygon-options
+	Out                                io.Writer // progress output; nil discards
 }
 
 // Summary reports what a Run did.
@@ -114,9 +114,8 @@ func Main() {
 	cfg := d
 	flag.StringVar(&cfg.DB, "db", d.DB, "Target SQLite DB path for market history (default: APP_FOLDER/data/market_history.db)")
 	flag.StringVar(&cfg.SettingsDB, "settings", d.SettingsDB, "Reference DB path (etf_universe lists and symbol tables)")
-	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, polygon-options, stooq, csv")
+	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, polygon-options, stooq")
 	flag.StringVar(&cfg.PolygonKey, "polygon-key", d.PolygonKey, "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
-	flag.StringVar(&cfg.CSV, "csv", d.CSV, "Path to CSV file or directory of CSV files (used with -source csv)")
 	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated symbols to download (e.g. SPY,QQQ). Bare arguments work too: download VOO, IEF, GLD")
 	flag.StringVar(&cfg.Universe, "list", d.Universe, "etf_universe list in the settings DB to download (all, 6yr, sweep)")
 	flag.StringVar(&cfg.Table, "table", d.Table, "Table name in settings.db with symbols (fallback if no symbols specified)")
@@ -230,31 +229,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		return &Summary{}, nil
 	}
 
-	// 1. Handle direct CSV ingestion
-	if strings.ToLower(cfg.Source) == "csv" || cfg.CSV != "" {
-		if cfg.CSV == "" {
-			return nil, fmt.Errorf("Please provide CSV file or directory path using -csv <path>")
-		}
-		fmt.Fprintf(out, "📂 Ingesting historical market data from CSV: %s\n", cfg.CSV)
-		csvSource := datasource.NewCSVDataSource(cfg.CSV, nil)
-		req := datasource.FetchRequest{
-			Symbol:    cfg.Symbols,
-			Timeframe: cfg.Timeframe,
-		}
-		bars, err := csvSource.Fetch(ctx, req)
-		if err != nil {
-			return nil, fmt.Errorf("Failed to parse CSV %s: %v", cfg.CSV, err)
-		}
-
-		if err := storage.UpsertBars(db, cfg.TargetTable, bars); err != nil {
-			return nil, fmt.Errorf("Failed to save bars to SQLite DB: %v", err)
-		}
-
-		fmt.Fprintf(out, "✅ Successfully ingested %d bars from CSV into %s (%s)\n", len(bars), cfg.DB, cfg.TargetTable)
-		return &Summary{NewBars: len(bars)}, nil
-	}
-
-	// 2. Resolve symbol list
+	// Resolve symbol list
 	var symbols []string
 	if cfg.Symbols != "" {
 		parts := strings.Split(cfg.Symbols, ",")

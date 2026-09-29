@@ -12,7 +12,8 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-// StooqDataSource fetches historical daily data from Stooq CSV feeds.
+// StooqDataSource fetches historical daily bars from Stooq. The HTTP body is
+// parsed in memory and returned as bars; callers persist those bars in SQLite.
 type StooqDataSource struct {
 	HTTPClient *http.Client
 }
@@ -57,7 +58,7 @@ func (s *StooqDataSource) Fetch(ctx context.Context, req FetchRequest) ([]models
 	r := csv.NewReader(resp.Body)
 	records, err := r.ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read stooq csv: %w", err)
+		return nil, fmt.Errorf("failed to read stooq response: %w", err)
 	}
 
 	if len(records) < 2 {
@@ -105,4 +106,24 @@ func (s *StooqDataSource) Fetch(ctx context.Context, req FetchRequest) ([]models
 	}
 
 	return bars, nil
+}
+
+func parseDateString(raw string) (time.Time, string) {
+	formats := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+		"2006/01/02",
+		"01/02/2006",
+		"02-01-2006",
+		time.RFC3339,
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, raw); err == nil {
+			return t, t.Format("2006-01-02")
+		}
+	}
+	if len(raw) >= 10 {
+		return time.Time{}, raw[:10]
+	}
+	return time.Time{}, raw
 }

@@ -216,8 +216,8 @@ func optimizeOnIS(
 	return bestCfg, bestSharpe, trials
 }
 
-// ParseAllowlistCSV splits a STRATEGY_ALLOWLIST-style CSV into a set.
-func ParseAllowlistCSV(raw string) map[string]bool {
+// ParseAllowlist splits a comma-separated STRATEGY_ALLOWLIST into a set.
+func ParseAllowlist(raw string) map[string]bool {
 	out := map[string]bool{}
 	for _, p := range strings.Split(raw, ",") {
 		p = strings.TrimSpace(p)

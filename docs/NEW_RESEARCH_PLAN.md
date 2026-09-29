@@ -52,7 +52,7 @@ The platform distinguishes between **Strategies** (`pkg/strategy/`, standard bac
 **Concept:** Buy Morningstar feed, see if 5-star stocks reduce drawdown risk.
 **Type:** Data Ingestion + `pkg/strategy`
 **Implementation Plan:**
-- **Data:** Requires a new implementation in `pkg/datasource/morningstar.go` (or importing CSVs).
+- **Data:** Requires a new implementation in `pkg/datasource/morningstar.go` that writes ratings into SQLite.
 - The ratings need to be stored chronologically (as a stock's rating changes over time) in a new table in `market_history.db` or `settings.db`.
 - **Strategy:** Create `pkg/strategy/morningstar_defense.go`, which acts as a regime filter: only take long signals if the stock is currently 5-star. Compare its equity curve's Max Drawdown against a baseline.
 

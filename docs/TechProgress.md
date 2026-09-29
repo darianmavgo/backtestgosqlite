@@ -32,7 +32,7 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
 │                           1. CACHE-FIRST DATA LAYER                             │
 │  - data/market_history.db (SQLite WAL)                                          │
 │  - cmd/download: Smart gap-detection (fetches only missing dates, 0 duplicates) │
-│  - Supports Yahoo Finance API v8, Stooq, and custom high-resolution CSV feeds    │
+│  - Supports Yahoo Finance API v8, Stooq, and Polygon; bars land in SQLite        │
 └────────────────────────────────────────┬────────────────────────────────────────┘
                                          │
                                          ▼

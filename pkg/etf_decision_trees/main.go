@@ -268,9 +268,9 @@ func Run(conf Config) error {
 	fmt.Printf("\n⚡ Done in %s: %d symbols fitted a usable tree+config, %d had too few +-5%% extreme days to fit a tree, %d fit a tree but no TP/SL/hold combo cleared %d min trades.\n",
 		time.Since(start).Round(time.Second), fitted, skippedNoTree, skippedNoTrades, conf.MinTrades)
 
-	// Merge freshly-fitted results with whatever was already valid so the output
-	// CSV (and the strategy registry that reads it) still covers every symbol
-	// ever successfully fitted, not just the ones fitted this run.
+	// Merge freshly-fitted results with whatever was already valid so the
+	// reference DB (and the strategy registry that reads it) still covers every
+	// symbol ever successfully fitted, not just the ones fitted this run.
 	merged := existing
 	if merged == nil {
 		merged = map[string]dtResult{}

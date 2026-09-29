@@ -18,7 +18,7 @@ type FetchRequest struct {
 
 // DataSource is the uniform interface for fetching OHLCV bars from any provider or storage backend.
 type DataSource interface {
-	// Name returns the provider name (e.g. "yahoo", "stooq", "csv", "sqlite").
+	// Name returns the provider name (e.g. "yahoo", "stooq", "polygon", "sqlite").
 	Name() string
 
 	// Fetch loads historical bars matching the request parameters.

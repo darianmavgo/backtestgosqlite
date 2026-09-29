@@ -112,7 +112,7 @@ func Main() {
 	d := conf
 	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"report": "report", "status": "status", "sync-deployed": "sync-deployed", "path": "path"})
 	flag.StringVar(&conf.Db, "db", d.Db, "strategies SQLite ledger")
-	flag.StringVar(&conf.Allowlist, "allowlist", d.Allowlist, "current STRATEGY_ALLOWLIST CSV")
+	flag.StringVar(&conf.Allowlist, "allowlist", d.Allowlist, "comma-separated STRATEGY_ALLOWLIST")
 	flag.StringVar(&conf.RunId, "run-id", d.RunId, "optional run id filter")
 	flag.StringVar(&conf.MarketDb, "market-db", d.MarketDb, "market bars SQLite")
 	flag.StringVar(&conf.Table, "table", d.Table, "bars table")
@@ -177,7 +177,7 @@ func runSyncDeployed(conf Config) error {
 		return fmt.Errorf("open store: %v", err)
 	}
 	defer st.Close()
-	live, retired, err := st.SyncAllowlist(splitCSV(conf.Allowlist), "sync-allowlist")
+	live, retired, err := st.SyncAllowlist(splitList(conf.Allowlist), "sync-allowlist")
 	if err != nil {
 		return fmt.Errorf("sync: %v", err)
 	}
@@ -202,7 +202,7 @@ func runReport(conf Config) error {
 	if err != nil {
 		return fmt.Errorf("query: %v", err)
 	}
-	fmt.Print(FormatReport(rows, splitCSV(conf.Allowlist)))
+	fmt.Print(FormatReport(rows, splitList(conf.Allowlist)))
 	return nil
 }
 
@@ -220,7 +220,7 @@ func runEval(conf Config) error {
 		return nil
 	}
 	if strings.TrimSpace(conf.Strategy) == "" {
-		return fmt.Errorf("-strategy is required (id, csv, or all). Or: strateval status | report | sync-deployed | path")
+		return fmt.Errorf("-strategy is required (id, comma-separated ids, or all). Or: strateval status | report | sync-deployed | path")
 	}
 
 	strats, err := resolveStrategies(conf.Strategy)
@@ -239,7 +239,7 @@ func runEval(conf Config) error {
 	}
 	defer st.Close()
 
-	alMap := ParseAllowlistCSV(conf.Allowlist)
+	alMap := ParseAllowlist(conf.Allowlist)
 	fmt.Printf("strateval run_id=%s strategies=%d oos_months=%d optimize=%v\n",
 		conf.RunId, len(strats), conf.OosMonths, conf.Optimize)
 	fmt.Printf("ledger: %s\n", conf.Db)
@@ -267,7 +267,7 @@ func runEval(conf Config) error {
 	}
 
 	if conf.SyncDeployed {
-		live, retired, err := st.SyncAllowlist(splitCSV(conf.Allowlist), "sync-allowlist")
+		live, retired, err := st.SyncAllowlist(splitList(conf.Allowlist), "sync-allowlist")
 		if err != nil {
 			log.Printf("sync-deployed: %v", err)
 		} else {
@@ -276,7 +276,7 @@ func runEval(conf Config) error {
 	}
 
 	fmt.Print("\n")
-	fmt.Print(FormatReport(rows, splitCSV(conf.Allowlist)))
+	fmt.Print(FormatReport(rows, splitList(conf.Allowlist)))
 	fmt.Printf("\nBrowse: open %s — or `strateval status` / `strateval path`\n", conf.Db)
 	return nil
 }
@@ -308,7 +308,7 @@ func resolveStrategies(arg string) ([]strategy.Strategy, error) {
 	return out, nil
 }
 
-func splitCSV(raw string) []string {
+func splitList(raw string) []string {
 	var out []string
 	for _, p := range strings.Split(raw, ",") {
 		p = strings.TrimSpace(p)
