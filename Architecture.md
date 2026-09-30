@@ -46,7 +46,7 @@ reports/               one SQLite file per run, plus HTML
 
 `cliutils.GetDefaultMarketDB` returns `MarketDB()` if the file exists, otherwise `Data()/leveraged_backtest.db`. `backtest`, `study`, and `livescan` use that helper. Download and the batch tools call `MarketDB()` directly.
 
-`strateval`'s ledger is special. It does not use `ReportFile`, because a deploy `.env` can set `APP_FOLDER` to a Linux path. Order: `STRATEGIES_DB`, then `STRATEVAL_DB`, then `<module root>/reports/strategies.db` found by walking up to `go.mod`.
+`eval_ledger`'s ledger is special. It does not use `ReportFile`, because a deploy `.env` can set `APP_FOLDER` to a Linux path. Order: `STRATEGIES_DB`, then `EVAL_LEDGER_DB`, then `<module root>/reports/strategies.db` found by walking up to `go.mod`.
 
 ## Market data
 
@@ -231,7 +231,7 @@ Staleness (`pkg/runner/staleness.go`) is shared by `backtest stale` and `gridsea
 
 It records the gates in `check_overfit_gate`.
 
-`strateval` is a separate ledger, not the walk-forward file. For each strategy it runs an in-sample window and a held-out tail of `-oos-months` (12). `-optimize` does a coarse in-sample sweep capped by `-max-trials` before the out-of-sample run; the sweep does not see the OOS bars. Rows go to `strategy_evals`. `strategies` and `deployments` track the allowlist snapshot from `sync-deployed`. Tier A requires OOS trades, win rate, and drawdown inside the gates (`-min-oos-trades 12`, `-min-oos-win-rate 0.55`, `-max-oos-dd 0.15`). Scratch sims use `reports/strateval_runs/`.
+`eval_ledger` is a separate ledger, not the walk-forward file. For each strategy it runs an in-sample window and a held-out tail of `-oos-months` (12). `-optimize` does a coarse in-sample sweep capped by `-max-trials` before the out-of-sample run; the sweep does not see the OOS bars. Rows go to `strategy_evals`. `strategies` and `deployments` track the allowlist snapshot from `sync-deployed`. Tier A requires OOS trades, win rate, and drawdown inside the gates (`-min-oos-trades 12`, `-min-oos-win-rate 0.55`, `-max-oos-dd 0.15`). Scratch sims use `reports/eval_ledger_runs/`.
 
 ## Other commands
 

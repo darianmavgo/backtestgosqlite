@@ -1,4 +1,4 @@
-package strateval
+package eval_ledger
 
 import (
 	"fmt"
@@ -339,7 +339,7 @@ Browse views (DB Browser for SQLite, Datasette, VS Code SQLite, etc.):
   SELECT * FROM v_demote_candidates;
 
 CLI:
-  strateval status -db %s
-  strateval sync-deployed -db %s -allowlist "$STRATEGY_ALLOWLIST"
+  eval_ledger status -db %s
+  eval_ledger sync-deployed -db %s -allowlist "$STRATEGY_ALLOWLIST"
 `, dbPath, dbPath, dbPath)
 }

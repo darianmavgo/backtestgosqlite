@@ -1,14 +1,14 @@
-// Command strateval: additive IS/OOS evaluation + SQLite lifecycle ledger.
+// Command eval_ledger: additive IS/OOS evaluation + SQLite lifecycle ledger.
 // Does not modify STRATEGY_ALLOWLIST, evening-scan, or other live jobs.
 //
-//	strateval -list
-//	strateval -strategy sig_voo_buy_tecl
-//	strateval -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST"
-//	strateval report
-//	strateval status
-//	strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
-//	strateval path
-package strateval
+//	eval_ledger -list
+//	eval_ledger -strategy sig_voo_buy_tecl
+//	eval_ledger -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST"
+//	eval_ledger report
+//	eval_ledger status
+//	eval_ledger sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+//	eval_ledger path
+package eval_ledger
 
 import (
 	"flag"
@@ -32,7 +32,7 @@ func defaultLedgerDB() string {
 	if v := strings.TrimSpace(os.Getenv("STRATEGIES_DB")); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("STRATEVAL_DB")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("EVAL_LEDGER_DB")); v != "" {
 		return v
 	}
 	// Prefer <repo>/reports/strategies.db when run from the module tree.
@@ -60,7 +60,7 @@ func findModuleRoot() string {
 	}
 }
 
-// Config holds the settings of a strateval run; subcommands use the subset they need.
+// Config holds the settings of a eval_ledger run; subcommands use the subset they need.
 type Config struct {
 	Db            string  // -db
 	Allowlist     string  // -allowlist
@@ -91,7 +91,7 @@ func DefaultConfig() Config {
 		MarketDb:      appenv.MarketDB(),
 		Table:         "backtest_start",
 		Strategy:      "",
-		OutDir:        appenv.ReportFile("strateval_runs"),
+		OutDir:        appenv.ReportFile("eval_ledger_runs"),
 		Capital:       100000,
 		Start:         storage.DefaultStartDate,
 		OosMonths:     12,
@@ -220,7 +220,7 @@ func runEval(conf Config) error {
 		return nil
 	}
 	if strings.TrimSpace(conf.Strategy) == "" {
-		return fmt.Errorf("-strategy is required (id, comma-separated ids, or all). Or: strateval status | report | sync-deployed | path")
+		return fmt.Errorf("-strategy is required (id, comma-separated ids, or all). Or: eval_ledger status | report | sync-deployed | path")
 	}
 
 	strats, err := resolveStrategies(conf.Strategy)
@@ -240,7 +240,7 @@ func runEval(conf Config) error {
 	defer st.Close()
 
 	alMap := ParseAllowlist(conf.Allowlist)
-	fmt.Printf("strateval run_id=%s strategies=%d oos_months=%d optimize=%v\n",
+	fmt.Printf("eval_ledger run_id=%s strategies=%d oos_months=%d optimize=%v\n",
 		conf.RunId, len(strats), conf.OosMonths, conf.Optimize)
 	fmt.Printf("ledger: %s\n", conf.Db)
 	fmt.Println("(does not modify STRATEGY_ALLOWLIST or live jobs)")
@@ -277,7 +277,7 @@ func runEval(conf Config) error {
 
 	fmt.Print("\n")
 	fmt.Print(FormatReport(rows, splitList(conf.Allowlist)))
-	fmt.Printf("\nBrowse: open %s — or `strateval status` / `strateval path`\n", conf.Db)
+	fmt.Printf("\nBrowse: open %s — or `eval_ledger status` / `eval_ledger path`\n", conf.Db)
 	return nil
 }
 
