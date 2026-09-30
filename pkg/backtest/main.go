@@ -111,7 +111,7 @@ func Main() {
 	//                          the best config a prior `gridsearch` sweep
 	//                          found for it, instead of its baseline defaults
 	//   backtest covered-call -> hold -symbol (default VOO) and sell a monthly
-	//                          call; needs `download -source polygon-options`
+	//                          call; needs `market_history -source polygon-options`
 	//   backtest stack-eval -> rank existing strategies as idle-cash overlays
 	//                          on one primary, one shared cash ledger
 	conf := DefaultConfig()

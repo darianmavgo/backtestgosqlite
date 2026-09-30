@@ -31,7 +31,7 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           1. CACHE-FIRST DATA LAYER                             │
 │  - data/market_history.db (SQLite WAL)                                          │
-│  - cmd/download: Smart gap-detection (fetches only missing dates, 0 duplicates) │
+│  - cmd/market_history: Smart gap-detection (fetches only missing dates, 0 duplicates) │
 │  - Supports Yahoo Finance API v8, Stooq, and Polygon; bars land in SQLite        │
 └────────────────────────────────────────┬────────────────────────────────────────┘
                                          │
@@ -105,7 +105,7 @@ The platform eliminates quant framework bloat by combining Go's compiled speed a
 
 | Component | Directory / Command | Status | Description |
 | :--- | :--- | :---: | :--- |
-| **Data Ingestion** | `cmd/download`, `pkg/storage` | 🟢 Complete | Cache-first incremental updates in `data/market_history.db` |
+| **Data Ingestion** | `cmd/market_history`, `pkg/storage` | 🟢 Complete | Cache-first incremental updates in `data/market_history.db` |
 | **Strategy Library** | `pkg/strategy`, `sql/strategies/` | 🟢 Complete | Dual Go & SQL implementations for 10+ standard & custom strategies |
 | **Portfolio Simulator** | `pkg/simulator` | 🟢 Complete | Multi-asset chronological simulation with dynamic stops & sizing |
 | **Performance Tear Sheets** | `pkg/analytics`, `reports/` | 🟢 Complete | Standalone HTML tear sheets, SQLite result DBs, and Scoreboard |

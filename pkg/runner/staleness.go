@@ -27,7 +27,7 @@ import (
 //  2. Data drift — market_history.db now has bars beyond the date the result
 //     covers, i.e. there's more history to backtest against than this result
 //     saw. Compared by actual trading-day coverage (result's end_date vs. the
-//     latest bar date in the DB), not file mtime — cmd/download and WAL
+//     latest bar date in the DB), not file mtime — cmd/market_history and WAL
 //     checkpointing touch the file constantly without necessarily adding a
 //     single new row, so an mtime-only check flags almost everything and
 //     tells you nothing.

@@ -34,7 +34,7 @@ Default files:
 | Shared-account results | `reports/shared_<primary>_<secondary>_….db` |
 | HTML tear sheet | `reports/backtest_report.html` |
 
-Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db` when that file exists and `data/leveraged_backtest.db` when it does not. `download`, `gridsearch`, `scoreboard`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
+Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db` when that file exists and `data/leveraged_backtest.db` when it does not. `market_history`, `gridsearch`, `scoreboard`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
 
 The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack-eval -primary …`, not `backtest -primary … stack-eval`.
 
@@ -42,7 +42,7 @@ Daily simulations load rows with `length(Date) = 10`. Minute bars stay in the sa
 
 ---
 
-## download
+## market_history
 
 Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Polygon is opt-in.
 
@@ -64,11 +64,11 @@ Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Poly
 | `-rate` | `5` API calls/minute (polygon-options) |
 
 ```bash
-./bin/download VOO IEF GLD
-./bin/download -symbols PDD -years 6
-./bin/download -list 6yr -years 6
-./bin/download -source polygon -symbols VOO -timeframe 1m -polygon-key "$POLYGON_API_KEY"
-./bin/download -source polygon-options -symbols VOO
+./bin/market_history VOO IEF GLD
+./bin/market_history -symbols PDD -years 6
+./bin/market_history -list 6yr -years 6
+./bin/market_history -source polygon -symbols VOO -timeframe 1m -polygon-key "$POLYGON_API_KEY"
+./bin/market_history -source polygon-options -symbols VOO
 ```
 
 `-start YYYY-MM-DD` overrides `-years`. `-end` defaults to today.
@@ -127,10 +127,10 @@ Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum
 
 Hold one underlying (default `VOO`) and sell a monthly call. Prints the comparison on stdout. Does not write a strategy result DB.
 
-**Reads:** equity bars and `option_contracts` / `option_bars` in the market DB. Load the chains first with `download -source polygon-options`.
+**Reads:** equity bars and `option_contracts` / `option_bars` in the market DB. Load the chains first with `market_history -source polygon-options`.
 
 ```bash
-./bin/download -source polygon-options -symbols VOO
+./bin/market_history -source polygon-options -symbols VOO
 ./bin/backtest covered-call -symbol VOO -otm 2 -commission 0.65 -opt-slip 0.05
 ```
 

@@ -23,7 +23,7 @@ func executeOverlay(strat strategy.Strategy, spec strategy.OverlaySpec, cfg stra
 
 	bars := barsBySymbol[spec.Underlying]
 	if len(bars) == 0 {
-		return fail(fmt.Errorf("no %s bars loaded; run `download -symbols %s` first", spec.Underlying, spec.Underlying))
+		return fail(fmt.Errorf("no %s bars loaded; run `market_history -symbols %s` first", spec.Underlying, spec.Underlying))
 	}
 	marketDB, err := storage.OpenSQLite(marketDBPath)
 	if err != nil {
@@ -38,7 +38,7 @@ func executeOverlay(strat strategy.Strategy, spec strategy.OverlaySpec, cfg stra
 		return fail(err)
 	}
 	if len(chains) == 0 {
-		return fail(fmt.Errorf("no %s option history in %s; run `download -source polygon-options -symbols %s -otm %.0f` first",
+		return fail(fmt.Errorf("no %s option history in %s; run `market_history -source polygon-options -symbols %s -otm %.0f` first",
 			spec.Underlying, marketDBPath, spec.Underlying, spec.OTMPct))
 	}
 

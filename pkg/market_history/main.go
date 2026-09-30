@@ -1,4 +1,4 @@
-package download
+package market_history
 
 import (
 	"context"
@@ -98,7 +98,7 @@ type Summary struct {
 	Symbols, CachedSymbols, UpdatedSymbols, FailedSymbols, NewBars int
 }
 
-// DefaultConfig returns the same defaults the download CLI uses.
+// DefaultConfig returns the same defaults the market_history CLI uses.
 func DefaultConfig() Config {
 	return Config{
 		DB: appenv.MarketDB(), SettingsDB: appenv.RefDB(), Source: "yahoo",
@@ -116,7 +116,7 @@ func Main() {
 	flag.StringVar(&cfg.SettingsDB, "settings", d.SettingsDB, "Reference DB path (etf_universe lists and symbol tables)")
 	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, polygon-options, stooq")
 	flag.StringVar(&cfg.PolygonKey, "polygon-key", d.PolygonKey, "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
-	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated symbols to download (e.g. SPY,QQQ). Bare arguments work too: download VOO, IEF, GLD")
+	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated symbols to download (e.g. SPY,QQQ). Bare arguments work too: market_history VOO, IEF, GLD")
 	flag.StringVar(&cfg.Universe, "list", d.Universe, "etf_universe list in the settings DB to download (all, 6yr, sweep)")
 	flag.StringVar(&cfg.Table, "table", d.Table, "Table name in settings.db with symbols (fallback if no symbols specified)")
 	flag.IntVar(&cfg.Limit, "limit", d.Limit, "Limit number of symbols (0 for all)")
@@ -131,7 +131,7 @@ func Main() {
 	flag.IntVar(&cfg.Rate, "rate", d.Rate, "(polygon-options) API calls per minute; 5 = Polygon free tier, 0 = unthrottled (paid)")
 	flag.IntVar(&cfg.MaxCalls, "max-calls", d.MaxCalls, "(polygon-options) stop after this many API calls (0 = no cap); reruns resume, finished contracts are skipped")
 	flag.Parse()
-	// ./bin/download VOO, IEF, GLD  — the shell splits on spaces, so each
+	// ./bin/market_history VOO, IEF, GLD  — the shell splits on spaces, so each
 	// ticker arrives as its own arg, often with a trailing comma.
 	if strings.TrimSpace(cfg.Symbols) == "" {
 		if syms := parseSymbolArgs(flag.Args()); len(syms) > 0 {
@@ -170,7 +170,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		out = &syncWriter{w: cfg.Out}
 	}
 	if cfg.DB == "" {
-		return nil, fmt.Errorf("download: DB is required")
+		return nil, fmt.Errorf("market_history: DB is required")
 	}
 	if cfg.TargetTable == "" {
 		cfg.TargetTable = "backtest_start"
@@ -188,7 +188,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		cfg.OTM = "0,2,5"
 	}
 	if src := strings.ToLower(cfg.Source); (src == "polygon" || src == "polygon-options") && strings.TrimSpace(cfg.PolygonKey) == "" {
-		return nil, fmt.Errorf("download: source %s requires Config.PolygonKey", src)
+		return nil, fmt.Errorf("market_history: source %s requires Config.PolygonKey", src)
 	}
 
 	db, err := storage.OpenSQLite(cfg.DB)
@@ -254,7 +254,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 	}
 
 	if len(symbols) == 0 {
-		return nil, fmt.Errorf("No symbols resolved. Pass tickers (download VOO, IEF, GLD) or -symbols SPY,QQQ or -list <name> or -table <name>")
+		return nil, fmt.Errorf("No symbols resolved. Pass tickers (market_history VOO, IEF, GLD) or -symbols SPY,QQQ or -list <name> or -table <name>")
 	}
 
 	fmt.Fprintf(out, "Database: %s (Table: %s)\n", cfg.DB, cfg.TargetTable)
@@ -457,7 +457,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		wg.Wait()
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("download cancelled: %w", err)
+		return nil, fmt.Errorf("market_history cancelled: %w", err)
 	}
 
 	fmt.Fprintf(out, "\n✨ Summary: %s is updated! (%d symbols already up-to-date, %d symbols fetched/updated, %d failed, %d new bars added).\n   %d requested symbols processed against %s.\n",

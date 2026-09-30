@@ -12,7 +12,7 @@ import (
 
 // runCoveredCallCommand backtests buy-and-hold + a monthly short call against
 // plain buy-and-hold, using option history stored by
-// `download -source polygon-options`.
+// `market_history -source polygon-options`.
 func runCoveredCallCommand(dbPath, table, underlying string, capital, otmPct float64, start string, commission, slip float64) error {
 	if underlying == "" {
 		underlying = "VOO"
@@ -27,14 +27,14 @@ func runCoveredCallCommand(dbPath, table, underlying string, capital, otmPct flo
 	}
 	bySym, _, err := storage.FetchBars(db, table, []string{underlying}, "1900-01-01", "2100-01-01")
 	if err != nil || len(bySym[underlying]) == 0 {
-		return fmt.Errorf("no %s bars in %s (err=%v); run `download -symbols %s` first", underlying, table, err, underlying)
+		return fmt.Errorf("no %s bars in %s (err=%v); run `market_history -symbols %s` first", underlying, table, err, underlying)
 	}
 	chains, err := storage.FetchCallChains(db, underlying)
 	if err != nil {
 		return fmt.Errorf("load option chains: %v", err)
 	}
 	if len(chains) == 0 {
-		return fmt.Errorf("no %s option history in %s; run `download -source polygon-options -symbols %s` first", underlying, dbPath, underlying)
+		return fmt.Errorf("no %s option history in %s; run `market_history -source polygon-options -symbols %s` first", underlying, dbPath, underlying)
 	}
 
 	res := options.SimulateCoveredCall(options.CoveredCallConfig{

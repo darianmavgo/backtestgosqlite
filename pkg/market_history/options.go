@@ -1,4 +1,4 @@
-package download
+package market_history
 
 import (
 	"context"
@@ -55,7 +55,7 @@ func downloadOptionHistory(ctx context.Context, out io.Writer, db *sqlx.DB, barT
 	}
 	closes := bySym[underlying]
 	if len(closes) == 0 {
-		return fmt.Errorf("no %s bars in %s; run `download -symbols %s` first (option strikes are chosen from the underlying price)", underlying, barTable, underlying)
+		return fmt.Errorf("no %s bars in %s; run `market_history -symbols %s` first (option strikes are chosen from the underlying price)", underlying, barTable, underlying)
 	}
 	sort.Slice(closes, func(i, j int) bool { return closes[i].Date < closes[j].Date })
 	// refClose returns the close and date of the last trading day on/before date

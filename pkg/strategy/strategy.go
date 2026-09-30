@@ -59,7 +59,7 @@ type OverlaySpec struct {
 // OptionOverlayProvider is implemented by strategies that hold an underlying
 // and write covered calls against it. They do not emit stock signals: the
 // runner simulates them with pkg/options against option history stored by
-// `download -source polygon-options`, with dividends withdrawn as paid.
+// `market_history -source polygon-options`, with dividends withdrawn as paid.
 type OptionOverlayProvider interface {
 	OverlaySpec() OverlaySpec
 }

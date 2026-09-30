@@ -16,7 +16,7 @@ import (
 //     away at the strike and all cash is immediately used to buy back in;
 //   - dividends are withdrawn from the account as they are paid (not
 //     reinvested), and counted in the reported total equity;
-//   - needs `download -source polygon-options -symbols <SYM> -otm <10|5>` first.
+//   - needs `market_history -source polygon-options -symbols <SYM> -otm <10|5>` first.
 type DividendCoveredCallStrategy struct {
 	Symbol string
 	Label  string
@@ -48,7 +48,7 @@ func (s *DividendCoveredCallStrategy) Name() string {
 func (s *DividendCoveredCallStrategy) Description() string {
 	return fmt.Sprintf("Holds %s and sells a ~1-month call ~%.0f%% out of the money each month over the last 2 years. "+
 		"Exercised calls are re-bought immediately with all available cash; dividends are withdrawn as paid, not reinvested. "+
-		"Needs Polygon option history (download -source polygon-options -symbols %s -otm %.0f).", s.Symbol, s.OTMPct, s.Symbol, s.OTMPct)
+		"Needs Polygon option history (market_history -source polygon-options -symbols %s -otm %.0f).", s.Symbol, s.OTMPct, s.Symbol, s.OTMPct)
 }
 
 func (s *DividendCoveredCallStrategy) OverlaySpec() OverlaySpec {

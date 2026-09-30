@@ -77,7 +77,7 @@ func (s *QQQTQQQVolumeStudy) Run() error {
 		return fmt.Errorf("load QQQ/TQQQ bars: %w", err)
 	}
 	if len(days) < 250 {
-		return fmt.Errorf("only %d aligned QQQ/TQQQ daily bars; run `download -symbols QQQ,TQQQ -start 2010-02-11` first", len(days))
+		return fmt.Errorf("only %d aligned QQQ/TQQQ daily bars; run `market_history -symbols QQQ,TQQQ -start 2010-02-11` first", len(days))
 	}
 	for i := range days {
 		d := &days[i]

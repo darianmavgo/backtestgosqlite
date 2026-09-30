@@ -10,7 +10,7 @@ The module is `github.com/darianmavgo/backtestgosqlite`. SQLite is `modernc.org/
 cmd/<name>/main.go     thin main; calls pkg/<name>.Main
 pkg/appenv             APP_FOLDER / APP_DATA / APP_REF / APP_REPORTS and .env
 pkg/datasource         Yahoo, Stooq, Polygon, Polygon options, SQLite reads
-pkg/download           gap-filling writer into the market DB
+pkg/market_history     gap-filling writer into the market DB
 pkg/storage            bar, trade, signal, equity, performance, option schemas
 pkg/refdb              settings.db universes and ETF-tree rows
 pkg/models             Bar, Signal, Trade, Position, PerformanceReport
@@ -44,13 +44,13 @@ reports/               one SQLite file per run, plus HTML
 | `RefDB()` | `Ref()/settings.db` |
 | `ReportFile(p)` | absolute paths pass through; a leading `reports/` is stripped and the rest is joined to `Reports()` |
 
-`cliutils.GetDefaultMarketDB` returns `MarketDB()` if the file exists, otherwise `Data()/leveraged_backtest.db`. `backtest`, `study`, and `livescan` use that helper. Download and the batch tools call `MarketDB()` directly.
+`cliutils.GetDefaultMarketDB` returns `MarketDB()` if the file exists, otherwise `Data()/leveraged_backtest.db`. `backtest`, `study`, and `livescan` use that helper. `market_history` and the batch tools call `MarketDB()` directly.
 
 `strateval`'s ledger is special. It does not use `ReportFile`, because a deploy `.env` can set `APP_FOLDER` to a Linux path. Order: `STRATEGIES_DB`, then `STRATEVAL_DB`, then `<module root>/reports/strategies.db` found by walking up to `go.mod`.
 
 ## Market data
 
-`download.Run` opens `-db`, ensures the bar table, and upserts. With no `-symbols` and no `-list` it reads `SELECT DISTINCT symbol FROM <table>` in the settings DB (`leveraged_etf` by default, `-limit 50`). `-list` reads `etf_universe` for that list name. Bare arguments are tickers when `-symbols` is empty: commas are separators, values are uppercased.
+`market_history.Run` opens `-db`, ensures the bar table, and upserts. With no `-symbols` and no `-list` it reads `SELECT DISTINCT symbol FROM <table>` in the settings DB (`leveraged_etf` by default, `-limit 50`). `-list` reads `etf_universe` for that list name. Bare arguments are tickers when `-symbols` is empty: commas are separators, values are uppercased.
 
 Coverage is per `(symbol, timeframe)`. The writer requests only the missing span unless `-force`. Yahoo is the default primary source and Stooq is its fallback. `-source polygon` uses Polygon and falls back to Yahoo. `-source stooq` uses Stooq only. `-source polygon-options` does not download equities; it lists call chains for one underlying and stores them in the market DB. The Polygon key is `-polygon-key` or `POLYGON_API_KEY` via `datasource.ResolvePolygonAPIKey`. Stooq's HTTP body is parsed in memory into `models.Bar` and then inserted. There is no file ingest path.
 
@@ -81,7 +81,7 @@ Option tables in the same market DB (`storage.EnsureOptionTables`):
 | `etf_dt_strategies` | one row per symbol the registry turns into `dt_<symbol>`. `SaveDTStrategies` replaces the whole table |
 | `etf_dt_strategies_all` | created with the schema; no current command writes it |
 
-Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `download -table` and the UI category lookup read them. `etf_universe` fills `all`. `etf_decision_trees` reads a list and replaces `etf_dt_strategies`. Registration of `dt_*` strategies reads `etf_dt_strategies` through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
+Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` fills `all`. `etf_decision_trees` reads a list and replaces `etf_dt_strategies`. Registration of `dt_*` strategies reads `etf_dt_strategies` through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
 
 ## Strategies
 

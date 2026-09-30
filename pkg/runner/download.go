@@ -14,10 +14,10 @@ import (
 
 // RunDownload fetches missing daily bars for symbols into targetTable of the
 // SQLite DB at targetDb, covering the last `years` years through today. It is
-// cmd/download's Yahoo-primary/Stooq-fallback missing-window loop (both keyless)
+// cmd/market_history's Yahoo-primary/Stooq-fallback missing-window loop (both keyless)
 // as a plain function -- only date windows not already cached are fetched --
 // so callers can refresh market data in-process instead of exec'ing a
-// separately built `download` binary (or `go run ./cmd/download`), which can't
+// separately built `market_history` binary (or `go run ./cmd/market_history`), which can't
 // exist on a deployment target like App Engine.
 //
 // A symbol whose fetch fails is only an error when it has no cached bars at

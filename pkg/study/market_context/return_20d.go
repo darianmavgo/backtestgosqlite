@@ -98,7 +98,7 @@ func (s *Return20d) Run() error {
 		log.Printf("%s: %d daily bars, %d with a 20-session return", sym, c.N, c.Filled)
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("no 20-session returns for %s; run `download %s` first",
+		return fmt.Errorf("no 20-session returns for %s; run `market_history %s` first",
 			strings.Join(missing, ", "), strings.Join(Symbols, ", "))
 	}
 	log.Printf("Results saved to %s", s.resultsDBPath)

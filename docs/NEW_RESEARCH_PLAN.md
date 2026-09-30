@@ -2,7 +2,7 @@
 
 This document details the architectural approach for integrating 11 new research ideas into the `backtestgosqlite` platform.
 
-The platform distinguishes between **Strategies** (`pkg/strategy/`, standard backtesting with entries/exits/equity curves) and **Studies** (`pkg/study/`, ad-hoc statistical analysis, correlation, reporting). For data ingestion, it uses `pkg/datasource/` and `cmd/download`.
+The platform distinguishes between **Strategies** (`pkg/strategy/`, standard backtesting with entries/exits/equity curves) and **Studies** (`pkg/study/`, ad-hoc statistical analysis, correlation, reporting). For data ingestion, it uses `pkg/datasource/` and `cmd/market_history`.
 
 ## 1. Buy Biggest Winner (Annual Hold)
 **Concept:** Buy and hold for a year the biggest winner of the previous year (beats SP500 most years).
@@ -45,7 +45,7 @@ The platform distinguishes between **Strategies** (`pkg/strategy/`, standard bac
 **Concept:** Same cycle detection but using minute bars from Polygon.
 **Type:** `pkg/study`
 **Implementation Plan:**
-- This relies on downloading minute bars via `cmd/download -source polygon -timeframe 1m`.
+- This relies on downloading minute bars via `cmd/market_history -source polygon -timeframe 1m`.
 - The `weekly_seasonality.go` study can be parameterized to accept a timeframe and cycle definition (e.g., "minute of the day" 0-389 for a trading session).
 
 ## 6. Morningstar Feed & 5-Star Stocks Drawdown Reduction

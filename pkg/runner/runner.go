@@ -636,7 +636,7 @@ func DetectAndDownloadMissingData(
 	}
 
 	if !autoDownload {
-		return fmt.Errorf("missing market data for symbol(s) %v in %s (%s). Run with -auto-download or run: ./bin/download -symbols %s",
+		return fmt.Errorf("missing market data for symbol(s) %v in %s (%s). Run with -auto-download or run: ./bin/market_history -symbols %s",
 			missingSymbols, targetDb, tableName, strings.Join(missingSymbols, ","))
 	}
 

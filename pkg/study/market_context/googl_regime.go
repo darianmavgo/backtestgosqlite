@@ -74,7 +74,7 @@ func (s *GooglRegime) Run() error {
 		return fmt.Errorf("count regime days: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("no overlapping GOOGL and VOO days in %s; run `download GOOGL, VOO` into the market database first", s.clusterDBPath)
+		return fmt.Errorf("no overlapping GOOGL and VOO days in %s; run `market_history GOOGL, VOO` into the market database first", s.clusterDBPath)
 	}
 
 	type row struct {

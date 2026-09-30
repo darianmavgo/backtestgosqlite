@@ -1,6 +1,6 @@
 // cmd/etf_universe — Discovers every active US-listed ETF ticker via Polygon.io's
 // reference tickers API and saves them to the reference DB's etf_universe table (list "all") for
-// consumption by cmd/download -list.
+// consumption by cmd/market_history -list.
 //
 // Note: Polygon's list endpoint (v3/reference/tickers) does not return a listing
 // date, so this tool only discovers the *symbol universe*. Filtering down to ETFs
