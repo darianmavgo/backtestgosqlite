@@ -88,6 +88,9 @@ func Data() string { return filepath.Join(Folder(), sub("APP_DATA", "data")) }
 // RefDB is the reference database (universes, DT configs, symbol tables).
 func RefDB() string { return filepath.Join(Ref(), "settings.db") }
 
+// UniverseDB is the universe database (all stocks, etfs, categorization, leverage).
+func UniverseDB() string { return filepath.Join(Ref(), "universe.db") }
+
 // MarketDB is the market history database.
 func MarketDB() string { return filepath.Join(Data(), "market_history.db") }
 
