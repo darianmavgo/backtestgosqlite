@@ -32,19 +32,19 @@ ORDER BY lifecycle, oos_sharpe DESC;
 
 ```bash
 # Print ledger path + view cheat-sheet
-go run ./cmd/strateval path
+go run ./cmd/eval_ledger path
 
 # Terminal table of lifecycle
-go run ./cmd/strateval status
+go run ./cmd/eval_ledger status
 
 # Snapshot what's live (from STRATEGY_ALLOWLIST) into deployments table
-go run ./cmd/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+go run ./cmd/eval_ledger sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
 
 # Run evals (writes strategy_evals + updates catalog)
-go run ./cmd/strateval -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST" -sync-deployed
+go run ./cmd/eval_ledger -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST" -sync-deployed
 
 # Markdown scorecard
-go run ./cmd/strateval report -allowlist "$STRATEGY_ALLOWLIST"
+go run ./cmd/eval_ledger report -allowlist "$STRATEGY_ALLOWLIST"
 ```
 
 ## Tables
@@ -74,7 +74,7 @@ Do **not** `source` trade_orchestrator’s full `.env` into this repo — it set
 
 ```bash
 export STRATEGY_ALLOWLIST="$(grep -E '^STRATEGY_ALLOWLIST=' ~/Documents/trade_orchestrator/.env | cut -d= -f2- | tr -d '\"')"
-go run ./cmd/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+go run ./cmd/eval_ledger sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
 # or: -db reports/strategies.db
 ```
 

@@ -1,4 +1,4 @@
-package strateval
+package eval_ledger
 
 import (
 	"fmt"

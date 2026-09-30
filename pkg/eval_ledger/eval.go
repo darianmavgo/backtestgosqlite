@@ -1,4 +1,4 @@
-package strateval
+package eval_ledger
 
 import (
 	"encoding/json"
@@ -63,7 +63,7 @@ func EvaluateStrategy(db *sqlx.DB, strat strategy.Strategy, opt EvalOptions) (Ev
 		opt.Table = "backtest_start"
 	}
 	if opt.OutDir == "" {
-		opt.OutDir = filepath.Join(os.TempDir(), "strateval_runs")
+		opt.OutDir = filepath.Join(os.TempDir(), "eval_ledger_runs")
 	}
 	if opt.MaxTrials <= 0 {
 		opt.MaxTrials = 50

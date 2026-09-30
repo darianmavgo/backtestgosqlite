@@ -21,8 +21,8 @@ make list           # ./bin/backtest -list
 | `APP_REF` | `refdata` | reference DB, under `APP_FOLDER` |
 | `APP_REPORTS` | `reports` | result DBs and HTML, under `APP_FOLDER` |
 | `POLYGON_API_KEY` | empty | Polygon equity and option downloads, ETF universe |
-| `STRATEGY_ALLOWLIST` | empty | `strateval` live-list snapshot |
-| `STRATEGIES_DB` or `STRATEVAL_DB` | empty | overrides the strateval ledger path |
+| `STRATEGY_ALLOWLIST` | empty | `eval_ledger` live-list snapshot |
+| `STRATEGIES_DB` or `EVAL_LEDGER_DB` | empty | overrides the eval_ledger ledger path |
 
 Default files:
 
@@ -234,22 +234,22 @@ Registered ids: `market_context_20d`, `cluster_5pct`, `googl_market_context`, `g
 
 ---
 
-## strateval
+## eval_ledger
 
 In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live jobs.
 
 **Reads:** `data/market_history.db`, table `backtest_start`. Allowlist from `-allowlist` or `STRATEGY_ALLOWLIST` (comma-separated ids).
 
-**Writes:** `reports/strategies.db` (`strategies`, `strategy_evals`, `deployments`), unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. Scratch artifacts under `reports/strateval_runs/`. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
+**Writes:** `reports/strategies.db` (`strategies`, `strategy_evals`, `deployments`), unless `STRATEGIES_DB` or `EVAL_LEDGER_DB` is set. Scratch artifacts under `reports/eval_ledger_runs/`. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
 
 ```bash
-./bin/strateval -list
-./bin/strateval -strategy sig-voo-buy-tecl
-./bin/strateval -strategy all -optimize -max-trials 50
-./bin/strateval report
-./bin/strateval status
-./bin/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
-./bin/strateval path
+./bin/eval_ledger -list
+./bin/eval_ledger -strategy sig-voo-buy-tecl
+./bin/eval_ledger -strategy all -optimize -max-trials 50
+./bin/eval_ledger report
+./bin/eval_ledger status
+./bin/eval_ledger sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
+./bin/eval_ledger path
 ```
 
 `path` prints how to open the ledger. `sync-deployed` snapshots the allowlist into `deployments`. `-sync-deployed` on an eval run does the same snapshot after the eval.
