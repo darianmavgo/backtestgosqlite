@@ -1,8 +1,9 @@
 package strategy
 
 import (
+	"fmt"
 	"sort"
-	"strconv"
+	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
@@ -15,7 +16,7 @@ func init() {
 
 func (s *BiggestWinnerStrategy) ID() string          { return "biggest-winner" }
 func (s *BiggestWinnerStrategy) Name() string        { return "Biggest Winner Backtest" }
-func (s *BiggestWinnerStrategy) Description() string { return "Buys the top performing asset of the previous calendar year and holds it for one year." }
+func (s *BiggestWinnerStrategy) Description() string { return "Buys the top performing asset of the previous week and holds it for one week. Enters on Monday, exits on Friday." }
 
 func (s *BiggestWinnerStrategy) DefaultConfig() StrategyConfig {
 	return StrategyConfig{
@@ -24,7 +25,7 @@ func (s *BiggestWinnerStrategy) DefaultConfig() StrategyConfig {
 		Description:   s.Description(),
 		AllocationPct: 1.0,
 		PositionCap:   1,
-		HoldingWindow: 252,    // Roughly one trading year
+		HoldingWindow: 5,      // Roughly one trading week
 		TargetPct:     999.0,  // Never exit via profit target
 		StopLossPct:   0.0,    // 0 multiplier disables the stop loss
 		SlippagePct:   0.0005,
@@ -39,63 +40,85 @@ func (s *BiggestWinnerStrategy) SetDatabases(marketDBPath, calcDBPath string) {
 	// Not used for pure Go strategies without intermediate calculation tables
 }
 
+func getISOWeek(dateStr string) string {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return ""
+	}
+	y, w := t.ISOWeek()
+	return fmt.Sprintf("%04d-W%02d", y, w)
+}
+
 func (s *BiggestWinnerStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 
-	returnsByYear := make(map[string]map[string]float64)
-	firstBarOfYear := make(map[string]map[string]models.Bar)
+	returnsByWeek := make(map[string]map[string]float64)
+	firstBarOfWeek := make(map[string]map[string]models.Bar)
 
-	// Group bars by year and calculate annual return per symbol
+	// Group bars by week and calculate weekly return per symbol
 	for sym, bars := range barsBySymbol {
 		if len(bars) == 0 {
 			continue
 		}
 
-		barsByYr := make(map[string][]models.Bar)
+		barsByWk := make(map[string][]models.Bar)
 		for _, b := range bars {
-			if len(b.Date) >= 4 {
-				yr := b.Date[:4]
-				barsByYr[yr] = append(barsByYr[yr], b)
+			wk := getISOWeek(b.Date)
+			if wk != "" {
+				barsByWk[wk] = append(barsByWk[wk], b)
 			}
 		}
 
-		for yr, yrBars := range barsByYr {
-			if len(yrBars) > 0 {
-				first := yrBars[0]
-				last := yrBars[len(yrBars)-1]
+		for wk, wkBars := range barsByWk {
+			if len(wkBars) > 0 {
+				first := wkBars[0]
+				last := wkBars[len(wkBars)-1]
 				ret := (last.Close - first.Open) / first.Open
 
-				if returnsByYear[yr] == nil {
-					returnsByYear[yr] = make(map[string]float64)
+				if returnsByWeek[wk] == nil {
+					returnsByWeek[wk] = make(map[string]float64)
 				}
-				returnsByYear[yr][sym] = ret
+				returnsByWeek[wk][sym] = ret
 
-				if firstBarOfYear[yr] == nil {
-					firstBarOfYear[yr] = make(map[string]models.Bar)
+				if firstBarOfWeek[wk] == nil {
+					firstBarOfWeek[wk] = make(map[string]models.Bar)
 				}
-				firstBarOfYear[yr][sym] = first
+				firstBarOfWeek[wk][sym] = first
 			}
 		}
 	}
 
-	// Collect and sort years chronologically
-	var years []string
-	for yr := range firstBarOfYear {
-		years = append(years, yr)
+	// Collect and sort weeks chronologically
+	var weeks []string
+	for wk := range firstBarOfWeek {
+		weeks = append(weeks, wk)
 	}
-	sort.Strings(years)
+	sort.Strings(weeks)
 
-	// For each year Y, find the biggest winner in year Y-1 and enter on the first day of year Y
-	for _, yrStr := range years {
-		yrInt, err := strconv.Atoi(yrStr)
+	// For each week W, find the biggest winner in week W-1 and enter on Monday of week W, exit on Friday of week W
+	for _, wkStr := range weeks {
+		// Get any bar's date from this week to calculate the previous week
+		var refDate string
+		for _, b := range firstBarOfWeek[wkStr] {
+			refDate = b.Date
+			break
+		}
+		if refDate == "" {
+			continue
+		}
+
+		t, err := time.Parse("2006-01-02", refDate)
 		if err != nil {
 			continue
 		}
 
-		prevYrStr := strconv.Itoa(yrInt - 1)
-		prevReturns, ok := returnsByYear[prevYrStr]
+		prev := t.AddDate(0, 0, -7)
+		y0, w0 := prev.ISOWeek()
+		prevWkStr := fmt.Sprintf("%04d-W%02d", y0, w0)
+
+		prevReturns, ok := returnsByWeek[prevWkStr]
 		if !ok || len(prevReturns) == 0 {
-			continue // No data for the previous year
+			continue // No data for the previous week
 		}
 
 		var bestSym string
@@ -103,8 +126,8 @@ func (s *BiggestWinnerStrategy) GenerateSignals(barsBySymbol map[string][]models
 
 		for sym, ret := range prevReturns {
 			if ret > bestRet {
-				// Verify the symbol is still trading in the current year
-				if _, hasBar := firstBarOfYear[yrStr][sym]; hasBar {
+				// Verify the symbol is still trading in the current week
+				if _, hasBar := firstBarOfWeek[wkStr][sym]; hasBar {
 					bestRet = ret
 					bestSym = sym
 				}
@@ -112,46 +135,50 @@ func (s *BiggestWinnerStrategy) GenerateSignals(barsBySymbol map[string][]models
 		}
 
 		if bestSym != "" {
-			entryBar := firstBarOfYear[yrStr][bestSym]
-			signals = append(signals, models.Signal{
-				Idx:       entryBar.Idx,
-				Symbol:    bestSym,
-				Date:      entryBar.Date,
-				Open:      entryBar.Open,
-				High:      entryBar.High,
-				Low:       entryBar.Low,
-				Close:     entryBar.Close,
-				Volume:    entryBar.Volume,
-				BuyLimit:  entryBar.Close,
-				OrderType: "market",
-				Entry:     1,
-			})
+			// Find Monday and Friday bars for bestSym in wkStr
+			var mondayBar, fridayBar models.Bar
+			hasMonday, hasFriday := false, false
 
-			// We need an exit signal at the very end of the year to free up PositionCap
-			// Find the last available bar for this symbol in this year
-			var exitBar models.Bar
-			var maxDate string
 			for _, b := range barsBySymbol[bestSym] {
-				if len(b.Date) >= 4 && b.Date[:4] == yrStr {
-					if b.Date > maxDate {
-						maxDate = b.Date
-						exitBar = b
+				if getISOWeek(b.Date) == wkStr {
+					bt, _ := time.Parse("2006-01-02", b.Date)
+					if bt.Weekday() == time.Monday {
+						mondayBar = b
+						hasMonday = true
+					} else if bt.Weekday() == time.Friday {
+						fridayBar = b
+						hasFriday = true
 					}
 				}
 			}
 
-			// If we found a valid last bar of the year, append a sell signal
-			if exitBar.Date != "" {
+			if hasMonday {
 				signals = append(signals, models.Signal{
-					Idx:       exitBar.Idx,
+					Idx:       mondayBar.Idx,
 					Symbol:    bestSym,
-					Date:      exitBar.Date,
-					Open:      exitBar.Open,
-					High:      exitBar.High,
-					Low:       exitBar.Low,
-					Close:     exitBar.Close,
-					Volume:    exitBar.Volume,
-					BuyLimit:  exitBar.Close,
+					Date:      mondayBar.Date,
+					Open:      mondayBar.Open,
+					High:      mondayBar.High,
+					Low:       mondayBar.Low,
+					Close:     mondayBar.Close,
+					Volume:    mondayBar.Volume,
+					BuyLimit:  mondayBar.Close,
+					OrderType: "market",
+					Entry:     1,
+				})
+			}
+
+			if hasFriday {
+				signals = append(signals, models.Signal{
+					Idx:       fridayBar.Idx,
+					Symbol:    bestSym,
+					Date:      fridayBar.Date,
+					Open:      fridayBar.Open,
+					High:      fridayBar.High,
+					Low:       fridayBar.Low,
+					Close:     fridayBar.Close,
+					Volume:    fridayBar.Volume,
+					BuyLimit:  fridayBar.Close,
 					OrderType: "market",
 					Entry:     -1, // -1 denotes Exit
 				})
