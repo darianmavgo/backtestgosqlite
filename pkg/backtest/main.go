@@ -649,6 +649,7 @@ func Run(conf Config) error {
 		var stratReports []analytics.StrategyReportData
 		eqCurves := make(map[string][]float64)
 		ddCurves := make(map[string][]float64)
+		cashFlows := make(map[string][]analytics.CashFlowPointEntry)
 
 		var startDate, endDate string
 		var totalDays int
@@ -670,12 +671,25 @@ func Run(conf Config) error {
 				Trades: r.Trades,
 			})
 			var eqSeries, ddSeries []float64
+			var cfSeries []analytics.CashFlowPointEntry
 			for _, pt := range r.EquityCurve {
 				eqSeries = append(eqSeries, pt.TotalEquity)
 				ddSeries = append(ddSeries, pt.DrawdownPct)
+				if pt.DividendIncome > 0 || pt.MarginInterest > 0 || pt.MarginDebt > 0 {
+					cfSeries = append(cfSeries, analytics.CashFlowPointEntry{
+						Date:           pt.Date,
+						BuyingPower:    pt.BuyingPower,
+						MarginDebt:     pt.MarginDebt,
+						MarginInterest: pt.MarginInterest,
+						DividendIncome: pt.DividendIncome,
+					})
+				}
 			}
 			eqCurves[r.Strat.ID()] = eqSeries
 			ddCurves[r.Strat.ID()] = ddSeries
+			if len(cfSeries) > 0 {
+				cashFlows[r.Strat.ID()] = cfSeries
+			}
 
 			if startDate == "" {
 				startDate = r.Report.StartDate
@@ -698,6 +712,7 @@ func Run(conf Config) error {
 			AllDates:       sortedDates,
 			EquityCurves:   eqCurves,
 			DrawdownCurves: ddCurves,
+			CashFlows:      cashFlows,
 		}
 
 		err := analytics.GenerateComparisonHTML(conf.Html, htmlData)

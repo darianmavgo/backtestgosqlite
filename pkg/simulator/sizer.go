@@ -19,7 +19,12 @@ func (s *FixedPctSizer) CalculateShares(accountCash, totalEquity, entryPrice flo
 		return 0
 	}
 	allocPct := cfg.AllocationPct
-	if allocPct <= 0 || allocPct > 1.0 {
+	if allocPct <= 0 {
+		allocPct = 0.20
+	}
+	// When margin is enabled, allocPct can be up to MarginLeverage (e.g. 2.0 = 100% of buying power).
+	// If UseMargin is false and allocPct > 1.0, cap at 1.0.
+	if !cfg.UseMargin && allocPct > 1.0 {
 		allocPct = 0.20
 	}
 	targetAlloc := totalEquity * allocPct

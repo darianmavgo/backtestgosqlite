@@ -6,78 +6,92 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
-func TestBiggestWinner_GenerateSignals(t *testing.T) {
-	s := &BiggestWinnerStrategy{}
+func yrBars(sym string, yearOpen, yearClose float64, holdYear bool) []models.Bar {
+	bars := []models.Bar{
+		{Symbol: sym, Date: "2020-01-02", Open: yearOpen, High: yearOpen, Low: yearOpen, Close: yearOpen},
+		{Symbol: sym, Date: "2020-12-31", Open: yearClose, High: yearClose, Low: yearClose, Close: yearClose},
+	}
+	if holdYear {
+		bars = append(bars,
+			models.Bar{Symbol: sym, Date: "2021-01-04", Open: 50, High: 50, Low: 50, Close: 50},
+			models.Bar{Symbol: sym, Date: "2021-12-31", Open: 40, High: 40, Low: 40, Close: 40},
+		)
+	}
+	return bars
+}
 
-	// Week 1: 2024-W01 (Jan 1 to Jan 5)
-	// A goes from 10 to 15 (50% return)
-	// B goes from 20 to 22 (10% return)
+func TestAnnualWinnerLongShortAndInverse(t *testing.T) {
+	// TQQQ was the 2020 winner. SQQQ is its 3x inverse. ZZZZ has no pair.
+	bars := map[string][]models.Bar{
+		"TQQQ": yrBars("TQQQ", 10, 40, true), // +300%
+		"SQQQ": yrBars("SQQQ", 10, 4, true),  // -60%
+		"SPY":  yrBars("SPY", 10, 12, true),  // +20%
+	}
 
-	// Week 2: 2024-W02 (Jan 8 to Jan 12)
-	// Strategy should buy A on Monday (Jan 8), sell A on Friday (Jan 12)
-	// A goes from 15 to 12 (-20% return)
-	// B goes from 22 to 33 (50% return)
+	long := annualWinnerSignals(bars, annualLong)
+	if len(long) != 2 || long[0].Symbol != "TQQQ" || long[0].Date != "2021-01-04" || long[0].Entry != 1 || long[0].Direction != "" {
+		t.Fatalf("long entry: %+v", long)
+	}
+	if long[1].Symbol != "TQQQ" || long[1].Date != "2021-12-31" || long[1].Entry != -1 {
+		t.Fatalf("long exit: %+v", long[1])
+	}
 
-	// Week 3: 2024-W03 (Jan 15 to Jan 19)
-	// Strategy should buy B on Monday (Jan 15), sell B on Friday (Jan 19)
+	short := annualWinnerSignals(bars, annualShort)
+	if len(short) != 2 || short[0].Symbol != "TQQQ" || short[0].Direction != "SHORT" || short[0].Entry != 1 {
+		t.Fatalf("short entry: %+v", short)
+	}
+	if short[1].Direction != "SHORT" || short[1].Entry != -1 {
+		t.Fatalf("short exit: %+v", short[1])
+	}
 
-	barsBySymbol := map[string][]models.Bar{
-		"A": {
-			// Week 1
-			{Idx: 1, Symbol: "A", Date: "2024-01-01", Open: 10, Close: 11}, // Monday
-			{Idx: 2, Symbol: "A", Date: "2024-01-05", Open: 14, Close: 15}, // Friday
-			// Week 2
-			{Idx: 3, Symbol: "A", Date: "2024-01-08", Open: 15, Close: 14}, // Monday
-			{Idx: 4, Symbol: "A", Date: "2024-01-12", Open: 13, Close: 12}, // Friday
-			// Week 3
-			{Idx: 5, Symbol: "A", Date: "2024-01-15", Open: 12, Close: 12}, // Monday
-			{Idx: 6, Symbol: "A", Date: "2024-01-19", Open: 12, Close: 12}, // Friday
+	inv := annualWinnerSignals(bars, annualInverse)
+	if len(inv) != 2 || inv[0].Symbol != "SQQQ" || inv[0].Date != "2021-01-04" || inv[0].Direction != "" || inv[0].Close != 50 {
+		t.Fatalf("inverse entry: %+v", inv)
+	}
+	if inv[1].Symbol != "SQQQ" || inv[1].Entry != -1 {
+		t.Fatalf("inverse exit: %+v", inv[1])
+	}
+}
+
+func TestAnnualInverseSkipsWinnerWithNoPair(t *testing.T) {
+	bars := map[string][]models.Bar{
+		"ZZZZ": yrBars("ZZZZ", 10, 80, true),
+		"SPY":  yrBars("SPY", 10, 12, true),
+	}
+	inv := annualWinnerSignals(bars, annualInverse)
+	if len(inv) != 0 {
+		t.Fatalf("expected cash year, got %+v", inv)
+	}
+	long := annualWinnerSignals(bars, annualLong)
+	if len(long) != 2 || long[0].Symbol != "ZZZZ" {
+		t.Fatalf("long should still take ZZZZ: %+v", long)
+	}
+}
+
+func TestAnnualInverseSkipsWhenPairMissesEntryDate(t *testing.T) {
+	bars := map[string][]models.Bar{
+		"TQQQ": yrBars("TQQQ", 10, 40, true),
+		"SQQQ": {
+			{Symbol: "SQQQ", Date: "2020-01-02", Open: 10, Close: 10},
+			{Symbol: "SQQQ", Date: "2020-12-31", Open: 4, Close: 4},
+			// No 2021-01-04 bar. Listed later in the hold year.
+			{Symbol: "SQQQ", Date: "2021-06-01", Open: 20, Close: 20},
+			{Symbol: "SQQQ", Date: "2021-12-31", Open: 15, Close: 15},
 		},
-		"B": {
-			// Week 1
-			{Idx: 1, Symbol: "B", Date: "2024-01-01", Open: 20, Close: 21}, // Monday
-			{Idx: 2, Symbol: "B", Date: "2024-01-05", Open: 21, Close: 22}, // Friday
-			// Week 2
-			{Idx: 3, Symbol: "B", Date: "2024-01-08", Open: 22, Close: 23}, // Monday
-			{Idx: 4, Symbol: "B", Date: "2024-01-12", Open: 32, Close: 33}, // Friday
-			// Week 3
-			{Idx: 5, Symbol: "B", Date: "2024-01-15", Open: 33, Close: 34}, // Monday
-			{Idx: 6, Symbol: "B", Date: "2024-01-19", Open: 35, Close: 36}, // Friday
-		},
 	}
-
-	signals := s.GenerateSignals(barsBySymbol)
-
-	// Expecting 4 signals:
-	// 1. Buy A on 2024-01-08
-	// 2. Sell A on 2024-01-12
-	// 3. Buy B on 2024-01-15
-	// 4. Sell B on 2024-01-19
-
-	if len(signals) != 4 {
-		t.Fatalf("Expected 4 signals, got %d", len(signals))
+	if got := annualWinnerSignals(bars, annualInverse); len(got) != 0 {
+		t.Fatalf("expected skip, got %+v", got)
 	}
+}
 
-	expectedSignals := []struct {
-		Date   string
-		Symbol string
-		Entry  int
-	}{
-		{"2024-01-08", "A", 1},
-		{"2024-01-12", "A", -1},
-		{"2024-01-15", "B", 1},
-		{"2024-01-19", "B", -1},
+func TestInverseETFPairsRoundTrip(t *testing.T) {
+	for a, b := range inverseETF {
+		back, ok := InverseETF(b)
+		if !ok || back != a {
+			t.Errorf("%s → %s → %s", a, b, back)
+		}
 	}
-
-	for i, sig := range signals {
-		if sig.Date != expectedSignals[i].Date {
-			t.Errorf("Signal %d date mismatch: expected %s, got %s", i, expectedSignals[i].Date, sig.Date)
-		}
-		if sig.Symbol != expectedSignals[i].Symbol {
-			t.Errorf("Signal %d symbol mismatch: expected %s, got %s", i, expectedSignals[i].Symbol, sig.Symbol)
-		}
-		if sig.Entry != expectedSignals[i].Entry {
-			t.Errorf("Signal %d entry mismatch: expected %d, got %d", i, expectedSignals[i].Entry, sig.Entry)
-		}
+	if _, ok := InverseETF("TSLL"); ok {
+		t.Error("single-name bull should not have a guessed inverse")
 	}
 }

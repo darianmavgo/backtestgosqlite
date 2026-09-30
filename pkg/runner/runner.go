@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"math"
 	"fmt"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"log"
@@ -31,6 +32,7 @@ type RunResult struct {
 	Notes               []string // extra strategy-specific result lines (printed by PrintNotes)
 	DividendsReinvested bool
 	DividendCash        float64 // total cash dividends received (only when not reinvested)
+	TotalMarginInterest float64 // total margin interest debited
 	PriceReturnPct      float64 // capital gains only (raw closes)
 	DividendReturnPct   float64 // reinvested dividends (total − price)
 	TotalReturnPct      float64
@@ -404,12 +406,13 @@ func ExecuteStrategyWithDividends(
 	}
 
 	rr := RunResult{
-		Strat:       strat,
-		Report:      report,
-		Trades:      trades,
-		EquityCurve: equityCurve,
-		DbPath:      outDBPath,
-		SignalCount: len(signals),
+		Strat:               strat,
+		Report:              report,
+		Trades:              trades,
+		EquityCurve:         equityCurve,
+		DbPath:              outDBPath,
+		SignalCount:         len(signals),
+		TotalMarginInterest: sim.TotalMarginInterest,
 	}
 	if tr != nil && len(signals) > 0 {
 		if b, ok := tr.breakdown(signals[0].Symbol, signals[0].Date); ok {
@@ -453,7 +456,13 @@ func PrintReturnBreakdown(res RunResult) {
 	if res.DividendsReinvested {
 		fmt.Printf("   (Simulated on dividend-adjusted prices; tear-sheet returns already include dividends, net of costs.)\n")
 	} else {
-		fmt.Printf("   (Simulated on raw prices; $%.0f of dividends paid into idle cash, earning nothing; tear-sheet equity includes that cash.)\n", res.DividendCash)
+		fmt.Printf("   (Simulated on raw prices; $%.2f of dividends paid into cash balance; tear-sheet equity includes that cash.)\n", res.DividendCash)
+	}
+	if res.TotalMarginInterest > 0 {
+		fmt.Printf("💸 Margin Borrowing Cash Flow:\n")
+		fmt.Printf("   Total Margin Interest Paid: -$%.2f debited from cash account\n", res.TotalMarginInterest)
+		netCF := res.DividendCash - res.TotalMarginInterest
+		fmt.Printf("   Net Cash Flow (Dividends Received − Margin Interest Paid): %s$%.2f\n", sign(netCF), math.Abs(netCF))
 	}
 }
 
@@ -641,4 +650,11 @@ func DetectAndDownloadMissingData(
 
 	fmt.Printf("\n✅ Successfully updated market data for %v in %s (%s).\n", missingSymbols, targetDb, tableName)
 	return nil
+}
+
+func sign(v float64) string {
+	if v >= 0 {
+		return "+"
+	}
+	return "-"
 }

@@ -22,11 +22,18 @@ type PortfolioSimulator struct {
 	// Dividends optionally maps symbol → date → cash dividend per share. Held
 	// shares are paid on that date into Cash (not reinvested). Used with raw
 	// price bars to model "take dividends as cash".
-	Dividends          map[string]map[string]float64
-	DividendCash       float64 // total dividends received during Run
-	Sizer              PositionSizer
-	tradeIDCounter     int
-	dailyCashYieldRate float64 // pre-computed daily compound factor from CashYieldAnnual
+	Dividends            map[string]map[string]float64
+	DividendCash         float64 // total dividends received during Run
+	Sizer                PositionSizer
+	tradeIDCounter       int
+	dailyCashYieldRate   float64 // pre-computed daily compound factor from CashYieldAnnual
+	dailyMarginRate      float64 // pre-computed daily compound factor from MarginInterestAnnual
+	dailyShortBorrowRate float64 // pre-computed daily compound factor from ShortBorrowAnnual
+	TotalMarginInterest  float64 // cumulative margin interest debited
+	// allowNegativeEquity is set once a short is opened. A short can lose more
+	// than its collateral; flooring equity at zero would hide that.
+	allowNegativeEquity bool
+	lastExitDay         map[string]int
 }
 
 // NewPortfolioSimulator initializes a simulator instance.
@@ -45,13 +52,26 @@ func NewPortfolioSimulator(config strategy.StrategyConfig, initialCapital float6
 		dailyCashYieldRate = math.Pow(1.0+config.CashYieldAnnual, 1.0/252.0) - 1.0
 	}
 
+	var dailyMarginRate float64
+	if config.MarginInterestAnnual > 0 {
+		dailyMarginRate = math.Pow(1.0+config.MarginInterestAnnual, 1.0/252.0) - 1.0
+	}
+
+	var dailyShortBorrowRate float64
+	if config.ShortBorrowAnnual > 0 {
+		dailyShortBorrowRate = math.Pow(1.0+config.ShortBorrowAnnual, 1.0/252.0) - 1.0
+	}
+
 	return &PortfolioSimulator{
-		Config:             config,
-		InitialCapital:     initialCapital,
-		Cash:               initialCapital,
-		Positions:          make(map[string]*models.Position),
-		Sizer:              GetSizer(config),
-		dailyCashYieldRate: dailyCashYieldRate,
+		Config:               config,
+		InitialCapital:       initialCapital,
+		Cash:                 initialCapital,
+		Positions:            make(map[string]*models.Position),
+		Sizer:                GetSizer(config),
+		dailyCashYieldRate:   dailyCashYieldRate,
+		dailyMarginRate:      dailyMarginRate,
+		dailyShortBorrowRate: dailyShortBorrowRate,
+		lastExitDay:          make(map[string]int),
 	}
 }
 
@@ -85,21 +105,31 @@ func (s *PortfolioSimulator) Run(
 
 	peakEquity := s.InitialCapital
 
-	for _, date := range sortedDates {
-		// 0. Accrue T-bill yield on uninvested cash. Leftover allocation
-		// (e.g. sig-voo-buy-tecl's unused 35% while a 65% TECL position is
-		// open) earns the same daily compound as a fully-flat day — matching
-		// SharedAccountSimulator and StrategyConfig.CashYieldAnnual's docs.
+	for currentDayIdx, date := range sortedDates {
+		var todayDiv float64
+		var todayMarginInterest float64
+
+		// 0. Accrue T-bill yield on uninvested cash OR debit margin interest on borrowed funds
 		if s.dailyCashYieldRate > 0 && s.Cash > 0 {
 			s.Cash += s.Cash * s.dailyCashYieldRate
+		} else if s.dailyMarginRate > 0 && s.Cash < 0 {
+			// Cash is negative (margin loan debit balance) -> interest leaves cash
+			todayMarginInterest = math.Abs(s.Cash) * s.dailyMarginRate
+			s.Cash -= todayMarginInterest
+			s.TotalMarginInterest += todayMarginInterest
 		}
 
 		// 0b. Pay dividends on shares held going into the ex-date.
+		// A short owes the dividend.
 		for sym, pos := range s.Positions {
 			if d := s.Dividends[sym][date]; d > 0 {
 				pay := float64(pos.Shares) * d
+				if pos.Direction == "SHORT" {
+					pay = -pay
+				}
 				s.Cash += pay
 				s.DividendCash += pay
+				todayDiv += pay
 			}
 		}
 
@@ -112,6 +142,10 @@ func (s *PortfolioSimulator) Run(
 
 			pos.HoldDays++
 			pos.CurrentPrice = bar.Close
+
+			if pos.Direction == "SHORT" && s.dailyShortBorrowRate > 0 {
+				s.Cash -= float64(pos.Shares) * bar.Close * s.dailyShortBorrowRate
+			}
 
 			if bar.Low < pos.MinLowSince {
 				pos.MinLowSince = bar.Low
@@ -134,7 +168,7 @@ func (s *PortfolioSimulator) Run(
 				if bar.Open < pos.TrailingStopPrice {
 					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
 				}
-				s.closePosition(sym, date, exitPrice, models.ExitReasonTrailingStop)
+				s.closePosition(sym, date, exitPrice, models.ExitReasonTrailingStop, currentDayIdx)
 				continue
 			}
 
@@ -144,7 +178,7 @@ func (s *PortfolioSimulator) Run(
 				if bar.Open < pos.ATRStopPrice {
 					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
 				}
-				s.closePosition(sym, date, exitPrice, models.ExitReasonATRStop)
+				s.closePosition(sym, date, exitPrice, models.ExitReasonATRStop, currentDayIdx)
 				continue
 			}
 
@@ -154,7 +188,7 @@ func (s *PortfolioSimulator) Run(
 				if bar.Open < pos.StopLossPrice {
 					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
 				}
-				s.closePosition(sym, date, exitPrice, models.ExitReasonStopLoss)
+				s.closePosition(sym, date, exitPrice, models.ExitReasonStopLoss, currentDayIdx)
 				continue
 			}
 
@@ -164,7 +198,7 @@ func (s *PortfolioSimulator) Run(
 				if bar.Open > pos.TargetPrice {
 					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
 				}
-				s.closePosition(sym, date, exitPrice, models.ExitReasonProfitTarget)
+				s.closePosition(sym, date, exitPrice, models.ExitReasonProfitTarget, currentDayIdx)
 				continue
 			}
 
@@ -175,11 +209,11 @@ func (s *PortfolioSimulator) Run(
 				effectiveHoldDays = pos.HoldDaysOverride
 			}
 			if pos.HoldDays >= effectiveHoldDays {
-				exitPrice := bar.Close * (1.0 - s.Config.SlippagePct)
+				raw := bar.Close
 				if s.Config.ExitAtMarketOpen {
-					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)
+					raw = bar.Open
 				}
-				s.closePosition(sym, date, exitPrice, models.ExitReasonTimeUp)
+				s.closePosition(sym, date, slipped(raw, s.Config.SlippagePct, pos.Direction == "SHORT"), models.ExitReasonTimeUp, currentDayIdx)
 				continue
 			}
 		}
@@ -187,37 +221,76 @@ func (s *PortfolioSimulator) Run(
 		// 2. Process new entry signals on current date
 		if daySignals, hasSignals := signalsByDate[date]; hasSignals {
 			sort.Slice(daySignals, func(i, j int) bool {
+				iExit := daySignals[i].Entry < 0
+				jExit := daySignals[j].Entry < 0
+				if iExit != jExit {
+					return iExit
+				}
 				return daySignals[i].Symbol < daySignals[j].Symbol
 			})
 
 			for _, sig := range daySignals {
+				if sig.Entry < 0 {
+					if pos, held := s.Positions[sig.Symbol]; held {
+						raw := sig.Close
+						if bar, ok := barsBySymbolDate[sig.Symbol][date]; ok && bar.Close > 0 {
+							raw = bar.Close
+						}
+						if raw > 0 {
+							s.closePosition(sig.Symbol, date, slipped(raw, s.Config.SlippagePct, pos.Direction == "SHORT"), models.ExitReasonSignal, currentDayIdx)
+						}
+					}
+					continue
+				}
 				if len(s.Positions) >= s.Config.PositionCap {
 					break // Max positions reached
 				}
 				if _, alreadyHeld := s.Positions[sig.Symbol]; alreadyHeld {
 					continue // Already holding this symbol
 				}
+				if s.Config.ReentryCooldownDays > 0 {
+					if exitDay, exited := s.lastExitDay[sig.Symbol]; exited {
+						if currentDayIdx-exitDay <= s.Config.ReentryCooldownDays {
+							continue // Cooldown period active after exit
+						}
+					}
+				}
 
 				totalEquity := s.calculateTotalEquity(barsBySymbolDate, date)
 
-				// Determine entry price based on OrderType
-				entryPrice := sig.Close * (1.0 + s.Config.SlippagePct)
+				// Longs pay the offer (slippage up). Shorts sell the bid
+				// (slippage down). Both are adverse.
+				isShort := strings.EqualFold(sig.Direction, "SHORT")
+				entryPrice := slipped(sig.Close, s.Config.SlippagePct, !isShort)
 				orderType := strings.ToLower(sig.OrderType)
 				if orderType == "" {
 					orderType = "limit"
 				}
 
 				if orderType == "market" {
-					entryPrice = sig.Close * (1.0 + s.Config.SlippagePct)
+					entryPrice = slipped(sig.Close, s.Config.SlippagePct, !isShort)
 				} else if orderType == "limit" && sig.BuyLimit > 0 {
-					entryPrice = sig.BuyLimit * (1.0 + s.Config.SlippagePct)
+					entryPrice = slipped(sig.BuyLimit, s.Config.SlippagePct, !isShort)
 				}
 
 				if entryPrice <= 0 {
 					continue
 				}
 
-				shares := s.Sizer.CalculateShares(s.Cash, totalEquity, entryPrice, s.Config)
+				// Available buying power
+				availBP := s.Cash
+				if s.Config.UseMargin {
+					lev := s.Config.MarginLeverage
+					if lev <= 0 {
+						lev = 2.0
+					}
+					// Buying power = Equity * Leverage - PositionValue
+					// If all cash, BP = Cash * Leverage.
+					posVal := totalEquity - s.Cash
+					availBP = math.Max(0.0, totalEquity*lev-posVal)
+				}
+
+				shares := s.Sizer.CalculateShares(availBP, totalEquity, entryPrice, s.Config)
 				if shares <= 0 {
 					continue
 				}
@@ -225,8 +298,14 @@ func (s *PortfolioSimulator) Run(
 				cost := float64(shares) * entryPrice
 				commission := float64(shares) * s.Config.CommissionPerShare
 
-				if cost+commission > s.Cash {
-					continue
+				if s.Config.UseMargin {
+					if cost+commission > availBP {
+						continue
+					}
+				} else {
+					if cost+commission > s.Cash {
+						continue
+					}
 				}
 
 				// Mirrors shared_account.go's identical fallback: TargetPct (legacy
@@ -276,9 +355,15 @@ func (s *PortfolioSimulator) Run(
 				}
 
 				s.Cash -= (cost + commission)
+				direction := ""
+				if isShort {
+					direction = "SHORT"
+					s.allowNegativeEquity = true
+				}
 				s.Positions[sig.Symbol] = &models.Position{
 					Symbol:            sig.Symbol,
 					Shares:            shares,
+					Direction:         direction,
 					OrderType:         orderType,
 					EntryPrice:        entryPrice,
 					EntryDate:         date,
@@ -313,23 +398,41 @@ func (s *PortfolioSimulator) Run(
 			}
 		}
 
+		posVal := totalEquity - s.Cash
+		bp := s.Cash
+		debt := 0.0
+		if s.Cash < 0 {
+			debt = -s.Cash
+		}
+		if s.Config.UseMargin {
+			lev := s.Config.MarginLeverage
+			if lev <= 0 {
+				lev = 2.0
+			}
+			bp = math.Max(0.0, totalEquity*lev-posVal)
+		}
+
 		s.EquityCurve = append(s.EquityCurve, models.DailyEquityPoint{
 			Date:           date,
 			Cash:           s.Cash,
-			PositionsValue: totalEquity - s.Cash,
+			PositionsValue: posVal,
 			TotalEquity:    totalEquity,
 			OpenPositions:  len(s.Positions),
 			DailyReturn:    dailyReturn,
 			DrawdownPct:    drawdownPct,
+			BuyingPower:    bp,
+			MarginDebt:     debt,
+			MarginInterest: todayMarginInterest,
+			DividendIncome: todayDiv,
 		})
 	}
 
 	// 4. Force-close any open positions at end of backtest timeline
 	if len(sortedDates) > 0 {
 		lastDate := sortedDates[len(sortedDates)-1]
-		for sym := range s.Positions {
+		for sym, pos := range s.Positions {
 			if bar, ok := barsBySymbolDate[sym][lastDate]; ok {
-				s.closePosition(sym, lastDate, bar.Close*(1.0-s.Config.SlippagePct), models.ExitReasonEndBacktest)
+				s.closePosition(sym, lastDate, slipped(bar.Close, s.Config.SlippagePct, pos.Direction == "SHORT"), models.ExitReasonEndBacktest, len(sortedDates)-1)
 			}
 		}
 	}
@@ -340,29 +443,37 @@ func (s *PortfolioSimulator) Run(
 	return report, s.ClosedTrades, s.EquityCurve
 }
 
-func (s *PortfolioSimulator) closePosition(symbol, date string, exitPrice float64, reason models.ExitReason) {
+func (s *PortfolioSimulator) closePosition(symbol, date string, exitPrice float64, reason models.ExitReason, dayIdx int) {
 	pos, ok := s.Positions[symbol]
 	if !ok {
 		return
 	}
 
 	s.tradeIDCounter++
-	grossProceeds := float64(pos.Shares) * exitPrice
 	commission := float64(pos.Shares) * s.Config.CommissionPerShare
-	netProceeds := grossProceeds - commission
-	netPnL := netProceeds - (float64(pos.Shares) * pos.EntryPrice)
-	returnPct := (exitPrice - pos.EntryPrice) / pos.EntryPrice
+	var netProceeds, netPnL, returnPct, mae, mfe float64
+	if pos.Direction == "SHORT" {
+		// Collateral of shares*entry was locked at the open. Returning it
+		// plus (entry-exit) is shares*(2*entry-exit), then the cover commission.
+		netProceeds = float64(pos.Shares)*(2*pos.EntryPrice-exitPrice) - commission
+		netPnL = float64(pos.Shares)*(pos.EntryPrice-exitPrice) - commission
+		if pos.EntryPrice > 0 {
+			returnPct = (pos.EntryPrice - exitPrice) / pos.EntryPrice
+			mae = (pos.EntryPrice - pos.MaxHighSince) / pos.EntryPrice
+			mfe = (pos.EntryPrice - pos.MinLowSince) / pos.EntryPrice
+		}
+	} else {
+		grossProceeds := float64(pos.Shares) * exitPrice
+		netProceeds = grossProceeds - commission
+		netPnL = netProceeds - (float64(pos.Shares) * pos.EntryPrice)
+		returnPct = (exitPrice - pos.EntryPrice) / pos.EntryPrice
+		if pos.EntryPrice > 0 {
+			mae = (pos.MinLowSince - pos.EntryPrice) / pos.EntryPrice
+			mfe = (pos.MaxHighSince - pos.EntryPrice) / pos.EntryPrice
+		}
+	}
 
 	s.Cash += netProceeds
-
-	mae := 0.0
-	if pos.EntryPrice > 0 {
-		mae = (pos.MinLowSince - pos.EntryPrice) / pos.EntryPrice
-	}
-	mfe := 0.0
-	if pos.EntryPrice > 0 {
-		mfe = (pos.MaxHighSince - pos.EntryPrice) / pos.EntryPrice
-	}
 
 	trade := models.Trade{
 		ID:                    s.tradeIDCounter,
@@ -386,16 +497,36 @@ func (s *PortfolioSimulator) closePosition(symbol, date string, exitPrice float6
 
 	s.ClosedTrades = append(s.ClosedTrades, trade)
 	delete(s.Positions, symbol)
+	if s.lastExitDay != nil {
+		s.lastExitDay[symbol] = dayIdx
+	}
 }
 
 func (s *PortfolioSimulator) calculateTotalEquity(barsBySymbolDate map[string]map[string]models.Bar, date string) float64 {
 	equity := s.Cash
 	for sym, pos := range s.Positions {
+		px := pos.CurrentPrice
 		if bar, ok := barsBySymbolDate[sym][date]; ok {
-			equity += float64(pos.Shares) * bar.Close
+			px = bar.Close
+		}
+		if pos.Direction == "SHORT" {
+			// Locked collateral marked by (entry - price): shares*(2*entry - price).
+			equity += float64(pos.Shares) * (2*pos.EntryPrice - px)
 		} else {
-			equity += float64(pos.Shares) * pos.CurrentPrice
+			equity += float64(pos.Shares) * px
 		}
 	}
+	if equity < 0 && s.allowNegativeEquity {
+		return equity
+	}
 	return math.Max(0.0, equity)
+}
+
+// slipped moves a fill against the trader. adverseUp is true when the fill
+// is a purchase (long entry, short cover).
+func slipped(raw, slippage float64, adverseUp bool) float64 {
+	if adverseUp {
+		return raw * (1.0 + slippage)
+	}
+	return raw * (1.0 - slippage)
 }

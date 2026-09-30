@@ -25,15 +25,17 @@ type Bar struct {
 
 // Signal represents a trade trigger detected by a strategy.
 type Signal struct {
-	Idx        int                `db:"idx" json:"idx"`
-	Symbol     string             `db:"symbol" json:"symbol"`
-	Date       string             `db:"date" json:"date"`
-	Open       float64            `db:"open" json:"open"`
-	High       float64            `db:"high" json:"high"`
-	Low        float64            `db:"low" json:"low"`
-	Close      float64            `db:"close" json:"close"`
-	Volume     int64              `db:"volume" json:"volume"`
-	BuyLimit   float64            `db:"buylimit" json:"buylimit"`
+	Idx      int     `db:"idx" json:"idx"`
+	Symbol   string  `db:"symbol" json:"symbol"`
+	Date     string  `db:"date" json:"date"`
+	Open     float64 `db:"open" json:"open"`
+	High     float64 `db:"high" json:"high"`
+	Low      float64 `db:"low" json:"low"`
+	Close    float64 `db:"close" json:"close"`
+	Volume   int64   `db:"volume" json:"volume"`
+	BuyLimit float64 `db:"buylimit" json:"buylimit"`
+	// Entry is 1 (or 0) to open. Negative closes an existing position in this
+	// symbol at this bar and does not open a new one.
 	Entry      int                `db:"entry" json:"entry"`
 	OrderType  string             `db:"order_type" json:"order_type,omitempty"` // "limit", "market", "stop_limit" (default: "limit")
 	StopLoss   float64            `db:"stop_loss" json:"stop_loss,omitempty"`
@@ -72,6 +74,7 @@ const (
 	ExitReasonTimeUp       ExitReason = "TIME_UP"
 	ExitReasonEndBacktest  ExitReason = "END_OF_DATA"
 	ExitReasonPreempted    ExitReason = "PREEMPTED_BY_PRIMARY"
+	ExitReasonSignal       ExitReason = "SIGNAL"
 )
 
 // Trade represents an executed trade with full lifecycle metrics.
@@ -101,10 +104,12 @@ type Trade struct {
 
 // Position tracks currently held active assets in the portfolio.
 type Position struct {
-	StrategyID        string  `json:"strategy_id,omitempty"`
-	Priority          int     `json:"priority"`
-	Symbol            string  `json:"symbol"`
-	Shares            int     `json:"shares"`
+	StrategyID string `json:"strategy_id,omitempty"`
+	Priority   int    `json:"priority"`
+	Symbol     string `json:"symbol"`
+	Shares     int    `json:"shares"`
+	// Direction is "SHORT" for a cash-secured short. Empty means long.
+	Direction         string  `json:"direction,omitempty"`
 	OrderType         string  `json:"order_type,omitempty"`
 	EntryPrice        float64 `json:"entry_price"`
 	EntryDate         string  `json:"entry_date"`
@@ -144,6 +149,10 @@ type DailyEquityPoint struct {
 	DailyReturn    float64 `json:"daily_return"`
 	DrawdownPct    float64 `json:"drawdown_pct"`
 	OpenPositions  int     `json:"open_positions"`
+	BuyingPower    float64 `json:"buying_power,omitempty"`
+	MarginDebt     float64 `json:"margin_debt,omitempty"`
+	MarginInterest float64 `json:"margin_interest,omitempty"`
+	DividendIncome float64 `json:"dividend_income,omitempty"`
 }
 
 // PerformanceReport aggregates institutional quantitative performance metrics.

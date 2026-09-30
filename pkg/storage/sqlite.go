@@ -520,12 +520,27 @@ func EnsureEquityCurveTable(db *sqlx.DB) error {
 			cash REAL,
 			invested REAL,
 			drawdown_pct REAL,
+			buying_power REAL DEFAULT 0,
+			margin_debt REAL DEFAULT 0,
+			margin_interest REAL DEFAULT 0,
+			dividend_income REAL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_equity_strat_date ON equity_curve(strategy_id, date);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	// Migrate existing tables if columns are missing
+	for _, col := range []string{
+		"ALTER TABLE equity_curve ADD COLUMN buying_power REAL DEFAULT 0",
+		"ALTER TABLE equity_curve ADD COLUMN margin_debt REAL DEFAULT 0",
+		"ALTER TABLE equity_curve ADD COLUMN margin_interest REAL DEFAULT 0",
+		"ALTER TABLE equity_curve ADD COLUMN dividend_income REAL DEFAULT 0",
+	} {
+		_, _ = db.Exec(col)
+	}
+	return nil
 }
 
 func SaveEquityCurve(db *sqlx.DB, strategyID string, curve []models.DailyEquityPoint) error {
@@ -543,8 +558,9 @@ func SaveEquityCurve(db *sqlx.DB, strategyID string, curve []models.DailyEquityP
 
 	query := `
 		INSERT INTO equity_curve (
-			strategy_id, date, total_equity, cash, invested, drawdown_pct
-		) VALUES (?, ?, ?, ?, ?, ?)
+			strategy_id, date, total_equity, cash, invested, drawdown_pct,
+			buying_power, margin_debt, margin_interest, dividend_income
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -553,7 +569,8 @@ func SaveEquityCurve(db *sqlx.DB, strategyID string, curve []models.DailyEquityP
 	defer stmt.Close()
 
 	for _, p := range curve {
-		_, err := stmt.Exec(strategyID, p.Date, p.TotalEquity, p.Cash, p.PositionsValue, p.DrawdownPct)
+		_, err := stmt.Exec(strategyID, p.Date, p.TotalEquity, p.Cash, p.PositionsValue, p.DrawdownPct,
+			p.BuyingPower, p.MarginDebt, p.MarginInterest, p.DividendIncome)
 		if err != nil {
 			return err
 		}

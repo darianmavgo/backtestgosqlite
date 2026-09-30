@@ -196,6 +196,11 @@ func (s *SharedAccountSimulator) Run(
 			// Sort day signals by Priority ascending (Primary = 0 first, then Secondary = 1...)
 			// Within same priority, sort alphabetically by symbol
 			sort.Slice(daySignals, func(i, j int) bool {
+				iExit := daySignals[i].Entry < 0
+				jExit := daySignals[j].Entry < 0
+				if iExit != jExit {
+					return iExit
+				}
 				if daySignals[i].Priority != daySignals[j].Priority {
 					return daySignals[i].Priority < daySignals[j].Priority
 				}
@@ -205,6 +210,23 @@ func (s *SharedAccountSimulator) Run(
 			for _, sig := range daySignals {
 				cfg, ok := s.Configs[sig.StrategyID]
 				if !ok {
+					continue
+				}
+				// Explicit exit (biggest-winner year-end). The shared ledger
+				// is long-only, so a SHORT entry is not opened here.
+				if sig.Entry < 0 {
+					if _, held := s.Positions[sig.Symbol]; held {
+						raw := sig.Close
+						if bar, ok := barsBySymbolDate[sig.Symbol][date]; ok && bar.Close > 0 {
+							raw = bar.Close
+						}
+						if raw > 0 {
+							s.closePosition(sig.Symbol, date, raw*(1.0-cfg.SlippagePct), models.ExitReasonSignal)
+						}
+					}
+					continue
+				}
+				if strings.EqualFold(sig.Direction, "SHORT") {
 					continue
 				}
 

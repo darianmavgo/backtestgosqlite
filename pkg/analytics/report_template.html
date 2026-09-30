@@ -403,6 +403,34 @@
             </div>
         </div>
 
+        <!-- Cash Flow & Margin Ledger -->
+        <div class="table-section" id="cashflow-section" style="display: none; margin-bottom: 2.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <div>
+                    <div class="table-title" style="margin-bottom: 0.35rem;">💰 Cash Flow & Margin Ledger</div>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem;">
+                        Audit of dividend payments arriving into cash and margin borrow interest leaving cash.
+                    </p>
+                </div>
+                <div id="cashflow-summary-badge" style="display: flex; gap: 0.75rem;"></div>
+            </div>
+            <div style="max-height: 380px; overflow-y: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Cash Flow Event</th>
+                            <th>Dividend Arriving (+)</th>
+                            <th>Margin Interest Leaving (-)</th>
+                            <th>Margin Debt Balance</th>
+                            <th>Available Buying Power</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cashflow-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Trade Log Section with Strategy Selector -->
         <div class="table-section">
             <div class="table-title">📜 Individual Trade Execution Log</div>
@@ -617,8 +645,66 @@
             tabContainer.appendChild(btn);
         });
 
+        function renderCashFlows(stratId) {
+            const section = document.getElementById('cashflow-section');
+            const tbody = document.getElementById('cashflow-tbody');
+            const badgeContainer = document.getElementById('cashflow-summary-badge');
+            if (!reportData.cash_flows || !reportData.cash_flows[stratId] || reportData.cash_flows[stratId].length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = 'block';
+            tbody.innerHTML = '';
+
+            const flows = reportData.cash_flows[stratId];
+            let totalDiv = 0;
+            let totalInterest = 0;
+
+            flows.forEach(cf => {
+                totalDiv += cf.dividend_income;
+                totalInterest += cf.margin_interest;
+
+                const tr = document.createElement('tr');
+                let eventType = '';
+                if (cf.dividend_income > 0 && cf.margin_interest > 0) {
+                    eventType = '<span class="trade-badge" style="background: rgba(59, 130, 246, 0.2); color: #60a5fa;">DIVIDEND + INTEREST</span>';
+                } else if (cf.dividend_income > 0) {
+                    eventType = '<span class="trade-badge badge-target">DIVIDEND RECEIVED</span>';
+                } else {
+                    eventType = '<span class="trade-badge badge-stop">MARGIN INTEREST</span>';
+                }
+
+                const divText = cf.dividend_income > 0 ? '<span class="text-green font-bold">+$' + cf.dividend_income.toFixed(2) + '</span>' : '-';
+                const intText = cf.margin_interest > 0 ? '<span class="text-red font-bold">-$' + cf.margin_interest.toFixed(2) + '</span>' : '-';
+
+                tr.innerHTML = 
+                    '<td>' + cf.date + '</td>' +
+                    '<td>' + eventType + '</td>' +
+                    '<td>' + divText + '</td>' +
+                    '<td>' + intText + '</td>' +
+                    '<td>$' + cf.margin_debt.toLocaleString('en-US', {minimumFractionDigits: 2}) + '</td>' +
+                    '<td>$' + cf.buying_power.toLocaleString('en-US', {minimumFractionDigits: 2}) + '</td>';
+                tbody.appendChild(tr);
+            });
+
+            badgeContainer.innerHTML = 
+                '<div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 0.35rem 0.75rem; font-size: 0.85rem; color: #34d399; font-weight: 600;">' +
+                'Dividends: +$' + totalDiv.toLocaleString('en-US', {minimumFractionDigits: 2}) + '</div>' +
+                '<div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 0.35rem 0.75rem; font-size: 0.85rem; color: #f87171; font-weight: 600;">' +
+                'Margin Interest: -$' + totalInterest.toLocaleString('en-US', {minimumFractionDigits: 2}) + '</div>';
+        }
+
+        reportData.strategies.forEach((s, idx) => {
+            const origOnclick = tabContainer.children[idx].onclick;
+            tabContainer.children[idx].onclick = () => {
+                origOnclick();
+                renderCashFlows(s.id);
+            };
+        });
+
         if (reportData.strategies.length > 0) {
             renderTrades(reportData.strategies[0]);
+            renderCashFlows(reportData.strategies[0].id);
         }
     </script>
 </body>

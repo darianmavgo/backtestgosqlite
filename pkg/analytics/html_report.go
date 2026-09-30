@@ -16,18 +16,27 @@ import (
 var reportTemplateHTML string
 
 type MultiStrategyHTMLData struct {
-	Title          string               `json:"title"`
-	GeneratedAt    string               `json:"generated_at"`
-	Symbol         string               `json:"symbol"`
-	StartDate      string               `json:"start_date"`
-	EndDate        string               `json:"end_date"`
-	TotalDays      int                  `json:"total_days"`
-	TotalYears     float64              `json:"total_years"`
-	InitialCap     float64              `json:"initial_cap"`
-	Strategies     []StrategyReportData `json:"strategies"`
-	AllDates       []string             `json:"all_dates"`
-	EquityCurves   map[string][]float64 `json:"equity_curves"`
-	DrawdownCurves map[string][]float64 `json:"drawdown_curves"`
+	Title          string                          `json:"title"`
+	GeneratedAt    string                          `json:"generated_at"`
+	Symbol         string                          `json:"symbol"`
+	StartDate      string                          `json:"start_date"`
+	EndDate        string                          `json:"end_date"`
+	TotalDays      int                             `json:"total_days"`
+	TotalYears     float64                         `json:"total_years"`
+	InitialCap     float64                         `json:"initial_cap"`
+	Strategies     []StrategyReportData            `json:"strategies"`
+	AllDates       []string                        `json:"all_dates"`
+	EquityCurves   map[string][]float64            `json:"equity_curves"`
+	DrawdownCurves map[string][]float64            `json:"drawdown_curves"`
+	CashFlows      map[string][]CashFlowPointEntry `json:"cash_flows,omitempty"`
+}
+
+type CashFlowPointEntry struct {
+	Date           string  `json:"date"`
+	BuyingPower    float64 `json:"buying_power"`
+	MarginDebt     float64 `json:"margin_debt"`
+	MarginInterest float64 `json:"margin_interest"`
+	DividendIncome float64 `json:"dividend_income"`
 }
 
 type StrategyReportData struct {

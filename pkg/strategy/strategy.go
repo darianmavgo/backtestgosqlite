@@ -154,4 +154,22 @@ type StrategyConfig struct {
 	// fully-flat days). Set 0.045 for 4.5% APY. Applied by PortfolioSimulator
 	// and SharedAccountSimulator.
 	CashYieldAnnual float64 `json:"cash_yield_annual,omitempty"`
+
+	// UseMargin enables Reg-T borrowing (buying power = equity * MarginLeverage).
+	UseMargin bool `json:"use_margin,omitempty"`
+
+	// MarginLeverage is the buying power multiplier on equity (e.g. 2.0 for 2:1 Reg-T).
+	MarginLeverage float64 `json:"margin_leverage,omitempty"`
+
+	// MarginInterestAnnual is the annualized interest rate charged on negative cash (e.g. 0.07 for 7.0% APR).
+	MarginInterestAnnual float64 `json:"margin_interest_annual,omitempty"`
+
+	// ShortBorrowAnnual is the annualized stock-borrow fee charged on the
+	// market value of an open short (e.g. 0.01 for 1%). Zero for long-only
+	// strategies. PortfolioSimulator accrues it daily; the shared-account
+	// ledger does not open shorts.
+	ShortBorrowAnnual float64 `json:"short_borrow_annual,omitempty"`
+
+	// ReentryCooldownDays is the number of trading days to wait after exiting a position before re-entering that symbol.
+	ReentryCooldownDays int `json:"reentry_cooldown_days,omitempty"`
 }
