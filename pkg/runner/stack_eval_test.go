@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -75,6 +76,50 @@ func TestExecuteStackAllocOverrideSizesTenPercent(t *testing.T) {
 		if tr.Shares != 100 {
 			t.Errorf("%s shares = %d, want 100 (10%% of $100k at $100), default alloc was 65%%", tr.StrategyID, tr.Shares)
 		}
+	}
+}
+
+func TestExecuteStackDefaultAssetNamesTheFile(t *testing.T) {
+	const price = 100.0
+	dates := []string{"2026-01-02", "2026-01-05"}
+	bars := func(px float64) []models.Bar {
+		out := make([]models.Bar, len(dates))
+		for i, d := range dates {
+			out[i] = models.Bar{Date: d, Open: px, High: px, Low: px, Close: px, AdjClose: px}
+		}
+		return out
+	}
+	primary := &evalMock{
+		id: "primary",
+		cfg: strategy.StrategyConfig{
+			ID: "primary", AllocationPct: 0.10, PositionCap: 1, HoldingWindow: 8,
+			PositionSizing: "fixed_pct",
+		},
+	}
+	res := ExecuteStack(StackRequest{
+		Primary:      primary,
+		BarsBySymbol: map[string][]models.Bar{"PARK": bars(price), "AAA": bars(price)},
+		SortedDates:  dates,
+		Capital:      100000,
+		Persist:      true,
+		OutDir:       t.TempDir(),
+		Signals:      []models.Signal{},
+		DefaultAsset: "park",
+	})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if res.Default.Symbol != "PARK" {
+		t.Fatalf("default symbol %q, want PARK", res.Default.Symbol)
+	}
+	if !strings.Contains(res.DbPath, "_default-park.db") {
+		t.Fatalf("db path %s, want _default-park.db", res.DbPath)
+	}
+	if res.Default.AvgWeight < 0.9 {
+		t.Fatalf("avg park weight %.3f, want most of the book", res.Default.AvgWeight)
+	}
+	if res.Idle.DaysFullyIdle != 0 {
+		t.Fatalf("idle days %d, want 0 while the park is held", res.Idle.DaysFullyIdle)
 	}
 }
 

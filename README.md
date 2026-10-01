@@ -91,9 +91,10 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -primary sig-voo-buy-tecl -secondary mara_tree,pdd_tree -capital 100000
 ./bin/backtest sig-voo-buy-tecl+mara_tree
 ./bin/backtest -alloc 0.10 sig-voo-buy-tecl+mara_tree+pdd_tree
+./bin/backtest -primary sig-voo-buy-tecl -secondary mara_tree -alloc 0.10 -default-asset VYM
 ```
 
-`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
+`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `reports/shared_<primary>_<secondaries>_default-<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
 
 ### backtest stale
 

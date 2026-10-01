@@ -20,6 +20,8 @@ type StrategyPriorityEntry struct {
 // SharedAccountSimulator coordinates multiple strategies trading inside a single shared cash account.
 // Only the primary (Priority 0) may preempt: if it needs capital or the same symbol, subordinate
 // positions are liquidated at market. Secondaries never evict each other — they size to leftover cash.
+// When DefaultAsset is set, leftover cash is held in that symbol. The park lot is separate from
+// Positions, so a sleeve can hold the same symbol at the same time.
 type SharedAccountSimulator struct {
 	InitialCapital      float64
 	Cash                float64
@@ -33,6 +35,31 @@ type SharedAccountSimulator struct {
 	PreemptedTradeCount int
 	dailyCashYieldRate  float64
 	tradeIDCounter      int
+
+	defaultAsset     string
+	park             *parkLot
+	parkDividends    map[string]float64
+	parkSlippage     float64
+	parkCommission   float64
+	parkDividendCash float64
+	parkLastPrice    float64
+	daysUnparked     int
+	sumParkWeight    float64
+	parkDays         int
+}
+
+// parkLot is leftover cash invested in the default asset. It is not a sleeve position.
+type parkLot struct {
+	Symbol string
+	Shares int
+}
+
+// DefaultAssetResult summarizes the parked residual book.
+type DefaultAssetResult struct {
+	Symbol       string
+	AvgWeight    float64
+	Dividends    float64
+	DaysUnparked int
 }
 
 // NewSharedAccountSimulator creates a multi-strategy simulator with a shared cash ledger.
@@ -80,6 +107,42 @@ func (s *SharedAccountSimulator) SetBenchmarkBars(bars map[string]models.Bar) {
 	s.BenchmarkBars = bars
 }
 
+// SetDefaultAsset parks leftover cash in symbol. dividends maps an ex-date to
+// cash per share. Slippage and commission come from the primary config.
+// An empty symbol leaves the cash yield as the only use of leftover cash.
+func (s *SharedAccountSimulator) SetDefaultAsset(symbol string, dividends map[string]float64) {
+	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	if symbol == "" {
+		return
+	}
+	s.defaultAsset = symbol
+	s.parkDividends = dividends
+	for _, entry := range s.Strategies {
+		if entry.Priority != 0 {
+			continue
+		}
+		cfg := s.Configs[entry.Strategy.ID()]
+		s.parkSlippage = cfg.SlippagePct
+		s.parkCommission = cfg.CommissionPerShare
+		break
+	}
+}
+
+// DefaultAssetResult returns the parked-book summary. AvgWeight is zero when
+// no default asset was set.
+func (s *SharedAccountSimulator) DefaultAssetResult() DefaultAssetResult {
+	avg := 0.0
+	if s.parkDays > 0 {
+		avg = s.sumParkWeight / float64(s.parkDays)
+	}
+	return DefaultAssetResult{
+		Symbol:       s.defaultAsset,
+		AvgWeight:    avg,
+		Dividends:    s.parkDividendCash,
+		DaysUnparked: s.daysUnparked,
+	}
+}
+
 // Run executes the chronological multi-strategy simulation.
 func (s *SharedAccountSimulator) Run(
 	signals []models.Signal,
@@ -106,10 +169,12 @@ func (s *SharedAccountSimulator) Run(
 	peakEquity := s.InitialCapital
 
 	for _, date := range sortedDates {
-		// 0. Accrue T-bill yield on uninvested cash
+		// 0. Accrue T-bill yield on residual cash. Parked shares earn the asset, not this yield.
 		if s.dailyCashYieldRate > 0 && s.Cash > 0 {
 			s.Cash += s.Cash * s.dailyCashYieldRate
 		}
+		// Dividends are paid on park shares held at the open, then the close sweep reinvests them.
+		s.payParkDividend(date)
 
 		// 1. Evaluate open positions for stops / targets / max holding period
 		for sym, pos := range s.Positions {
@@ -277,8 +342,8 @@ func (s *SharedAccountSimulator) Run(
 				var requiredCapital float64
 
 				if sig.Priority == 0 {
-					// Primary sizes against full equity, then liquidates
-					// subordinate positions if cash is short.
+					// Primary sizes against full equity, then sells the park
+					// and, if still short, liquidates subordinate positions.
 					shares = sizer.CalculateShares(totalEquity, totalEquity, entryPrice, cfg, sig)
 					if shares <= 0 {
 						continue
@@ -287,6 +352,9 @@ func (s *SharedAccountSimulator) Run(
 					commission := float64(shares) * cfg.CommissionPerShare
 					requiredCapital = cost + commission
 
+					if px, ok := s.parkClose(barsBySymbolDate, date); ok {
+						s.raiseCashFromPark(requiredCapital, px)
+					}
 					if requiredCapital > s.Cash {
 						var subordinates []*models.Position
 						for _, p := range s.Positions {
@@ -326,16 +394,24 @@ func (s *SharedAccountSimulator) Run(
 					}
 				} else {
 					// Subordinates never preempt. They trade leftover cash only.
-					// A full 10% slot can miss by a few cents of commission;
-					// shrink to the shares cash can afford instead of skipping
-					// the position.
-					shares = sizer.CalculateShares(s.Cash, totalEquity, entryPrice, cfg, sig)
+					// Parked shares are that leftover cash: sell just enough
+					// of the park to fund the order. A full 10% slot can miss
+					// by a few cents of commission; shrink to the shares cash
+					// can afford instead of skipping the position.
+					budget := s.Cash
+					if px, ok := s.parkClose(barsBySymbolDate, date); ok {
+						budget += s.parkBuyingPower(px)
+					}
+					shares = sizer.CalculateShares(budget, totalEquity, entryPrice, cfg, sig)
 					if shares <= 0 {
 						continue
 					}
 					cost := float64(shares) * entryPrice
 					commission := float64(shares) * cfg.CommissionPerShare
 					requiredCapital = cost + commission
+					if px, ok := s.parkClose(barsBySymbolDate, date); ok {
+						s.raiseCashFromPark(requiredCapital, px)
+					}
 					if requiredCapital > s.Cash {
 						shares = int(s.Cash / (entryPrice + cfg.CommissionPerShare))
 						if shares <= 0 {
@@ -407,8 +483,14 @@ func (s *SharedAccountSimulator) Run(
 			}
 		}
 
+		// 2b. Buy the default asset with cash that cannot fund another sleeve share.
+		if px, ok := s.parkClose(barsBySymbolDate, date); ok {
+			s.sweepIntoPark(px)
+		}
+
 		// 3. Mark-to-market end-of-day portfolio valuation
 		totalEquity := s.calculateTotalEquity(barsBySymbolDate, date)
+		s.recordParkDay(barsBySymbolDate, date, totalEquity)
 		if totalEquity > peakEquity {
 			peakEquity = totalEquity
 		}
@@ -430,15 +512,18 @@ func (s *SharedAccountSimulator) Run(
 			Cash:           s.Cash,
 			PositionsValue: totalEquity - s.Cash,
 			TotalEquity:    totalEquity,
-			OpenPositions:  len(s.Positions),
+			OpenPositions:  s.openCount(),
 			DailyReturn:    dailyReturn,
 			DrawdownPct:    drawdownPct,
 		})
 	}
 
-	// 4. Force-close remaining open positions at final date
+	// 4. Force-close remaining open positions at final date.
+	// The park is turned back into cash here and is not a ClosedTrade, so
+	// sleeve trade counts stay comparable to a cash run.
 	if len(sortedDates) > 0 {
 		lastDate := sortedDates[len(sortedDates)-1]
+		s.liquidatePark(barsBySymbolDate, lastDate)
 		for sym, pos := range s.Positions {
 			cfg := s.Configs[pos.StrategyID]
 			if bar, ok := barsBySymbolDate[sym][lastDate]; ok {
@@ -573,5 +658,134 @@ func (s *SharedAccountSimulator) calculateTotalEquity(barsBySymbolDate map[strin
 			equity += float64(pos.Shares) * pos.CurrentPrice
 		}
 	}
+	if s.park != nil && s.park.Shares > 0 {
+		if bar, ok := barsBySymbolDate[s.defaultAsset][date]; ok && bar.Close > 0 {
+			s.parkLastPrice = bar.Close
+			equity += float64(s.park.Shares) * bar.Close
+		} else if s.parkLastPrice > 0 {
+			equity += float64(s.park.Shares) * s.parkLastPrice
+		}
+	}
 	return math.Max(0.0, equity)
+}
+
+func (s *SharedAccountSimulator) openCount() int {
+	n := len(s.Positions)
+	if s.park != nil && s.park.Shares > 0 {
+		n++
+	}
+	return n
+}
+
+func (s *SharedAccountSimulator) parkClose(bars map[string]map[string]models.Bar, date string) (float64, bool) {
+	if s.defaultAsset == "" {
+		return 0, false
+	}
+	bar, ok := bars[s.defaultAsset][date]
+	if !ok || bar.Close <= 0 {
+		return 0, false
+	}
+	return bar.Close, true
+}
+
+func (s *SharedAccountSimulator) parkBuyingPower(close float64) float64 {
+	if s.park == nil || s.park.Shares <= 0 || close <= 0 {
+		return 0
+	}
+	perShare := close*(1.0-s.parkSlippage) - s.parkCommission
+	if perShare <= 0 {
+		return 0
+	}
+	return float64(s.park.Shares) * perShare
+}
+
+func (s *SharedAccountSimulator) raiseCashFromPark(need, close float64) {
+	if s.park == nil || s.park.Shares <= 0 || close <= 0 || need <= s.Cash {
+		return
+	}
+	perShare := close*(1.0-s.parkSlippage) - s.parkCommission
+	if perShare <= 0 {
+		return
+	}
+	shares := int(math.Ceil((need - s.Cash) / perShare))
+	s.sellParkShares(shares, close)
+}
+
+func (s *SharedAccountSimulator) sellParkShares(shares int, close float64) {
+	if s.park == nil || shares <= 0 || close <= 0 {
+		return
+	}
+	if shares > s.park.Shares {
+		shares = s.park.Shares
+	}
+	exitPx := close * (1.0 - s.parkSlippage)
+	proceeds := float64(shares)*exitPx - float64(shares)*s.parkCommission
+	s.Cash += proceeds
+	s.park.Shares -= shares
+}
+
+func (s *SharedAccountSimulator) sweepIntoPark(close float64) {
+	if s.defaultAsset == "" || close <= 0 {
+		return
+	}
+	unit := close*(1.0+s.parkSlippage) + s.parkCommission
+	if unit <= 0 {
+		return
+	}
+	shares := int(s.Cash / unit)
+	if shares <= 0 {
+		return
+	}
+	s.Cash -= float64(shares) * unit
+	if s.park == nil {
+		s.park = &parkLot{Symbol: s.defaultAsset}
+	}
+	s.park.Shares += shares
+	s.parkLastPrice = close
+}
+
+func (s *SharedAccountSimulator) payParkDividend(date string) {
+	if s.park == nil || s.park.Shares <= 0 || len(s.parkDividends) == 0 {
+		return
+	}
+	perShare := s.parkDividends[date]
+	if perShare <= 0 {
+		return
+	}
+	pay := float64(s.park.Shares) * perShare
+	s.Cash += pay
+	s.parkDividendCash += pay
+}
+
+func (s *SharedAccountSimulator) liquidatePark(bars map[string]map[string]models.Bar, date string) {
+	if s.park == nil || s.park.Shares <= 0 {
+		return
+	}
+	px := s.parkLastPrice
+	if bar, ok := bars[s.defaultAsset][date]; ok && bar.Close > 0 {
+		px = bar.Close
+	}
+	s.sellParkShares(s.park.Shares, px)
+}
+
+func (s *SharedAccountSimulator) recordParkDay(bars map[string]map[string]models.Bar, date string, totalEquity float64) {
+	if s.defaultAsset == "" {
+		return
+	}
+	s.parkDays++
+	var marketValue float64
+	if px, ok := s.parkClose(bars, date); ok {
+		s.parkLastPrice = px
+		if s.park != nil {
+			marketValue = float64(s.park.Shares) * px
+		}
+	} else if s.park != nil && s.parkLastPrice > 0 {
+		marketValue = float64(s.park.Shares) * s.parkLastPrice
+	}
+	if totalEquity > 0 {
+		s.sumParkWeight += marketValue / totalEquity
+	}
+	if s.park == nil || s.park.Shares == 0 {
+		s.daysUnparked++
+	}
 }

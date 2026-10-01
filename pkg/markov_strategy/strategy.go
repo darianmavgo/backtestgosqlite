@@ -126,7 +126,11 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	if s.marketDBPath != "" && s.calcDBPath != "" {
 		dir := s.PipelineDir
 		if dir == "" {
-			dir = pipelineDir
+			if strings.Contains(s.ID(), "hmm") {
+				dir = "sql/strategies/markov_hmm"
+			} else {
+				dir = pipelineDir
+			}
 		}
 		pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
 		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)

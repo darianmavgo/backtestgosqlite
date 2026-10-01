@@ -898,6 +898,10 @@ type SharedAccountAudit struct {
 	FullyIdlePct        float64 `db:"fully_idle_pct"`
 	AvgDeployedPct      float64 `db:"avg_deployed_pct"`
 	ResultsDatabase     string  `db:"results_database"`
+	DefaultAsset        string  `db:"default_asset"`
+	AvgDefaultPct       float64 `db:"avg_default_pct"`
+	DefaultDividends    float64 `db:"default_dividends"`
+	DaysUnparked        int     `db:"days_unparked"`
 }
 
 // SharedAccountPriority holds the priority level of a strategy in a shared account run.
@@ -922,7 +926,11 @@ func SaveSharedAccountAudit(db *sqlx.DB, audit SharedAccountAudit, priorities []
 			avg_idle_cash_pct FLOAT,
 			fully_idle_pct FLOAT,
 			avg_deployed_pct FLOAT,
-			results_database TEXT
+			results_database TEXT,
+			default_asset TEXT,
+			avg_default_pct FLOAT,
+			default_dividends FLOAT,
+			days_unparked INTEGER
 		);
 		CREATE TABLE IF NOT EXISTS shared_account_priorities (
 			combined_id TEXT,
@@ -956,16 +964,27 @@ func SaveSharedAccountAudit(db *sqlx.DB, audit SharedAccountAudit, priorities []
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("failed to create shared account audit tables/views: %w", err)
 	}
+	// Older result files created the table without the park columns.
+	for _, stmt := range []string{
+		`ALTER TABLE shared_account_audit ADD COLUMN default_asset TEXT`,
+		`ALTER TABLE shared_account_audit ADD COLUMN avg_default_pct FLOAT`,
+		`ALTER TABLE shared_account_audit ADD COLUMN default_dividends FLOAT`,
+		`ALTER TABLE shared_account_audit ADD COLUMN days_unparked INTEGER`,
+	} {
+		_, _ = db.Exec(stmt)
+	}
 
 	insertAudit := `
 		INSERT OR REPLACE INTO shared_account_audit (
 			combined_id, account_model, primary_strategy_id, primary_strategy_name,
 			position_size_pct, preempted_trades, avg_idle_cash_pct,
-			fully_idle_pct, avg_deployed_pct, results_database
+			fully_idle_pct, avg_deployed_pct, results_database,
+			default_asset, avg_default_pct, default_dividends, days_unparked
 		) VALUES (
 			:combined_id, :account_model, :primary_strategy_id, :primary_strategy_name,
 			:position_size_pct, :preempted_trades, :avg_idle_cash_pct,
-			:fully_idle_pct, :avg_deployed_pct, :results_database
+			:fully_idle_pct, :avg_deployed_pct, :results_database,
+			:default_asset, :avg_default_pct, :default_dividends, :days_unparked
 		)
 	`
 	if _, err := db.NamedExec(insertAudit, audit); err != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -31,7 +32,11 @@ type SharedRunResult struct {
 	// AllocPct is the per-position equity fraction applied to every member.
 	// 0 means each strategy kept its own DefaultConfig allocation.
 	AllocPct float64
-	Err      error
+	// Default is set when leftover cash was parked in a symbol.
+	Default simulator.DefaultAssetResult
+	// ParkContribution is ending equity minus starting capital minus sleeve net PnL.
+	ParkContribution float64
+	Err              error
 }
 
 // SharedAccountID builds the combined-portfolio strategy_id used to persist and
@@ -72,6 +77,8 @@ type StackRequest struct {
 	// Override replaces each member's DefaultConfig where a field is non-zero.
 	// AllocPct 0.10 sizes every position at 10% of equity.
 	Override ConfigOverride
+	// DefaultAsset, when set, buys that symbol with leftover cash after each session.
+	DefaultAsset string
 }
 
 // ExecuteStack runs existing strategies as a priority stack on one cash ledger.
@@ -89,12 +96,16 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	if calcDir == "" {
 		calcDir = outDir
 	}
+	defaultAsset := strings.ToUpper(strings.TrimSpace(req.DefaultAsset))
 
 	var outDBPath string
 	if req.Persist {
 		baseName := fmt.Sprintf("shared_%s", req.Primary.ID())
 		for _, sec := range req.Secondaries {
 			baseName += fmt.Sprintf("_%s", sec.ID())
+		}
+		if defaultAsset != "" {
+			baseName += "_default-" + strings.ToLower(defaultAsset)
 		}
 		path, outDB, err := storage.CreateUniqueDB(outDir, baseName)
 		if err != nil {
@@ -151,6 +162,9 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	}
 
 	sim := simulator.NewSharedAccountSimulator(entries, req.Capital)
+	if defaultAsset != "" {
+		sim.SetDefaultAsset(defaultAsset, options.DividendsFromAdjClose(req.BarsBySymbol[defaultAsset]))
+	}
 
 	bmSymbol := req.Primary.DefaultConfig().Benchmark
 	if bmSymbol == "" {
@@ -167,6 +181,12 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	combinedReport, perStratReports, trades, equityCurve := sim.Run(allSignals, req.BarsBySymbol, req.SortedDates)
 	combinedID := SharedAccountID(req.Primary, req.Secondaries)
 	idle := simulator.CalculateIdleStats(equityCurve)
+	parked := sim.DefaultAssetResult()
+	var sleeveNet float64
+	for _, t := range trades {
+		sleeveNet += t.NetPnL
+	}
+	parkContribution := combinedReport.FinalEquity - combinedReport.InitialCapital - sleeveNet
 
 	if req.Persist && outDBPath != "" {
 		db, err := storage.OpenSQLite(outDBPath)
@@ -205,6 +225,10 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 				FullyIdlePct:        idle.FullyIdlePct,
 				AvgDeployedPct:      idle.AvgDeployedPct,
 				ResultsDatabase:     outDBPath,
+				DefaultAsset:        parked.Symbol,
+				AvgDefaultPct:       parked.AvgWeight,
+				DefaultDividends:    parked.Dividends,
+				DaysUnparked:        parked.DaysUnparked,
 			}
 			var priorities []storage.SharedAccountPriority
 			priorities = append(priorities, storage.SharedAccountPriority{
@@ -242,6 +266,8 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		PreemptedCount:     sim.PreemptedTradeCount,
 		Idle:               idle,
 		AllocPct:           req.Override.AllocPct,
+		Default:            parked,
+		ParkContribution:   parkContribution,
 	}
 }
 
@@ -260,6 +286,11 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 	fmt.Printf("   Preempted Trades:   %d secondary positions liquidated to obey primary signals\n", res.PreemptedCount)
 	fmt.Printf("   Idle Cash:          avg %.1f%% of equity (%d idle days, fully flat %.1f%% of days, deployed %.1f%%)\n",
 		res.Idle.AvgCashPct*100, res.Idle.DaysFullyIdle, res.Idle.FullyIdlePct*100, res.Idle.AvgDeployedPct*100)
+	if res.Default.Symbol != "" {
+		fmt.Printf("   Default Asset:      %s, avg %.1f%% of equity, dividends $%.2f, %d days with no park shares\n",
+			res.Default.Symbol, res.Default.AvgWeight*100, res.Default.Dividends, res.Default.DaysUnparked)
+		fmt.Printf("   Park Contribution:  $%.2f (ending equity minus start minus sleeve net PnL)\n", res.ParkContribution)
+	}
 	fmt.Printf("   Results Database:   %s\n", res.DbPath)
 	fmt.Printf("========================================================================================================================\n")
 

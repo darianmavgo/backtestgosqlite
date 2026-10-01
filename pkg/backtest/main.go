@@ -61,6 +61,7 @@ type Config struct {
 	Commission          float64  // -commission
 	OptSlip             float64  // -opt-slip
 	NoReinvestDividends bool     // -no-reinvest-dividends
+	DefaultAsset        string   // -default-asset
 	Mode                string   // subcommand (empty = default)
 	Args                []string // positional arguments
 }
@@ -101,6 +102,7 @@ func DefaultConfig() Config {
 		Commission:          0.65,
 		OptSlip:             0.05,
 		NoReinvestDividends: false,
+		DefaultAsset:        "",
 	}
 }
 
@@ -125,6 +127,17 @@ func validateAlloc(alloc float64) error {
 	}
 	if alloc <= 0 || alloc > 1 {
 		return fmt.Errorf("-alloc must be a fraction of equity in (0, 1]; 10%% per position is -alloc 0.10 (got %v)", alloc)
+	}
+	return nil
+}
+
+// validateDefaultAsset rejects a park symbol on a run that has no shared ledger.
+func validateDefaultAsset(asset string, shared bool) error {
+	if strings.TrimSpace(asset) == "" {
+		return nil
+	}
+	if !shared {
+		return fmt.Errorf("-default-asset %s applies to a shared-account run (-primary and -secondary)", strings.ToUpper(strings.TrimSpace(asset)))
 	}
 	return nil
 }
@@ -179,6 +192,7 @@ func Main() {
 	flag.Float64Var(&conf.Commission, "commission", d.Commission, "(covered-call) $ per option contract sold (IBKR tiered ≈ $0.65)")
 	flag.Float64Var(&conf.OptSlip, "opt-slip", d.OptSlip, "(covered-call) $ per share given up vs the last-trade option price when selling")
 	flag.BoolVar(&conf.NoReinvestDividends, "no-reinvest-dividends", d.NoReinvestDividends, "Total-return strategies (e.g. schd-buy-hold): take dividends as idle cash instead of reinvesting them")
+	flag.StringVar(&conf.DefaultAsset, "default-asset", d.DefaultAsset, "Shared-account only: symbol that leftover cash is held in after each session (e.g. GOOGL)")
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack-eval": "stack-eval"})
 	flag.Parse()
 	conf.Args = flag.Args()
@@ -307,6 +321,10 @@ func Run(conf Config) error {
 
 	// Detect if user requested Shared Account Mode
 	isSharedAccount := conf.SharedAccount || conf.Primary != "" || conf.Secondary != "" || strategy.IsStack(stratArg)
+	defaultAsset := strings.ToUpper(strings.TrimSpace(conf.DefaultAsset))
+	if err := validateDefaultAsset(defaultAsset, isSharedAccount); err != nil {
+		return err
+	}
 
 	if isSharedAccount {
 		var primaryStrat strategy.Strategy
@@ -384,6 +402,9 @@ func Run(conf Config) error {
 		// benchmark when a strategy's own DefaultConfig().Benchmark is empty,
 		// and RequiredSymbolsFor only picks up non-empty benchmarks.
 		reqSymbols := append(runner.RequiredSymbolsFor(allStrats, conf.Symbol), "SPY")
+		if defaultAsset != "" {
+			reqSymbols = append(reqSymbols, defaultAsset)
+		}
 		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Shared-Account Simulation (Starting Capital: $%.2f)...\n", reqSymbols, conf.Table, conf.Capital)
 		if conf.Alloc > 0 {
 			fmt.Printf("   Allocation: %.0f%% of equity per position\n", conf.Alloc*100)
@@ -391,6 +412,9 @@ func Run(conf Config) error {
 		barsBySymbol, sortedDates, err := storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, "")
 		if err != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", err)
+		}
+		if defaultAsset != "" && len(barsBySymbol[defaultAsset]) == 0 {
+			return fmt.Errorf("-default-asset %s has no daily bars in %s", defaultAsset, conf.Db)
 		}
 
 		sharedRes := runner.ExecuteStack(runner.StackRequest{
@@ -404,6 +428,7 @@ func Run(conf Config) error {
 			MarketDBPath: conf.Db,
 			Persist:      true,
 			Override:     runOverride(conf),
+			DefaultAsset: defaultAsset,
 		})
 		if sharedRes.Err != nil {
 			return fmt.Errorf("Shared account backtest failed: %v", sharedRes.Err)

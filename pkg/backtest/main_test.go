@@ -24,6 +24,18 @@ func TestValidateAlloc(t *testing.T) {
 	}
 }
 
+func TestValidateDefaultAsset(t *testing.T) {
+	if err := validateDefaultAsset("", false); err != nil {
+		t.Errorf("empty asset: %v", err)
+	}
+	if err := validateDefaultAsset("GOOGL", true); err != nil {
+		t.Errorf("shared GOOGL: %v", err)
+	}
+	if err := validateDefaultAsset("GOOGL", false); err == nil {
+		t.Error("a standalone run must reject -default-asset")
+	}
+}
+
 func TestDetectAndDownloadMissingData_Disabled(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_market.db")
