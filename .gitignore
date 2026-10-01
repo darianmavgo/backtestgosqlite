@@ -87,3 +87,8 @@ reports/strategy_evals.db
 
 # built binaries at repo root
 /compare_annual_report
+
+# BEGIN refdata-git
+# Managed by scripts/refdata_git.sh. A database or zip at or under 52428800 bytes is tracked.
+!refdata/settings.db
+# END refdata-git
