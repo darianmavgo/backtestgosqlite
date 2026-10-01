@@ -423,6 +423,7 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 			       coalesce(direction, 'LONG') as direction,
 			       coalesce(regime, 'All Regimes') as regime,
 			       coalesce(hold_days_override, 0) as hold_days_override,
+			       coalesce(allocation_pct_override, 0.0) as allocation_pct_override,
 			       coalesce(take_profit, 0.0) as take_profit,
 			       coalesce(stop_loss, 0.0) as stop_loss
 			FROM %s
@@ -437,7 +438,8 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 		// Fallback to basic columns with safe coalesce on idx
 		query := fmt.Sprintf(`
 			SELECT coalesce(idx, rowid, 0) as idx, symbol, substr(date, 1, 10) as date,
-			       open, high, low, close, volume, buylimit, entry
+			       open, high, low, close, volume, buylimit, entry,
+			       0.0 as allocation_pct_override
 			FROM %s
 			WHERE entry = 1
 			ORDER BY date, symbol ASC;

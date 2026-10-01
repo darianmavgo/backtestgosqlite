@@ -14,5 +14,6 @@ CREATE TABLE IF NOT EXISTS markov_model_signals (
     regime TEXT,
     hold_days_override INTEGER,
     take_profit FLOAT,
-    stop_loss FLOAT
+    stop_loss FLOAT,
+    allocation_pct_override FLOAT
 );

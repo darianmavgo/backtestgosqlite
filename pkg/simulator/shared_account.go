@@ -279,7 +279,7 @@ func (s *SharedAccountSimulator) Run(
 				if sig.Priority == 0 {
 					// Primary sizes against full equity, then liquidates
 					// subordinate positions if cash is short.
-					shares = sizer.CalculateShares(totalEquity, totalEquity, entryPrice, cfg)
+					shares = sizer.CalculateShares(totalEquity, totalEquity, entryPrice, cfg, sig)
 					if shares <= 0 {
 						continue
 					}
@@ -329,7 +329,7 @@ func (s *SharedAccountSimulator) Run(
 					// A full 10% slot can miss by a few cents of commission;
 					// shrink to the shares cash can afford instead of skipping
 					// the position.
-					shares = sizer.CalculateShares(s.Cash, totalEquity, entryPrice, cfg)
+					shares = sizer.CalculateShares(s.Cash, totalEquity, entryPrice, cfg, sig)
 					if shares <= 0 {
 						continue
 					}

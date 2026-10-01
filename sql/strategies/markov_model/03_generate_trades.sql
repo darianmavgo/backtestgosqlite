@@ -1,4 +1,4 @@
-INSERT INTO markov_model_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
+INSERT INTO markov_model_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss, allocation_pct_override)
 SELECT
     coalesce(t.idx, t.rowid, 0) AS idx,
     '__TRADE_SYMBOL__' AS symbol,
@@ -18,7 +18,13 @@ SELECT
     END AS regime,
     __HOLD_DAYS__ AS hold_days_override,
     t.close * __TAKE_PROFIT_MULT__ AS take_profit,
-    t.close * __STOP_LOSS_MULT__ AS stop_loss
+    t.close * __STOP_LOSS_MULT__ AS stop_loss,
+    CASE 
+        WHEN abs(p.signal) >= 0.50 THEN 0.30
+        WHEN abs(p.signal) >= 0.30 THEN 0.20
+        WHEN abs(p.signal) >= 0.10 THEN 0.10
+        ELSE 0.05
+    END AS allocation_pct_override
 FROM markov_model_predictions p
 JOIN market.backtest_start t ON p.Date = substr(t.Date, 1, 10) AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
 WHERE p.symbol = '__SYMBOL__' 

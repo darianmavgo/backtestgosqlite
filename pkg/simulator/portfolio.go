@@ -290,7 +290,7 @@ func (s *PortfolioSimulator) Run(
 					availBP = math.Max(0.0, totalEquity*lev-posVal)
 				}
 
-				shares := s.Sizer.CalculateShares(availBP, totalEquity, entryPrice, s.Config)
+				shares := s.Sizer.CalculateShares(availBP, totalEquity, entryPrice, s.Config, sig)
 				if shares <= 0 {
 					continue
 				}

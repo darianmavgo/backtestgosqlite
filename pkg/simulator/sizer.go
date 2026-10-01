@@ -3,22 +3,26 @@ package simulator
 import (
 	"math"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
 // PositionSizer calculates share allocation for a new position.
 type PositionSizer interface {
-	CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig) int
+	CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig, sig models.Signal) int
 }
 
 // FixedPctSizer allocates a fixed percentage of total portfolio equity.
 type FixedPctSizer struct{}
 
-func (s *FixedPctSizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig) int {
+func (s *FixedPctSizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig, sig models.Signal) int {
 	if entryPrice <= 0 || totalEquity <= 0 {
 		return 0
 	}
 	allocPct := cfg.AllocationPct
+	if sig.AllocationPctOverride > 0 {
+		allocPct = sig.AllocationPctOverride
+	}
 	if allocPct <= 0 {
 		allocPct = 0.20
 	}
@@ -40,7 +44,7 @@ func (s *FixedPctSizer) CalculateShares(accountCash, totalEquity, entryPrice flo
 // FixedDollarSizer allocates a fixed dollar amount per position.
 type FixedDollarSizer struct{}
 
-func (s *FixedDollarSizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig) int {
+func (s *FixedDollarSizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig, sig models.Signal) int {
 	if entryPrice <= 0 || cfg.FixedDollar <= 0 {
 		return 0
 	}
@@ -57,7 +61,7 @@ func (s *FixedDollarSizer) CalculateShares(accountCash, totalEquity, entryPrice 
 // FixedSharesSizer allocates a constant number of shares.
 type FixedSharesSizer struct{}
 
-func (s *FixedSharesSizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig) int {
+func (s *FixedSharesSizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig, sig models.Signal) int {
 	if entryPrice <= 0 || cfg.FixedShares <= 0 {
 		return 0
 	}
@@ -75,7 +79,7 @@ type KellySizer struct {
 	PayoffRatio float64
 }
 
-func (s *KellySizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig) int {
+func (s *KellySizer) CalculateShares(accountCash, totalEquity, entryPrice float64, cfg strategy.StrategyConfig, sig models.Signal) int {
 	if entryPrice <= 0 || totalEquity <= 0 {
 		return 0
 	}

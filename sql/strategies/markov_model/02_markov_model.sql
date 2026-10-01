@@ -13,35 +13,39 @@ SELECT
 FROM market.backtest_start 
 WHERE timeframe = '1d';
 
--- Phase 2: Transition Matrix
-CREATE TABLE IF NOT EXISTS markov_model_transition_matrix AS
-WITH state_pairs AS (
-    SELECT 
-        symbol,
-        regime as from_state,
-        LEAD(regime) OVER (PARTITION BY symbol ORDER BY Date) as to_state
-    FROM markov_model_regimes
-    WHERE ret_20d IS NOT NULL
-)
+-- Phase 2: Expanding Window Transition Matrix (Walk-Forward)
+CREATE TEMP VIEW IF NOT EXISTS markov_model_transitions AS
 SELECT 
     symbol,
+    Date,
+    regime as from_state,
+    LEAD(regime) OVER (PARTITION BY symbol ORDER BY Date) as to_state
+FROM markov_model_regimes
+WHERE ret_20d IS NOT NULL;
+
+CREATE TEMP VIEW IF NOT EXISTS markov_model_cumulative_matrix AS
+SELECT 
+    symbol,
+    Date,
     from_state,
-    to_state,
-    CAST(COUNT(*) AS FLOAT) / SUM(COUNT(*)) OVER (PARTITION BY symbol, from_state) as probability
-FROM state_pairs
-WHERE to_state IS NOT NULL
-GROUP BY symbol, from_state, to_state;
+    -- Cumulative sum of transitions EXCLUDING the current row (which transitions into the future)
+    -- This ensures we only use transitions that are fully known as of today.
+    SUM(CASE WHEN to_state = 1 THEN 1 ELSE 0 END) OVER (PARTITION BY symbol, from_state ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) as cum_to_bull,
+    SUM(CASE WHEN to_state = -1 THEN 1 ELSE 0 END) OVER (PARTITION BY symbol, from_state ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) as cum_to_bear,
+    SUM(CASE WHEN to_state = 0 THEN 1 ELSE 0 END) OVER (PARTITION BY symbol, from_state ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) as cum_to_sideways,
+    COUNT(to_state) OVER (PARTITION BY symbol, from_state ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) as total_transitions
+FROM markov_model_transitions;
 
 -- Phase 3: Signal Generation Pipeline
 CREATE TABLE IF NOT EXISTS markov_model_predictions AS
 SELECT 
-    r.Date,
-    r.symbol,
-    r.regime as current_state,
-    COALESCE(MAX(CASE WHEN t.to_state = 1 THEN t.probability END), 0.0) as prob_bull,
-    COALESCE(MAX(CASE WHEN t.to_state = -1 THEN t.probability END), 0.0) as prob_bear,
-    COALESCE(MAX(CASE WHEN t.to_state = 1 THEN t.probability END), 0.0) - COALESCE(MAX(CASE WHEN t.to_state = -1 THEN t.probability END), 0.0) as signal
-FROM markov_model_regimes r
-JOIN markov_model_transition_matrix t ON r.regime = t.from_state AND r.symbol = t.symbol
-GROUP BY r.Date, r.symbol, r.regime
-ORDER BY r.Date;
+    symbol,
+    Date,
+    from_state as current_state,
+    CASE WHEN total_transitions > 0 THEN CAST(cum_to_bull AS FLOAT) / total_transitions ELSE 0.0 END as prob_bull,
+    CASE WHEN total_transitions > 0 THEN CAST(cum_to_bear AS FLOAT) / total_transitions ELSE 0.0 END as prob_bear,
+    CASE WHEN total_transitions > 0 THEN 
+        (CAST(cum_to_bull AS FLOAT) / total_transitions) - (CAST(cum_to_bear AS FLOAT) / total_transitions) 
+    ELSE 0.0 END as signal
+FROM markov_model_cumulative_matrix
+ORDER BY Date;

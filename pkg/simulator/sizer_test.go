@@ -3,6 +3,7 @@ package simulator
 import (
 	"testing"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
@@ -80,7 +81,7 @@ func TestFixedSharesSizer_CalculateShares(t *testing.T) {
 			cfg := strategy.StrategyConfig{
 				FixedShares: tt.fixedShares,
 			}
-			got := sizer.CalculateShares(tt.accountCash, tt.totalEquity, tt.entryPrice, cfg)
+			got := sizer.CalculateShares(tt.accountCash, tt.totalEquity, tt.entryPrice, cfg, models.Signal{})
 			if got != tt.expected {
 				t.Errorf("CalculateShares() = %v, want %v", got, tt.expected)
 			}
