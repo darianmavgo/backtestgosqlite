@@ -16,6 +16,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	_ "modernc.org/sqlite"
 )
 
@@ -107,6 +108,7 @@ func runAll(concurrency int, force bool) error {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
+	streak_strategy.Register()
 
 	allStrategies := strategy.List()
 	if len(allStrategies) == 0 {
@@ -224,6 +226,7 @@ func runCompile(concurrency int) error {
 	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategy names/descriptions resolve too
+	streak_strategy.Register()
 
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
 	if totalGroups == 0 {
@@ -270,6 +273,7 @@ func runStatus(concurrency int) error {
 	fmt.Println("🔎 SCOREBOARD STATUS — checking whether every registered strategy has a usable backtest result")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb)
+	streak_strategy.Register()
 
 	total := len(strategy.List())
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)

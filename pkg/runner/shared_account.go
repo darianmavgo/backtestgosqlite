@@ -74,29 +74,6 @@ type StackRequest struct {
 	Override ConfigOverride
 }
 
-// ExecuteSharedAccount runs a stacked backtest and persists a unique results DB.
-func ExecuteSharedAccount(
-	primary strategy.Strategy,
-	secondaries []strategy.Strategy,
-	barsBySymbol map[string][]models.Bar,
-	sortedDates []string,
-	capital float64,
-	symbolFilter string,
-	outDir string,
-	marketDBPath string,
-) SharedRunResult {
-	return ExecuteStack(StackRequest{
-		Primary:      primary,
-		Secondaries:  secondaries,
-		BarsBySymbol: barsBySymbol,
-		SortedDates:  sortedDates,
-		Capital:      capital,
-		SymbolFilter: symbolFilter,
-		OutDir:       outDir,
-		MarketDBPath: marketDBPath,
-		Persist:      true,
-	})
-}
 
 // ExecuteStack runs existing strategies as a priority stack on one cash ledger.
 // No new pkg/strategy types are created — stacking is an engine/runner concern.
@@ -216,6 +193,39 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 				if err := storage.SavePerformanceReport(db, sID, rep); err != nil {
 					log.Printf("Warning: Failed to save performance summary for %s: %v", sID, err)
 				}
+			}
+
+			audit := storage.SharedAccountAudit{
+				CombinedID:          combinedID,
+				AccountModel:        "Shared Cash Ledger with Dynamic Priority Preemption",
+				PrimaryStrategyID:   req.Primary.ID(),
+				PrimaryStrategyName: req.Primary.Name(),
+				PositionSizePct:     req.Override.AllocPct,
+				PreemptedTrades:     sim.PreemptedTradeCount,
+				AvgIdleCashPct:      idle.AvgCashPct,
+				FullyIdlePct:        idle.FullyIdlePct,
+				AvgDeployedPct:      idle.AvgDeployedPct,
+				ResultsDatabase:     outDBPath,
+			}
+			var priorities []storage.SharedAccountPriority
+			priorities = append(priorities, storage.SharedAccountPriority{
+				CombinedID:   combinedID,
+				StrategyID:   req.Primary.ID(),
+				StrategyName: req.Primary.Name(),
+				Priority:     0,
+				Role:         "PRIMARY (P0)",
+			})
+			for i, sec := range req.Secondaries {
+				priorities = append(priorities, storage.SharedAccountPriority{
+					CombinedID:   combinedID,
+					StrategyID:   sec.ID(),
+					StrategyName: sec.Name(),
+					Priority:     i + 1,
+					Role:         "SECONDARY (P1+)",
+				})
+			}
+			if err := storage.SaveSharedAccountAudit(db, audit, priorities); err != nil {
+				log.Printf("Warning: Failed to save shared account audit metrics to %s: %v", outDBPath, err)
 			}
 		}
 	}

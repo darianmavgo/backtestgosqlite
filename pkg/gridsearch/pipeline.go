@@ -99,6 +99,10 @@ func ensureGridSearchSchema(gdb *sqlx.DB) error {
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN take_profit_pct REAL;`)
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN stop_loss_pct REAL;`)
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN regime TEXT;`)
+	// Watch symbol and allocation, so `gridsearch promote` can rebuild a
+	// streak_strategy row without guessing. Older sweeps leave them NULL.
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN signal_symbol TEXT;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN allocation_pct REAL;`)
 	return nil
 }
 
@@ -216,8 +220,9 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 		INSERT INTO gridsearch_results (
 			strategy_id, label, is_baseline, net_profit, cagr, max_drawdown_pct,
 			max_drawdown_days, calmar_ratio, resilience_score, total_trades, win_rate,
-			symbol, signal_days, hold_days, take_profit_pct, stop_loss_pct, regime
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			symbol, signal_days, hold_days, take_profit_pct, stop_loss_pct, regime,
+			signal_symbol, allocation_pct
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		log.Printf("Warning: failed to prepare results insert for %s: %v", strat.ID(), err)
@@ -233,6 +238,7 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 			strat.ID(), r.Label, isBaseline, r.Report.NetProfit, r.Report.CAGR, r.Report.MaxDrawdownPct,
 			r.Report.MaxDrawdownDuration, r.Report.CalmarRatio, resilienceScore(r.Report), r.Report.TotalTrades, r.Report.WinRate,
 			r.Symbol, r.SignalDays, r.HoldDays, r.TakeProfit, r.StopLoss, r.Regime,
+			r.SignalSymbol, r.Allocation,
 		); err != nil {
 			log.Printf("Warning: failed to insert result row for %s: %v", strat.ID(), err)
 		}

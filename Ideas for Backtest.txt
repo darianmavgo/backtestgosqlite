@@ -9,3 +9,5 @@
 9. Study small publicly traded companies that got acquired.
 10.Study how fast GOOGL responds to news and see if I can jump on good news.
 11. Which stock in the SP500 predicts the movement of VOO, other SP500 indices, etfs use minute bars from polygon.
+12. Once positions are entered look for a simple calc signals that mean we should exit early before the default hold window.
+13. Find a stack of strategies that works for 10% alllocation.

@@ -874,3 +874,105 @@ func SaveRunMetrics(db *sqlx.DB, strategyID string, metrics []RunMetric) error {
 	}
 	return nil
 }
+
+// SharedAccountAudit holds the metadata for a shared account simulation.
+type SharedAccountAudit struct {
+	CombinedID          string  `db:"combined_id"`
+	AccountModel        string  `db:"account_model"`
+	PrimaryStrategyID   string  `db:"primary_strategy_id"`
+	PrimaryStrategyName string  `db:"primary_strategy_name"`
+	PositionSizePct     float64 `db:"position_size_pct"`
+	PreemptedTrades     int     `db:"preempted_trades"`
+	AvgIdleCashPct      float64 `db:"avg_idle_cash_pct"`
+	FullyIdlePct        float64 `db:"fully_idle_pct"`
+	AvgDeployedPct      float64 `db:"avg_deployed_pct"`
+	ResultsDatabase     string  `db:"results_database"`
+}
+
+// SharedAccountPriority holds the priority level of a strategy in a shared account run.
+type SharedAccountPriority struct {
+	CombinedID   string `db:"combined_id"`
+	StrategyID   string `db:"strategy_id"`
+	StrategyName string `db:"strategy_name"`
+	Priority     int    `db:"priority"`
+	Role         string `db:"role"`
+}
+
+// SaveSharedAccountAudit saves the shared account configuration and creates views to mimic the console audit.
+func SaveSharedAccountAudit(db *sqlx.DB, audit SharedAccountAudit, priorities []SharedAccountPriority) error {
+	schema := `
+		CREATE TABLE IF NOT EXISTS shared_account_audit (
+			combined_id TEXT PRIMARY KEY,
+			account_model TEXT,
+			primary_strategy_id TEXT,
+			primary_strategy_name TEXT,
+			position_size_pct FLOAT,
+			preempted_trades INTEGER,
+			avg_idle_cash_pct FLOAT,
+			fully_idle_pct FLOAT,
+			avg_deployed_pct FLOAT,
+			results_database TEXT
+		);
+		CREATE TABLE IF NOT EXISTS shared_account_priorities (
+			combined_id TEXT,
+			strategy_id TEXT,
+			strategy_name TEXT,
+			priority INTEGER,
+			role TEXT
+		);
+		
+		CREATE VIEW IF NOT EXISTS v_strategy_contribution AS
+		SELECT 
+			p.role AS Role,
+			p.strategy_id AS StrategyID,
+			ps.total_trades AS TotalTrades,
+			ps.winning_trades || ' / ' || ps.losing_trades AS Wins_Losses,
+			ROUND(ps.win_rate * 100, 1) || '%%' AS WinRate,
+			(SELECT COUNT(*) FROM trades t WHERE t.strategy_id = p.strategy_id AND t.exit_reason = 'PREEMPTED_BY_PRIMARY') AS Preempted,
+			ROUND(ps.net_profit, 2) AS NetRealizedPnL,
+			ROUND(ps.cagr * 100, 2) || '%%' AS CAGR,
+			ROUND(ps.sharpe_ratio, 2) AS Sharpe,
+			ROUND(ps.max_drawdown_pct * 100, 2) || '%%' AS MaxDD,
+			ps.max_drawdown_duration || 'd' AS DDDuration
+		FROM shared_account_priorities p
+		JOIN performance_summary ps ON p.strategy_id = ps.strategy_id
+		ORDER BY p.priority ASC;
+
+		CREATE VIEW IF NOT EXISTS v_portfolio_tear_sheet AS
+		SELECT * FROM performance_summary
+		WHERE strategy_id NOT IN (SELECT strategy_id FROM shared_account_priorities);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		return fmt.Errorf("failed to create shared account audit tables/views: %w", err)
+	}
+
+	insertAudit := `
+		INSERT OR REPLACE INTO shared_account_audit (
+			combined_id, account_model, primary_strategy_id, primary_strategy_name,
+			position_size_pct, preempted_trades, avg_idle_cash_pct,
+			fully_idle_pct, avg_deployed_pct, results_database
+		) VALUES (
+			:combined_id, :account_model, :primary_strategy_id, :primary_strategy_name,
+			:position_size_pct, :preempted_trades, :avg_idle_cash_pct,
+			:fully_idle_pct, :avg_deployed_pct, :results_database
+		)
+	`
+	if _, err := db.NamedExec(insertAudit, audit); err != nil {
+		return fmt.Errorf("failed to save shared_account_audit: %w", err)
+	}
+
+	insertPriority := `
+		INSERT OR REPLACE INTO shared_account_priorities (
+			combined_id, strategy_id, strategy_name, priority, role
+		) VALUES (
+			:combined_id, :strategy_id, :strategy_name, :priority, :role
+		)
+	`
+	for _, p := range priorities {
+		if _, err := db.NamedExec(insertPriority, p); err != nil {
+			return fmt.Errorf("failed to save shared_account_priority %s: %w", p.StrategyID, err)
+		}
+	}
+
+	return nil
+}

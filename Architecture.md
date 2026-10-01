@@ -12,9 +12,10 @@ pkg/appenv             APP_FOLDER / APP_DATA / APP_REF / APP_REPORTS and .env
 pkg/datasource         Yahoo, Stooq, Polygon, Polygon options, SQLite reads
 pkg/market_history     gap-filling writer into the market DB
 pkg/storage            bar, trade, signal, equity, performance, option schemas
-pkg/refdb              settings.db universes and ETF-tree rows
+pkg/refdb              settings.db universes, ETF-tree rows, streak_strategy
 pkg/models             Bar, Signal, Trade, Position, PerformanceReport
 pkg/strategy           Strategy interface, Go strategies, SQL pipelines
+pkg/streak_strategy    one Strategy per streak_strategy row
 pkg/simulator          PortfolioSimulator and SharedAccountSimulator
 pkg/runner             load bars, run, stack, scan, staleness, stack-eval
 pkg/analytics          metrics and the HTML tear sheet
@@ -23,7 +24,7 @@ pkg/study              research studies; market_context is a subpackage
 sql/strategies/<id>/   ordered .sql pipeline for a strategy
 sql/studies            SQL text some studies execute
 sql/validation         walk-forward summary SQL
-refdata/settings.db    universes, symbol tables, etf_dt_strategies
+refdata/settings.db    universes, symbol tables, etf_dt_strategies, streak_strategy
 data/market_history.db daily and intraday bars, option chains
 reports/               one SQLite file per run, plus HTML
 ```
@@ -80,6 +81,7 @@ Option tables in the same market DB (`storage.EnsureOptionTables`):
 | `etf_universe` | `(list, symbol)`. Lists: `all` (Polygon active US ETFs), `6yr`, `sweep` |
 | `etf_dt_strategies` | one row per symbol the registry turns into `dt_<symbol>`. `SaveDTStrategies` replaces the whole table |
 | `etf_dt_strategies_all` | created with the schema; no current command writes it |
+| `streak_strategy` | one runnable streak per row: watch symbol, bought symbol, direction (`drop` or `rally`), signal days, hold, take-profit and stop as fractional offsets, regime, allocation, cash yield, slippage, next-day limit. `pkg/streak_strategy.Register` loads it. `gridsearch promote` upserts winning rows |
 
 Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` fills `all`. `etf_decision_trees` reads a list and replaces `etf_dt_strategies`. Registration of `dt_*` strategies reads `etf_dt_strategies` through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
 
@@ -176,9 +178,11 @@ Written by `pkg/storage` into each strategy or shared DB:
 | Table | What |
 |---|---|
 | `gridsearch_runs` | one row per strategy: status `running` / `done` / `failed`, best Calmar and resilience, `data_max_date` for staleness |
-| `gridsearch_results` | one row per config: label, baseline flag, CAGR, drawdown, Calmar, resilience, trades, win rate, and (added later) `symbol`, `signal_days`, `hold_days`, `take_profit_pct`, `stop_loss_pct`, `regime` |
+| `gridsearch_results` | one row per config: label, baseline flag, CAGR, drawdown, Calmar, resilience, trades, win rate, and (added later) `symbol`, `signal_days`, `hold_days`, `take_profit_pct`, `stop_loss_pct`, `regime`, `signal_symbol`, `allocation_pct` |
 
-`running` and `failed` are retried. `done` is skipped unless `-force`. `backtest optimized` reads the best row and applies it, including `DeclineDays` when the strategy implements `DeclineDaysConfigurable`. Many older rows have NULL `hold_days`; the label is `SYM/sigDaysd/holdd/+TP%-SL%/regime` or `SYM/Hold-Nd/TP+x%/SL-y%`.
+`running` and `failed` are retried. `done` is skipped unless `-force`. `backtest optimized` reads the best row and applies it, including `DeclineDays` when the strategy implements `DeclineDaysConfigurable`. Many older rows have NULL `hold_days`; the label is `SYM/sigDaysd/holdd/+TP%-SL%/regime` or `SYM/Hold-Nd/TP+x%/SL-y%`. Older rows also have NULL `signal_symbol` and `allocation_pct`. `gridsearch promote` fills the watch symbol from the parent strategy's `ParameterSpace` when the column is NULL.
+
+`pkg/streak_strategy` registers each `streak_strategy` row under its `id` (`streak-<signal>-<up|down><days>-<trade>`). The package imports `pkg/strategy`, so registration is a call to `Register` from backtest, gridsearch, scoreboard, livescan, and strateval, right after `AutoRegisterSQLStrategies`. Signals come from `sql/strategies/streak_strategy/` (`__SIGNAL_SYMBOL__`, `__TRADE_SYMBOL__`, `__STREAK_COL__`, `__REGIME_PREDICATE__`). `gridsearch -strategy all` skips the `streak-` prefix unless `-include-streak`. Scoreboard and `backtest -strategy all` include the rows.
 
 `reports/stack_eval_<primary>.db` table `overlay_rankings` is replaced on each stack-eval (`DELETE` then insert). Columns include combined equity, CAGR, Sharpe, max drawdown, incremental equity versus the primary alone, secondary PnL and trades, preempted count, and idle-cash percents.
 
@@ -235,7 +239,6 @@ It records the gates in `check_overfit_gate`.
 
 ## Other commands
 
-`audit_shared` runs Go queries against one shared result DB (newest `reports/shared_*.db` by mtime).
 
 `dataflare` is `open -a Dataflare [db]`.
 
@@ -247,4 +250,5 @@ It records the gates in `check_overfit_gate`.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
 - Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
 - `dt_*` registration depends on `refdata/settings.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
+- `streak-*` registration also depends on `refdata/settings.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
 - `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training`.

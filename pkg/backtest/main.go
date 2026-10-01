@@ -17,6 +17,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	_ "modernc.org/sqlite"
 )
 
@@ -208,6 +209,7 @@ func Run(conf Config) error {
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
+	streak_strategy.Register()
 
 	if conf.Mode == "stale" {
 		if err := runStaleCommand(conf.OutDir, conf.Db, conf.Concurrency); err != nil {
@@ -375,7 +377,7 @@ func Run(conf Config) error {
 		}
 		defer db.Close()
 
-		// Always include SPY: ExecuteSharedAccount falls back to it as the
+		// Always include SPY: ExecuteStack falls back to it as the
 		// benchmark when a strategy's own DefaultConfig().Benchmark is empty,
 		// and RequiredSymbolsFor only picks up non-empty benchmarks.
 		reqSymbols := append(runner.RequiredSymbolsFor(allStrats, conf.Symbol), "SPY")

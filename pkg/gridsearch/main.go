@@ -40,8 +40,10 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/charting"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	_ "modernc.org/sqlite"
 )
 
@@ -54,14 +56,16 @@ type gridResult struct {
 	IsBaseline bool
 
 	// Raw params behind Label, persisted as real columns (not just a
-	// formatted string) by recordRun, so `backtest optimized` has something
-	// structured to read back instead of parsing Label.
-	Symbol     string
-	SignalDays int
-	HoldDays   int
-	TakeProfit float64 // fractional offset, e.g. 0.05 for +5% (0 = tree_bounce/no-TP)
-	StopLoss   float64 // fractional offset, e.g. 0.05 for -5% (0 = no-SL)
-	Regime     string
+	// formatted string) by recordRun, so `backtest optimized` and
+	// `gridsearch promote` have something structured to read back.
+	Symbol       string
+	SignalSymbol string
+	SignalDays   int
+	HoldDays     int
+	TakeProfit   float64 // fractional offset, e.g. 0.05 for +5% (0 = tree_bounce/no-TP)
+	StopLoss     float64 // fractional offset, e.g. 0.05 for -5% (0 = no-SL)
+	Regime       string
+	Allocation   float64
 }
 
 // sweepOutcome is everything produced by running a full parameter sweep for one
@@ -101,56 +105,60 @@ func formatPercents(vals []float64) []string {
 
 // Config holds the settings of a run.
 type Config struct {
-	Start        string          // -start
-	Db           string          // -db
-	Strategy     string          // -strategy
-	Strat        string          // -strat
-	Mode         string          // -mode
-	List         bool            // -list
-	Signal       string          // -signal
-	Symbol       string          // -symbol
-	SymbolsFrom  string          // -symbols-from
-	TopCagr      int             // -top-cagr
-	Capital      float64         // -capital
-	Alloc        float64         // -alloc
-	Yield        float64         // -yield
-	MinTrades    int             // -min-trades
-	Top          int             // -top
-	Html         string          // -html
-	NoHtml       bool            // -no-html
-	Concurrency  int             // -concurrency
-	Force        bool            // -force
-	IncludeDt    bool            // -include-dt
-	GridsearchDb string          // -gridsearch-db
-	MaxPerms     int             // -max-perms
-	Subcommand   string          // "params", "stale", or empty
-	Passed       map[string]bool // flags set explicitly on the command line (nil = none)
-	Args         []string        // positional arguments
+	Start         string          // -start
+	Db            string          // -db
+	Strategy      string          // -strategy
+	Strat         string          // -strat
+	Mode          string          // -mode
+	List          bool            // -list
+	Signal        string          // -signal
+	Symbol        string          // -symbol
+	SymbolsFrom   string          // -symbols-from
+	TopCagr       int             // -top-cagr
+	Capital       float64         // -capital
+	Alloc         float64         // -alloc
+	Yield         float64         // -yield
+	MinTrades     int             // -min-trades
+	Top           int             // -top
+	Html          string          // -html
+	NoHtml        bool            // -no-html
+	Concurrency   int             // -concurrency
+	Force         bool            // -force
+	IncludeDt     bool            // -include-dt
+	IncludeStreak bool            // -include-streak
+	MinWinRate    float64         // -min-win-rate (promote)
+	GridsearchDb  string          // -gridsearch-db
+	MaxPerms      int             // -max-perms
+	Subcommand    string          // "params", "stale", "promote", or empty
+	Passed        map[string]bool // flags set explicitly on the command line (nil = none)
+	Args          []string        // positional arguments
 }
 
 // DefaultConfig returns the CLI defaults.
 func DefaultConfig() Config {
 	return Config{
-		Start:        storage.DefaultStartDate,
-		Db:           appenv.MarketDB(),
-		Strategy:     "",
-		List:         false,
-		Signal:       "",
-		Symbol:       "",
-		SymbolsFrom:  "",
-		TopCagr:      10,
-		Capital:      100000.0,
-		Alloc:        0.65,
-		Yield:        0.045,
-		MinTrades:    5,
-		Top:          10,
-		Html:         "",
-		NoHtml:       false,
-		Concurrency:  runtime.NumCPU(),
-		Force:        false,
-		IncludeDt:    false,
-		GridsearchDb: appenv.ReportFile("gridsearch.db"),
-		MaxPerms:     20000,
+		Start:         storage.DefaultStartDate,
+		Db:            appenv.MarketDB(),
+		Strategy:      "",
+		List:          false,
+		Signal:        "",
+		Symbol:        "",
+		SymbolsFrom:   "",
+		TopCagr:       10,
+		Capital:       100000.0,
+		Alloc:         0.65,
+		Yield:         0.045,
+		MinTrades:     5,
+		Top:           10,
+		Html:          "",
+		NoHtml:        false,
+		Concurrency:   runtime.NumCPU(),
+		Force:         false,
+		IncludeDt:     false,
+		IncludeStreak: false,
+		MinWinRate:    0.6,
+		GridsearchDb:  appenv.ReportFile("gridsearch.db"),
+		MaxPerms:      20000,
 	}
 }
 
@@ -187,9 +195,11 @@ func Main() {
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Worker goroutines. Single-strategy mode: workers within that one sweep. Multi-strategy mode: total workers shared across every strategy's tasks combined (not per-strategy — a few expensive strategies get proportionally more of the pool once cheap ones finish). Defaults to all CPU cores.")
 	flag.BoolVar(&conf.Force, "force", d.Force, "Redo strategies that already have a completed sweep in reports/gridsearch.db")
 	flag.BoolVar(&conf.IncludeDt, "include-dt", d.IncludeDt, "Include dt_* (auto-generated per-ETF decision tree) strategies in -strategy all — they already have their own dedicated sweep via cmd/etf_decision_trees, so excluded by default")
+	flag.BoolVar(&conf.IncludeStreak, "include-streak", d.IncludeStreak, "Include streak-* strategies (rows of refdata streak_strategy) in -strategy all. They are already a promoted config, so excluded by default")
+	flag.Float64Var(&conf.MinWinRate, "min-win-rate", d.MinWinRate, "gridsearch promote: minimum win rate (0-1)")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
 	flag.IntVar(&conf.MaxPerms, "max-perms", d.MaxPerms, "Multi-strategy mode: skip a strategy whose generic parameter grid exceeds this many permutations (e.g. genetic-momentum's 50-symbol RequiredSymbols list balloons its generic grid to 210,000+ combos, none of which even exercise its real Python-driven signal logic). 0 disables the cap. Single-strategy mode ignores this.")
-	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"params": "params", "stale": "stale"})
+	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"params": "params", "stale": "stale", "promote": "promote"})
 	flag.Parse()
 	conf.Passed = map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { conf.Passed[f.Name] = true })
@@ -202,6 +212,7 @@ func Main() {
 // Run executes the command with cfg. It returns errors instead of exiting.
 func Run(conf Config) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
+	streak_strategy.Register()
 
 	if conf.Subcommand == "stale" {
 		runStaleCommand(conf.GridsearchDb, conf.Db)
@@ -245,6 +256,9 @@ func Run(conf Config) error {
 		fmt.Println("Run with the 'stale' subcommand to see which completed sweeps are stale:")
 		fmt.Println("         go run cmd/gridsearch/main.go stale")
 		fmt.Println()
+		fmt.Println("Run with the 'promote' subcommand to copy winning rows into streak_strategy:")
+		fmt.Println("         go run cmd/gridsearch/main.go promote -strategy voo-up3 -min-win-rate 0.6 -min-trades 30 -top 5")
+		fmt.Println()
 		return fmt.Errorf("no strategy specified")
 	}
 
@@ -252,6 +266,9 @@ func Run(conf Config) error {
 	if strings.EqualFold(stratArg, "all") {
 		for _, s := range strategy.List() {
 			if !conf.IncludeDt && strings.HasPrefix(s.ID(), "dt_") {
+				continue
+			}
+			if !conf.IncludeStreak && strings.HasPrefix(s.ID(), "streak-") {
 				continue
 			}
 			targets = append(targets, s)
@@ -271,6 +288,30 @@ func Run(conf Config) error {
 	}
 	if len(targets) == 0 {
 		return fmt.Errorf("No valid strategies selected.")
+	}
+
+	if conf.Subcommand == "promote" {
+		minTrades := 30
+		if conf.Passed["min-trades"] {
+			minTrades = conf.MinTrades
+		}
+		top := 5
+		if conf.Passed["top"] {
+			top = conf.Top
+		}
+		rep, err := Promote(PromoteConfig{
+			Parents:    targets,
+			GridDB:     conf.GridsearchDb,
+			RefDB:      refdb.DefaultPath,
+			MinWinRate: conf.MinWinRate,
+			MinTrades:  minTrades,
+			Top:        top,
+		})
+		if err != nil {
+			return err
+		}
+		printPromoteReport(rep)
+		return nil
 	}
 
 	sweepOpts := sweepOptions{
@@ -494,96 +535,6 @@ func exportSweepHTML(strat strategy.Strategy, outcome sweepOutcome, reportFile s
 		multiResults, outcome.SignalBars, capital,
 	)
 	return charting.GenerateHTML(reportFile, view)
-}
-
-// buildSignals generates signals for a single grid-search task using consecutive-streak detection.
-func buildSignals(signalBars, tradeBars []models.Bar, consecutiveDays int, direction, regime string, tpPct, slPct float64, holdDays int, tradeSym string) []models.Signal {
-	tradeByDate := make(map[string]models.Bar, len(tradeBars))
-	for _, b := range tradeBars {
-		tradeByDate[b.Date] = b
-	}
-	isLong := direction != "rally"
-	var signals []models.Signal
-
-	for i := consecutiveDays; i < len(signalBars); i++ {
-		voo := signalBars[i]
-		var detected bool
-		if isLong {
-			detected = true
-			for s := 0; s < consecutiveDays; s++ {
-				if signalBars[i-s].Close >= signalBars[i-s-1].Close {
-					detected = false
-					break
-				}
-			}
-		} else {
-			detected = true
-			for s := 0; s < consecutiveDays; s++ {
-				if signalBars[i-s].Close <= signalBars[i-s-1].Close {
-					detected = false
-					break
-				}
-			}
-		}
-		if !detected {
-			continue
-		}
-		// Regime gate
-		switch {
-		case strings.HasSuffix(regime, "<SMA200"):
-			if voo.SMA200 > 0 && voo.Close >= voo.SMA200 {
-				continue
-			}
-		case strings.HasSuffix(regime, "<SMA50"):
-			if voo.SMA50 > 0 && voo.Close >= voo.SMA50 {
-				continue
-			}
-		case strings.HasSuffix(regime, ">=SMA200"):
-			if voo.SMA200 > 0 && voo.Close < voo.SMA200 {
-				continue
-			}
-		case strings.HasSuffix(regime, ">=SMA50"):
-			if voo.SMA50 > 0 && voo.Close < voo.SMA50 {
-				continue
-			}
-		}
-		tradeBar, ok := tradeByDate[voo.Date]
-		if !ok || tradeBar.Close <= 0 {
-			continue
-		}
-		entryPrice := tradeBar.Close
-		// isLong only selects the streak type (decline vs rally in the signal
-		// symbol). The trade itself is always a long buy of tradeSym (the
-		// simulator has no short side; inverse ETFs are bought long), so
-		// direction, TP and SL are always long-style.
-		dir := "LONG"
-		sig := models.Signal{
-			Symbol:           tradeSym,
-			Date:             voo.Date,
-			Open:             tradeBar.Open,
-			High:             tradeBar.High,
-			Low:              tradeBar.Low,
-			Close:            entryPrice,
-			Volume:           tradeBar.Volume,
-			Entry:            1,
-			Direction:        dir,
-			OrderType:        "limit",
-			BuyLimit:         entryPrice,
-			Regime:           regime,
-			HoldDaysOverride: holdDays,
-			AssetClass:       "equity",
-			StrategyID:       tradeSym + "-opt",
-			Priority:         0,
-		}
-		if tpPct > 0 {
-			sig.TakeProfit = entryPrice * (1.0 + tpPct)
-		}
-		if slPct > 0 {
-			sig.StopLoss = entryPrice * (1.0 - slPct)
-		}
-		signals = append(signals, sig)
-	}
-	return signals
 }
 
 // fileURL returns a file:// URL for path (absolute when resolvable).

@@ -164,7 +164,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`.
+**Writes:** `reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`. `streak-*` strategies loaded from `refdata/settings.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -191,6 +191,16 @@ Report which completed sweeps are stale. No new sweep.
 ```bash
 ./bin/gridsearch stale
 ```
+
+### gridsearch promote
+
+Copy winning sweep rows into `refdata/settings.db` table `streak_strategy`. Each row becomes a strategy id `streak-<signal>-<up|down><days>-<trade>` with the watch symbol, the symbol bought, and the swept hold, take-profit, stop, and regime. Backtest, scoreboard, livescan, and strateval load those rows on the next run.
+
+```bash
+./bin/gridsearch promote -strategy voo-up3,gld-decline -min-win-rate 0.6 -min-trades 30 -top 5
+```
+
+Defaults for promote are win rate `0.6`, `30` trades, and `-top 5`. A sweep's own `-min-trades` default stays `5`. `-gridsearch-db` chooses the sweep file. Rows that share an id keep the higher win rate. A NULL `signal_symbol` (sweeps from before that column existed) uses the parent strategy's watch symbol.
 
 ---
 
@@ -306,18 +316,6 @@ Fit a decision tree and a TP/SL/hold grid for each symbol in an ETF list.
 ./bin/etf_decision_trees -list sweep -min-trades 15 -force
 ```
 
----
-
-## audit_shared
-
-Print exit-reason and preemption audits for one shared-account result.
-
-**Reads:** `-db`, or the newest `reports/shared_*.db` by modification time. Stdout only.
-
-```bash
-./bin/audit_shared
-./bin/audit_shared -db reports/shared_sig-voo-buy-tecl_mara_tree_2.db
-```
 
 ## dataflare
 

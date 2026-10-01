@@ -131,10 +131,19 @@ type StrategyConfig struct {
 	// up-closes) required in the signal symbol before a decline/rally-streak
 	// strategy enters. Only meaningful for strategies whose entry is defined by
 	// a consecutive-day streak (e.g. gld-decline, sig-voo-buy-tecl,
-	// sig-voo-buy-spxu); substituted into their SQL pipeline via the
-	// __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted for
-	// every other strategy.
+	// sig-voo-buy-spxu, streak_strategy); substituted into their SQL pipeline
+	// via the __DECLINE_DAYS__ placeholder by SQLPipelineStrategy. Zero/omitted
+	// for every other strategy.
 	DeclineDays int `json:"decline_days,omitempty"`
+
+	// TradeSymbol is the symbol bought when Benchmark is only the symbol
+	// watched for the streak. StreakDirection is "drop" or "rally".
+	// Regime is "All Regimes", "<Benchmark>>=SMA200", or "<Benchmark><SMA200".
+	// sql/strategies/streak_strategy substitutes these. Empty for every
+	// other strategy.
+	TradeSymbol     string `json:"trade_symbol,omitempty"`
+	StreakDirection string `json:"streak_direction,omitempty"`
+	Regime          string `json:"regime,omitempty"`
 
 	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow mirror
 	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg

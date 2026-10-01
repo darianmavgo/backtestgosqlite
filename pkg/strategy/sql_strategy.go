@@ -34,7 +34,62 @@ const (
 	// pipeline directory (e.g. sql/strategies/decision_tree_features) serve many
 	// per-symbol strategy instances instead of needing one directory per ticker.
 	symbolPlaceholder = "__SYMBOL__"
+	// streak_strategy pipeline: watch symbol, bought symbol, streak column,
+	// and the regime filter. Values are whitelisted; a bad row is left unsubstituted.
+	signalSymbolPlaceholder    = "__SIGNAL_SYMBOL__"
+	tradeSymbolPlaceholder     = "__TRADE_SYMBOL__"
+	streakColPlaceholder       = "__STREAK_COL__"
+	regimePredicatePlaceholder = "__REGIME_PREDICATE__"
+	regimeLabelPlaceholder     = "__REGIME_LABEL__"
 )
+
+// streakSymbolRe is the ticker whitelist for SQL substitution. A row that
+// fails it is not written into the query.
+var streakSymbolRe = regexp.MustCompile(`^[A-Z][A-Z0-9.\-]{0,9}$`)
+
+// StreakSymbol reports whether s is safe to substitute into a SQL literal.
+// The returned symbol is trimmed and uppercased.
+func StreakSymbol(s string) (string, bool) {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if !streakSymbolRe.MatchString(s) {
+		return "", false
+	}
+	return s, true
+}
+
+// StreakColumn maps a streak direction to the slice column the pipeline filters.
+func StreakColumn(direction string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(direction)) {
+	case "drop":
+		return "down_streak", true
+	case "rally":
+		return "up_streak", true
+	default:
+		return "", false
+	}
+}
+
+// RegimePredicate maps a regime label to the watch-bar filter used by
+// sql/strategies/streak_strategy (the slice is aliased as v). SMA200 == 0
+// does not filter, matching StreakSignals / grid search. SMA50 is not
+// supported here.
+func RegimePredicate(signalSymbol, regime string) (string, bool) {
+	sym, ok := StreakSymbol(signalSymbol)
+	if !ok {
+		return "", false
+	}
+	regime = strings.TrimSpace(regime)
+	switch {
+	case regime == "All Regimes":
+		return "1=1", true
+	case regime == sym+">=SMA200":
+		return "v.sma200 <= 0 OR v.close >= v.sma200", true
+	case regime == sym+"<SMA200":
+		return "v.sma200 <= 0 OR v.close < v.sma200", true
+	default:
+		return "", false
+	}
+}
 
 // takeProfitMultiplier converts a StrategyConfig take-profit *offset* (e.g.
 // TakeProfitPct/ShortTakeProfitPct = 0.08 for +8%) into the multiplier a SQL
@@ -86,6 +141,50 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 			sqlText = strings.ReplaceAll(sqlText, symbolPlaceholder, cfg.Benchmark)
 		}
 	}
+	sqlText = substituteStreakPlaceholders(sqlText, id, fileName, cfg)
+	return sqlText
+}
+
+// substituteStreakPlaceholders fills the streak_strategy pipeline placeholders.
+// A value that fails the whitelist is left in place so the query fails closed
+// instead of running injected SQL.
+func substituteStreakPlaceholders(sqlText, id, fileName string, cfg StrategyConfig) string {
+	if strings.Contains(sqlText, signalSymbolPlaceholder) {
+		if sym, ok := StreakSymbol(cfg.Benchmark); ok {
+			sqlText = strings.ReplaceAll(sqlText, signalSymbolPlaceholder, sym)
+		} else {
+			log.Printf("[sql_strategy %s] %s %s rejected %q", id, fileName, signalSymbolPlaceholder, cfg.Benchmark)
+		}
+	}
+	if strings.Contains(sqlText, tradeSymbolPlaceholder) {
+		if sym, ok := StreakSymbol(cfg.TradeSymbol); ok {
+			sqlText = strings.ReplaceAll(sqlText, tradeSymbolPlaceholder, sym)
+		} else {
+			log.Printf("[sql_strategy %s] %s %s rejected %q", id, fileName, tradeSymbolPlaceholder, cfg.TradeSymbol)
+		}
+	}
+	if strings.Contains(sqlText, streakColPlaceholder) {
+		if col, ok := StreakColumn(cfg.StreakDirection); ok {
+			sqlText = strings.ReplaceAll(sqlText, streakColPlaceholder, col)
+		} else {
+			log.Printf("[sql_strategy %s] %s %s rejected %q", id, fileName, streakColPlaceholder, cfg.StreakDirection)
+		}
+	}
+	// Predicate before the label so the longer token is not partially consumed.
+	if strings.Contains(sqlText, regimePredicatePlaceholder) {
+		if pred, ok := RegimePredicate(cfg.Benchmark, cfg.Regime); ok {
+			sqlText = strings.ReplaceAll(sqlText, regimePredicatePlaceholder, pred)
+		} else {
+			log.Printf("[sql_strategy %s] %s %s rejected %q", id, fileName, regimePredicatePlaceholder, cfg.Regime)
+		}
+	}
+	if strings.Contains(sqlText, regimeLabelPlaceholder) {
+		if _, ok := RegimePredicate(cfg.Benchmark, cfg.Regime); ok {
+			sqlText = strings.ReplaceAll(sqlText, regimeLabelPlaceholder, strings.TrimSpace(cfg.Regime))
+		} else {
+			log.Printf("[sql_strategy %s] %s %s rejected %q", id, fileName, regimeLabelPlaceholder, cfg.Regime)
+		}
+	}
 	return sqlText
 }
 
@@ -102,19 +201,26 @@ type SQLPipelineStrategy struct {
 	config       StrategyConfig
 }
 
-// NewSQLPipelineStrategy creates a new SQL-backed strategy from a directory of SQL scripts.
-func NewSQLPipelineStrategy(id, name, description, pipelineDir string, config StrategyConfig) *SQLPipelineStrategy {
+// NewSQLPipeline builds a pipeline without registering it. Use this when the
+// pipeline is an implementation detail of another strategy (streak_strategy
+// runs one shared directory per row and must not add a second registry id).
+func NewSQLPipeline(id, name, description, pipelineDir string, config StrategyConfig) *SQLPipelineStrategy {
 	config.ID = id
 	config.Name = name
 	config.Description = description
-
-	s := &SQLPipelineStrategy{
+	return &SQLPipelineStrategy{
 		id:          id,
 		name:        name,
 		description: description,
 		pipelineDir: pipelineDir,
 		config:      config,
 	}
+}
+
+// NewSQLPipelineStrategy creates a new SQL-backed strategy from a directory of SQL scripts
+// and registers it.
+func NewSQLPipelineStrategy(id, name, description, pipelineDir string, config StrategyConfig) *SQLPipelineStrategy {
+	s := NewSQLPipeline(id, name, description, pipelineDir, config)
 	Register(s)
 	return s
 }

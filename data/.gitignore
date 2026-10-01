@@ -1,0 +1,11 @@
+*.DS_Store
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+
+# BEGIN ignore-over-50MB
+# Files larger than 52428800 bytes. Rewritten by ignore_over50MB.sh.
+/market_history.db
+# END ignore-over-50MB
+market_history.zip

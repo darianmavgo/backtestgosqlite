@@ -31,6 +31,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -72,6 +73,7 @@ func Run(ctx context.Context, cfg Config) (*runner.SignalScanResult, error) {
 	if cfg.StrategyRoot != "" {
 		strategy.AutoRegisterSQLStrategies(cfg.StrategyRoot, cfg.DB)
 	}
+	streak_strategy.Register()
 
 	// "a+b+c" is backtest's shared-account stack syntax; a signal scan just
 	// needs each component's signals, so treat "+" like ",".
@@ -117,6 +119,7 @@ func Main() {
 
 	if *listStrategies {
 		strategy.AutoRegisterSQLStrategies(appenv.Folder(), cfg.DB)
+		streak_strategy.Register()
 		fmt.Println("Available Strategies:")
 		for _, s := range strategy.List() {
 			fmt.Printf("  %-28s %s\n", s.ID(), s.Name())

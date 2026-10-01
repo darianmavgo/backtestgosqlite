@@ -11,6 +11,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -233,7 +234,7 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 			sigs[idx] = sCopy
 		}
 	} else {
-		sigs = buildSignals(ctx.SignalBars, t.tradeBars, t.sigDays, ctx.ParamSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym)
+		sigs = streak_strategy.StreakSignals(ctx.SignalBars, t.tradeBars, t.sigDays, ctx.ParamSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym, t.sym+"-opt")
 	}
 
 	if len(sigs) < opts.MinTrades {
@@ -262,18 +263,20 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 		trades, curve = nil, nil
 	}
 	return gridResult{
-		task:       t,
-		Label:      label,
-		Report:     report,
-		Trades:     trades,
-		Curve:      curve,
-		IsBaseline: t.isBaseline,
-		Symbol:     t.sym,
-		SignalDays: signalDays,
-		HoldDays:   t.hold,
-		TakeProfit: t.tp,
-		StopLoss:   t.sl,
-		Regime:     regime,
+		task:         t,
+		Label:        label,
+		Report:       report,
+		Trades:       trades,
+		Curve:        curve,
+		IsBaseline:   t.isBaseline,
+		Symbol:       t.sym,
+		SignalSymbol: ctx.ParamSpace.SignalSymbol,
+		SignalDays:   signalDays,
+		HoldDays:     t.hold,
+		TakeProfit:   t.tp,
+		StopLoss:     t.sl,
+		Regime:       regime,
+		Allocation:   t.alloc,
 	}, true
 }
 

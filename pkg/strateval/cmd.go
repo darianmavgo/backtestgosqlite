@@ -23,6 +23,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	_ "modernc.org/sqlite"
 )
 
@@ -212,6 +213,7 @@ func runEval(conf Config) error {
 	}
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.MarketDb)
+	streak_strategy.Register()
 
 	if conf.List {
 		for _, s := range strategy.List() {
