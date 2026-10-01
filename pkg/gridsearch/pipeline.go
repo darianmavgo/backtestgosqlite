@@ -1,6 +1,7 @@
 package gridsearch
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"sort"
@@ -103,6 +104,7 @@ func ensureGridSearchSchema(gdb *sqlx.DB) error {
 	// streak_strategy row without guessing. Older sweeps leave them NULL.
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN signal_symbol TEXT;`)
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN allocation_pct REAL;`)
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN idle_days INTEGER;`)
 	return nil
 }
 
@@ -221,8 +223,8 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 			strategy_id, label, is_baseline, net_profit, cagr, max_drawdown_pct,
 			max_drawdown_days, calmar_ratio, resilience_score, total_trades, win_rate,
 			symbol, signal_days, hold_days, take_profit_pct, stop_loss_pct, regime,
-			signal_symbol, allocation_pct
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			signal_symbol, allocation_pct, idle_days
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		log.Printf("Warning: failed to prepare results insert for %s: %v", strat.ID(), err)
@@ -234,11 +236,15 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 		if r.IsBaseline {
 			isBaseline = 1
 		}
+		var idleDays interface{}
+		if r.Report.IdleKnown {
+			idleDays = r.Report.IdleDays
+		}
 		if _, err := stmt.Exec(
 			strat.ID(), r.Label, isBaseline, r.Report.NetProfit, r.Report.CAGR, r.Report.MaxDrawdownPct,
 			r.Report.MaxDrawdownDuration, r.Report.CalmarRatio, resilienceScore(r.Report), r.Report.TotalTrades, r.Report.WinRate,
 			r.Symbol, r.SignalDays, r.HoldDays, r.TakeProfit, r.StopLoss, r.Regime,
-			r.SignalSymbol, r.Allocation,
+			r.SignalSymbol, r.Allocation, idleDays,
 		); err != nil {
 			log.Printf("Warning: failed to insert result row for %s: %v", strat.ID(), err)
 		}
@@ -249,28 +255,43 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 	}
 }
 
+func formatIdle(report models.PerformanceReport) string {
+	if !report.IdleKnown {
+		return "—"
+	}
+	return fmt.Sprintf("%d", report.IdleDays)
+}
+
+func formatNullIdle(n sql.NullInt64) string {
+	if !n.Valid {
+		return "—"
+	}
+	return fmt.Sprintf("%d", n.Int64)
+}
+
 // printCachedResults prints a strategy's already-persisted top results (used
 // when a single-strategy invocation is skipped because it's already 'done').
 func printCachedResults(gdb *sqlx.DB, strat strategy.Strategy) {
 	type row struct {
-		Label       string  `db:"label"`
-		CAGR        float64 `db:"cagr"`
-		MaxDD       float64 `db:"max_drawdown_pct"`
-		DDDays      int     `db:"max_drawdown_days"`
-		Score       float64 `db:"resilience_score"`
-		TotalTrades int     `db:"total_trades"`
+		Label       string        `db:"label"`
+		CAGR        float64       `db:"cagr"`
+		MaxDD       float64       `db:"max_drawdown_pct"`
+		DDDays      int           `db:"max_drawdown_days"`
+		Score       float64       `db:"resilience_score"`
+		TotalTrades int           `db:"total_trades"`
+		IdleDays    sql.NullInt64 `db:"idle_days"`
 	}
 	var rows []row
 	if err := gdb.Select(&rows, `
-		SELECT label, cagr, max_drawdown_pct, max_drawdown_days, resilience_score, total_trades
+		SELECT label, cagr, max_drawdown_pct, max_drawdown_days, resilience_score, total_trades, idle_days
 		FROM gridsearch_results WHERE strategy_id = ? ORDER BY resilience_score DESC LIMIT 10
 	`, strat.ID()); err != nil || len(rows) == 0 {
 		return
 	}
 	fmt.Println("\n🛡️  Cached TOP 10 BY RESILIENCE (from a previous sweep):")
 	for i, r := range rows {
-		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  DDdays=%d  Score=%.4f  Trades=%d\n",
-			i+1, r.Label, r.CAGR*100, r.MaxDD*100, r.DDDays, r.Score, r.TotalTrades)
+		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  DDdays=%d  Score=%.4f  Trades=%d  Idle=%s\n",
+			i+1, r.Label, r.CAGR*100, r.MaxDD*100, r.DDDays, r.Score, r.TotalTrades, formatNullIdle(r.IdleDays))
 	}
 }
 
@@ -407,8 +428,8 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 					} else {
 						completed++
 						best := outcome.TopResilience[0]
-						fmt.Printf("✅ [%s] %d configs evaluated in %v — best: %s (CAGR=%.2f%% Score=%.4f)\n",
-							st.strat.ID(), len(outcome.Results), outcome.Elapsed.Round(time.Millisecond), best.Label, best.Report.CAGR*100, resilienceScore(best.Report))
+						fmt.Printf("✅ [%s] %d configs evaluated in %v — best: %s (CAGR=%.2f%% Score=%.4f Idle=%s)\n",
+							st.strat.ID(), len(outcome.Results), outcome.Elapsed.Round(time.Millisecond), best.Label, best.Report.CAGR*100, resilienceScore(best.Report), formatIdle(best.Report))
 					}
 					printMu.Unlock()
 

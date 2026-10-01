@@ -53,10 +53,10 @@ func (s *DividendMarginBuyHoldStrategy) DefaultConfig() StrategyConfig {
 		StopLossPct:          0.0001, // never exit via stop loss
 		HoldingWindow:        99999,  // hold throughout backtest window
 		PositionCap:          1,
-		AllocationPct:        2.0,    // 200% allocation = 100% of 2:1 Reg-T buying power
-		UseMargin:            true,   // enable Reg-T margin simulation
-		MarginLeverage:       2.0,    // 2:1 buying power multiplier
-		MarginInterestAnnual: 0.07,   // 7.0% APR margin borrow interest
+		AllocationPct:        2.0,  // 200% allocation = 100% of 2:1 Reg-T buying power
+		UseMargin:            true, // enable Reg-T margin simulation
+		MarginLeverage:       2.0,  // 2:1 buying power multiplier
+		MarginInterestAnnual: 0.07, // 7.0% APR margin borrow interest
 		SlippagePct:          0.0005,
 		CommissionPerShare:   0.0001,
 	}

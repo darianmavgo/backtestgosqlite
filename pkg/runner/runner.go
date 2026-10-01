@@ -59,6 +59,17 @@ func PrintPerformanceTearSheet(strategyName string, report models.PerformanceRep
 		fmt.Sprintf("%s to %s", report.StartDate, report.EndDate),
 		fmt.Sprintf("%d trading days (%.1f years)", report.TotalTradingDays, report.TotalCalendarYears),
 	})
+	if report.IdleKnown {
+		pct := 0.0
+		if report.TotalTradingDays > 0 {
+			pct = float64(report.IdleDays) / float64(report.TotalTradingDays) * 100
+		}
+		table.Append([]string{
+			"Idle Days",
+			fmt.Sprintf("%d", report.IdleDays),
+			fmt.Sprintf("%.1f%% of sessions with no open position", pct),
+		})
+	}
 
 	// Capital & Returns
 	table.Append([]string{"Initial Capital", fmt.Sprintf("$%.2f", report.InitialCapital), "Starting portfolio cash"})
@@ -217,13 +228,13 @@ func PrintComparisonTable(results []RunResult) {
 	fmt.Printf("========================================================================================================================\n")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Strategy ID", "Name", "Total Return", "CAGR", "Sharpe", "Max DD %", "🔴 DD Duration", "Win Rate", "Trades", "SQLite Results File"})
+	table.SetHeader([]string{"Strategy ID", "Name", "Total Return", "CAGR", "Sharpe", "Max DD %", "🔴 DD Duration", "Win Rate", "Trades", "Idle Days", "SQLite Results File"})
 	table.SetBorder(true)
 	table.SetAutoWrapText(false)
 
 	for _, r := range results {
 		if r.Err != nil {
-			table.Append([]string{r.Strat.ID(), r.Strat.Name(), "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "0", "N/A"})
+			table.Append([]string{r.Strat.ID(), r.Strat.Name(), "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "ERROR", "0", "—", "N/A"})
 			continue
 		}
 		table.Append([]string{
@@ -236,10 +247,18 @@ func PrintComparisonTable(results []RunResult) {
 			fmt.Sprintf("%d days", r.Report.MaxDrawdownDuration),
 			fmt.Sprintf("%.2f%%", r.Report.WinRate*100),
 			fmt.Sprintf("%d", r.Report.TotalTrades),
+			formatIdleDays(r.Report),
 			r.DbPath,
 		})
 	}
 	table.Render()
+}
+
+func formatIdleDays(report models.PerformanceReport) string {
+	if !report.IdleKnown {
+		return "—"
+	}
+	return fmt.Sprintf("%d", report.IdleDays)
 }
 
 // ConfigOverride replaces fields of a strategy's DefaultConfig. Zero values

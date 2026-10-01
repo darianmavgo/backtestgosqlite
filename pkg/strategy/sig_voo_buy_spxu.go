@@ -88,17 +88,17 @@ func (s *SigVooBuySpxu) DefaultConfig() StrategyConfig {
 		holdingWindow = 2
 	}
 	return StrategyConfig{
-		ID:                 s.ID(),
-		Name:               s.Name(),
-		Description:        s.Description(),
-		Benchmark:          "VOO",
-		AllocationPct:      0.65,
-		TargetPct:          1.0 + takeProfitPct,
-		TakeProfitPct:      takeProfitPct,
-		StopLossPct:        stopLossPct,
-		HoldingWindow:      holdingWindow,
-		PositionCap:        1,
-		CashYieldAnnual:    0.045,
+		ID:              s.ID(),
+		Name:            s.Name(),
+		Description:     s.Description(),
+		Benchmark:       "VOO",
+		AllocationPct:   0.65,
+		TargetPct:       1.0 + takeProfitPct,
+		TakeProfitPct:   takeProfitPct,
+		StopLossPct:     stopLossPct,
+		HoldingWindow:   holdingWindow,
+		PositionCap:     1,
+		CashYieldAnnual: 0.045,
 		// SPXU (ProShares UltraPro Short S&P500, -3x) has meaningfully lower
 		// volume/AUM than the long-leveraged index ETFs and an inverse
 		// product's quotes widen further in the down-market conditions this

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 	"github.com/olekukonko/tablewriter"
+	_ "modernc.org/sqlite"
 )
 
 // LeveragedETFInfo stores metadata about known leveraged ETFs/ETNs.

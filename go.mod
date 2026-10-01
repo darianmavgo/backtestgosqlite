@@ -22,6 +22,7 @@ require (
 )
 
 require (
+	github.com/mattn/go-sqlite3 v1.14.6
 	github.com/ryanbressler/CloudForest v0.0.0-20220205065429-8f151e494fd2
 	modernc.org/sqlite v1.58.0
 )

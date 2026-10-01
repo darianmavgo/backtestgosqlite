@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 	"github.com/ryanbressler/CloudForest"
+	_ "modernc.org/sqlite"
 )
 
 // MUDecisionTreeStudy implements the Study interface for reverse engineering a
@@ -713,18 +713,18 @@ func generateHTMLReport(
 
 	tmpl := template.Must(template.New("report").Parse(muReportTemplate))
 	type TableRow struct {
-		Date         string
-		Close        float64
-		Signal       string
-		NextReturn   float64
-		TradeResult  string
-		EventBadge   string
-		Return1d     float64
-		Return3d     float64
-		Return5d     float64
-		RSI14        float64
-		VolRatio20   float64
-		RangeATR     float64
+		Date        string
+		Close       float64
+		Signal      string
+		NextReturn  float64
+		TradeResult string
+		EventBadge  string
+		Return1d    float64
+		Return3d    float64
+		Return5d    float64
+		RSI14       float64
+		VolRatio20  float64
+		RangeATR    float64
 	}
 
 	var rows []TableRow

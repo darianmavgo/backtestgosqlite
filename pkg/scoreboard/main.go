@@ -3,8 +3,6 @@ package scoreboard
 import (
 	"flag"
 	"fmt"
-	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
-	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +10,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
+	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
@@ -109,6 +111,7 @@ func runAll(concurrency int, force bool) error {
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
 	streak_strategy.Register()
+	markov_strategy.Register()
 
 	allStrategies := strategy.List()
 	if len(allStrategies) == 0 {
@@ -227,6 +230,7 @@ func runCompile(concurrency int) error {
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategy names/descriptions resolve too
 	streak_strategy.Register()
+	markov_strategy.Register()
 
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
 	if totalGroups == 0 {
@@ -274,6 +278,7 @@ func runStatus(concurrency int) error {
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb)
 	streak_strategy.Register()
+	markov_strategy.Register()
 
 	total := len(strategy.List())
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
@@ -362,6 +367,7 @@ func writeScoreboard(dbPath string, results []runner.RunResult) error {
 		max_drawdown_days INTEGER,
 		win_rate REAL,
 		trades INTEGER,
+		idle_days INTEGER,
 		run_date TEXT
 	);`
 	if _, err := db.Exec(schema); err != nil {
@@ -374,8 +380,8 @@ func writeScoreboard(dbPath string, results []runner.RunResult) error {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO scoreboard (strategy_id, name, cagr, total_return, sharpe, max_drawdown, max_drawdown_days, win_rate, trades, run_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO scoreboard (strategy_id, name, cagr, total_return, sharpe, max_drawdown, max_drawdown_days, win_rate, trades, idle_days, run_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		tx.Rollback()
@@ -391,6 +397,10 @@ func writeScoreboard(dbPath string, results []runner.RunResult) error {
 		if r.Err != nil {
 			continue
 		}
+		var idleDays interface{}
+		if r.Report.IdleKnown {
+			idleDays = r.Report.IdleDays
+		}
 		if _, err := stmt.Exec(
 			r.Strat.ID(),
 			r.Strat.Name(),
@@ -401,6 +411,7 @@ func writeScoreboard(dbPath string, results []runner.RunResult) error {
 			r.Report.MaxDrawdownDuration,
 			r.Report.WinRate,
 			r.Report.TotalTrades,
+			idleDays,
 			runDate,
 		); err != nil {
 			tx.Rollback()

@@ -37,6 +37,7 @@ func CalculatePerformanceMetricsWithBenchmark(
 	report.EndDate = equityPoints[len(equityPoints)-1].Date
 	report.TotalTradingDays = len(equityPoints)
 	report.TotalCalendarYears = float64(report.TotalTradingDays) / 252.0
+	applyIdleDays(&report, equityPoints)
 
 	finalEquity := equityPoints[len(equityPoints)-1].TotalEquity
 	report.FinalEquity = finalEquity
@@ -257,4 +258,35 @@ func CalculatePerformanceMetricsWithBenchmark(
 	}
 
 	return report
+}
+
+// applyIdleDays counts sessions with no open position. A curve that never
+// records cash, invested value, or an open position (sleeve PnL curves) leaves
+// IdleKnown false so callers do not print a zero.
+func applyIdleDays(report *models.PerformanceReport, curve []models.DailyEquityPoint) {
+	hasOpen := false
+	hasValue := false
+	for _, pt := range curve {
+		if pt.OpenPositions > 0 {
+			hasOpen = true
+		}
+		if pt.Cash != 0 || pt.PositionsValue != 0 {
+			hasValue = true
+		}
+	}
+	if !hasOpen && !hasValue {
+		return
+	}
+	idle := 0
+	for _, pt := range curve {
+		flat := pt.OpenPositions == 0
+		if !hasOpen {
+			flat = pt.PositionsValue == 0
+		}
+		if flat {
+			idle++
+		}
+	}
+	report.IdleDays = idle
+	report.IdleKnown = true
 }

@@ -720,11 +720,16 @@ func EnsurePerformanceReportTable(db *sqlx.DB) error {
 			avg_mae REAL,
 			avg_mfe REAL,
 			total_commission_paid REAL,
+			idle_days INTEGER,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	// Older result DBs predate idle_days. Duplicate-column errors are expected.
+	_, _ = db.Exec(`ALTER TABLE performance_summary ADD COLUMN idle_days INTEGER;`)
+	return nil
 }
 
 // SavePerformanceReport persists the quantitative performance summary tear sheet to SQLite.
@@ -743,7 +748,7 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 			max_drawdown_peak_date, max_drawdown_trough_date, max_drawdown_days,
 			total_trades, winning_trades, losing_trades, win_rate, profit_factor,
 			avg_trade_return_pct, avg_win_amount, avg_loss_amount, payoff_ratio,
-			avg_holding_days, avg_mae, avg_mfe, total_commission_paid
+			avg_holding_days, avg_mae, avg_mfe, total_commission_paid, idle_days
 		) VALUES (
 			?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?,
@@ -753,9 +758,14 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 			?, ?, ?,
 			?, ?, ?, ?, ?,
 			?, ?, ?, ?,
-			?, ?, ?, ?
+			?, ?, ?, ?,
+			?
 		);
 	`
+	var idleDays interface{}
+	if report.IdleKnown {
+		idleDays = report.IdleDays
+	}
 	_, err := db.Exec(query,
 		strategyID, report.StartDate, report.EndDate, report.TotalTradingDays, report.TotalCalendarYears,
 		report.InitialCapital, report.FinalEquity, report.NetProfit, report.TotalReturnPct, report.CAGR,
@@ -766,6 +776,7 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 		report.TotalTrades, report.WinningTrades, report.LosingTrades, report.WinRate, report.ProfitFactor,
 		report.AvgTradeReturnPct, report.AvgWinAmount, report.AvgLossAmount, report.PayoffRatio,
 		report.AvgHoldingDays, report.AvgMAE, report.AvgMFE, report.TotalCommissionPaid,
+		idleDays,
 	)
 	return err
 }

@@ -3,13 +3,15 @@ package backtest
 import (
 	"flag"
 	"fmt"
-	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
@@ -210,6 +212,7 @@ func Run(conf Config) error {
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
 	streak_strategy.Register()
+	markov_strategy.Register()
 
 	if conf.Mode == "stale" {
 		if err := runStaleCommand(conf.OutDir, conf.Db, conf.Concurrency); err != nil {

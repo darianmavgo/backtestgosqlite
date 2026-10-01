@@ -36,18 +36,18 @@ func (s *TSLLDailyOneShareStrategy) MinHistoryBars() int { return 2 }
 
 func (s *TSLLDailyOneShareStrategy) DefaultConfig() StrategyConfig {
 	return StrategyConfig{
-		ID:                 s.ID(),
-		Name:               s.Name(),
-		Description:        s.Description(),
-		Benchmark:          "TSLL",
-		PositionSizing:     "fixed_shares",
-		FixedShares:        1,
-		AllocationPct:      1.0, // required by ValidateConfig; sizing is by FixedShares
-		TargetPct:          1.05,
-		TakeProfitPct:      0.05,
-		StopLossPct:        0.80,
-		HoldingWindow:      1,
-		PositionCap:        1, // the prior day's share is closed before the next entry
+		ID:             s.ID(),
+		Name:           s.Name(),
+		Description:    s.Description(),
+		Benchmark:      "TSLL",
+		PositionSizing: "fixed_shares",
+		FixedShares:    1,
+		AllocationPct:  1.0, // required by ValidateConfig; sizing is by FixedShares
+		TargetPct:      1.05,
+		TakeProfitPct:  0.05,
+		StopLossPct:    0.80,
+		HoldingWindow:  1,
+		PositionCap:    1, // the prior day's share is closed before the next entry
 		// TSLL (Direxion Daily TSLA Bull 1.5X) is a single-name leveraged
 		// product on one of the most volatile large-cap underlyings traded;
 		// even with solid ADV its quoted spread widens more than a

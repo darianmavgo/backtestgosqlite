@@ -74,7 +74,6 @@ type StackRequest struct {
 	Override ConfigOverride
 }
 
-
 // ExecuteStack runs existing strategies as a priority stack on one cash ledger.
 // No new pkg/strategy types are created — stacking is an engine/runner concern.
 func ExecuteStack(req StackRequest) SharedRunResult {
@@ -259,8 +258,8 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 		fmt.Printf("   Position Size:      %.0f%% of equity per position\n", res.AllocPct*100)
 	}
 	fmt.Printf("   Preempted Trades:   %d secondary positions liquidated to obey primary signals\n", res.PreemptedCount)
-	fmt.Printf("   Idle Cash:          avg %.1f%% of equity (fully flat %.1f%% of days, deployed %.1f%%)\n",
-		res.Idle.AvgCashPct*100, res.Idle.FullyIdlePct*100, res.Idle.AvgDeployedPct*100)
+	fmt.Printf("   Idle Cash:          avg %.1f%% of equity (%d idle days, fully flat %.1f%% of days, deployed %.1f%%)\n",
+		res.Idle.AvgCashPct*100, res.Idle.DaysFullyIdle, res.Idle.FullyIdlePct*100, res.Idle.AvgDeployedPct*100)
 	fmt.Printf("   Results Database:   %s\n", res.DbPath)
 	fmt.Printf("========================================================================================================================\n")
 

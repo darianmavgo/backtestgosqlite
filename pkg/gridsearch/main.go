@@ -29,14 +29,16 @@ package gridsearch
 import (
 	"flag"
 	"fmt"
-	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
-	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
+	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/charting"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -213,6 +215,7 @@ func Main() {
 func Run(conf Config) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
 	streak_strategy.Register()
+	markov_strategy.Register()
 
 	if conf.Subcommand == "stale" {
 		runStaleCommand(conf.GridsearchDb, conf.Db)
@@ -462,9 +465,9 @@ func printSweepReport(strat strategy.Strategy, outcome sweepOutcome) {
 
 	if outcome.BaselineRes != nil {
 		fmt.Println("📌 BAKED-IN STRATEGY BASELINE:")
-		fmt.Printf("   %-50s  Net Profit=+$%.2f  CAGR=%.2f%%  MaxDD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d\n\n",
+		fmt.Printf("   %-50s  Net Profit=+$%.2f  CAGR=%.2f%%  MaxDD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d  Idle=%s\n\n",
 			outcome.BaselineRes.Label, outcome.BaselineRes.Report.NetProfit, outcome.BaselineRes.Report.CAGR*100, outcome.BaselineRes.Report.MaxDrawdownPct*100,
-			outcome.BaselineRes.Report.CalmarRatio, outcome.BaselineRes.Report.WinRate*100, outcome.BaselineRes.Report.TotalTrades)
+			outcome.BaselineRes.Report.CalmarRatio, outcome.BaselineRes.Report.WinRate*100, outcome.BaselineRes.Report.TotalTrades, formatIdle(outcome.BaselineRes.Report))
 	}
 
 	fmt.Printf("⭐ TOP %d BY CALMAR RATIO (Risk-Adjusted):\n", len(outcome.TopCalmar))
@@ -474,8 +477,8 @@ func printSweepReport(strat strategy.Strategy, outcome sweepOutcome) {
 			diff := (r.Report.CalmarRatio - outcome.BaselineRes.Report.CalmarRatio) / outcome.BaselineRes.Report.CalmarRatio * 100.0
 			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
 		}
-		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d%s\n",
-			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.CalmarRatio, r.Report.WinRate*100, r.Report.TotalTrades, comp)
+		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  Calmar=%.2f  WR=%.1f%%  Trades=%d  Idle=%s%s\n",
+			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.CalmarRatio, r.Report.WinRate*100, r.Report.TotalTrades, formatIdle(r.Report), comp)
 	}
 
 	var baselineScore float64
@@ -490,8 +493,8 @@ func printSweepReport(strat strategy.Strategy, outcome sweepOutcome) {
 			diff := (score - baselineScore) / baselineScore * 100.0
 			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
 		}
-		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  DDdays=%d  Score=%.4f  Trades=%d%s\n",
-			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.MaxDrawdownDuration, score, r.Report.TotalTrades, comp)
+		fmt.Printf("  #%d  %-50s  CAGR=%.2f%%  DD=%.2f%%  DDdays=%d  Score=%.4f  Trades=%d  Idle=%s%s\n",
+			i+1, r.Label, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.MaxDrawdownDuration, score, r.Report.TotalTrades, formatIdle(r.Report), comp)
 	}
 
 	fmt.Printf("\n💰 TOP %d BY NET PROFIT:\n", len(outcome.TopProfit))
@@ -501,7 +504,7 @@ func printSweepReport(strat strategy.Strategy, outcome sweepOutcome) {
 			diff := (r.Report.NetProfit - outcome.BaselineRes.Report.NetProfit) / outcome.BaselineRes.Report.NetProfit * 100.0
 			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
 		}
-		fmt.Printf("  #%d  %-50s  Profit=+$%.2f  CAGR=%.2f%%%s\n", i+1, r.Label, r.Report.NetProfit, r.Report.CAGR*100, comp)
+		fmt.Printf("  #%d  %-50s  Profit=+$%.2f  CAGR=%.2f%%  Idle=%s%s\n", i+1, r.Label, r.Report.NetProfit, r.Report.CAGR*100, formatIdle(r.Report), comp)
 	}
 }
 

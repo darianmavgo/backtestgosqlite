@@ -77,6 +77,26 @@ CREATE TABLE IF NOT EXISTS streak_strategy (
 	win_rate         REAL,
 	total_trades     INTEGER
 );
+-- One runnable markov strategy per row, similar to streak_strategy.
+CREATE TABLE IF NOT EXISTS markov_strategy (
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	signal_symbol    TEXT NOT NULL,
+	trade_symbol     TEXT NOT NULL,
+	direction        TEXT NOT NULL,
+	target_state     TEXT NOT NULL,
+	hold_days        INTEGER NOT NULL,
+	take_profit_pct  REAL NOT NULL,
+	stop_loss_pct    REAL NOT NULL,
+	allocation_pct   REAL NOT NULL,
+	cash_yield       REAL NOT NULL,
+	slippage_pct     REAL NOT NULL,
+	next_day_limit   INTEGER NOT NULL,
+	source_strategy  TEXT,
+	source_label     TEXT,
+	win_rate         REAL,
+	total_trades     INTEGER
+);
 `
 
 // Open opens (creating if needed) the reference DB and ensures its schema.
@@ -241,6 +261,84 @@ func UpsertStreakStrategies(db *sqlx.DB, rows []StreakStrategy) error {
 			take_profit_pct = excluded.take_profit_pct,
 			stop_loss_pct = excluded.stop_loss_pct,
 			regime = excluded.regime,
+			allocation_pct = excluded.allocation_pct,
+			cash_yield = excluded.cash_yield,
+			slippage_pct = excluded.slippage_pct,
+			next_day_limit = excluded.next_day_limit,
+			source_strategy = excluded.source_strategy,
+			source_label = excluded.source_label,
+			win_rate = excluded.win_rate,
+			total_trades = excluded.total_trades`
+	for _, r := range rows {
+		if _, err := tx.NamedExec(q, r); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// MarkovStrategy is one row of markov_strategy.
+type MarkovStrategy struct {
+	ID             string   `db:"id"`
+	Name           string   `db:"name"`
+	SignalSymbol   string   `db:"signal_symbol"`
+	TradeSymbol    string   `db:"trade_symbol"`
+	Direction      string   `db:"direction"`
+	TargetState    string   `db:"target_state"`
+	HoldDays       int      `db:"hold_days"`
+	TakeProfitPct  float64  `db:"take_profit_pct"`
+	StopLossPct    float64  `db:"stop_loss_pct"`
+	AllocationPct  float64  `db:"allocation_pct"`
+	CashYield      float64  `db:"cash_yield"`
+	SlippagePct    float64  `db:"slippage_pct"`
+	NextDayLimit   int      `db:"next_day_limit"`
+	SourceStrategy string   `db:"source_strategy"`
+	SourceLabel    string   `db:"source_label"`
+	WinRate        *float64 `db:"win_rate"`
+	TotalTrades    *int     `db:"total_trades"`
+}
+
+// MarkovStrategies returns every markov_strategy row, ordered by id.
+func MarkovStrategies(db *sqlx.DB) ([]MarkovStrategy, error) {
+	var out []MarkovStrategy
+	err := db.Select(&out, `
+		SELECT id, name, signal_symbol, trade_symbol, direction, target_state, hold_days,
+		       take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
+		       slippage_pct, next_day_limit,
+		       COALESCE(source_strategy, '') AS source_strategy,
+		       COALESCE(source_label, '') AS source_label,
+		       win_rate, total_trades
+		FROM markov_strategy
+		ORDER BY id`)
+	return out, err
+}
+
+// UpsertMarkovStrategies inserts or replaces each row by id.
+func UpsertMarkovStrategies(db *sqlx.DB, rows []MarkovStrategy) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	const q = `
+		INSERT INTO markov_strategy (
+			id, name, signal_symbol, trade_symbol, direction, target_state, hold_days,
+			take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
+			slippage_pct, next_day_limit, source_strategy, source_label, win_rate, total_trades
+		) VALUES (
+			:id, :name, :signal_symbol, :trade_symbol, :direction, :target_state, :hold_days,
+			:take_profit_pct, :stop_loss_pct, :allocation_pct, :cash_yield,
+			:slippage_pct, :next_day_limit, :source_strategy, :source_label, :win_rate, :total_trades
+		)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			signal_symbol = excluded.signal_symbol,
+			trade_symbol = excluded.trade_symbol,
+			direction = excluded.direction,
+			target_state = excluded.target_state,
+			hold_days = excluded.hold_days,
+			take_profit_pct = excluded.take_profit_pct,
+			stop_loss_pct = excluded.stop_loss_pct,
 			allocation_pct = excluded.allocation_pct,
 			cash_yield = excluded.cash_yield,
 			slippage_pct = excluded.slippage_pct,

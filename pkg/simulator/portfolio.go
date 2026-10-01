@@ -193,7 +193,7 @@ func (s *PortfolioSimulator) Run(
 			}
 
 			// D. Profit-Target Trigger (High >= TargetPrice)
-			if bar.High >= pos.TargetPrice {
+			if pos.TargetPrice > 0 && bar.High >= pos.TargetPrice {
 				exitPrice := pos.TargetPrice * (1.0 - s.Config.SlippagePct)
 				if bar.Open > pos.TargetPrice {
 					exitPrice = bar.Open * (1.0 - s.Config.SlippagePct)

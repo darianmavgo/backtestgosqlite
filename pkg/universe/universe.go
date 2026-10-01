@@ -29,12 +29,12 @@ var CutoffUnix = CutoffDate.Unix()
 type SymbolRecord struct {
 	Symbol         string `db:"symbol" json:"symbol"`
 	Name           string `db:"name" json:"name"`
-	AssetType      string `db:"asset_type" json:"asset_type"`           // ETF, CS (Common Stock), ADRC, etc.
-	IsETF          bool   `db:"is_etf" json:"is_etf"`                   // 1 if ETF, 0 if stock/other
-	Leverage       string `db:"leverage" json:"leverage"`               // "none", "1.5x", "2x", "3x"
-	Direction      string `db:"direction" json:"direction"`             // "long", "inverse"
-	Category       string `db:"category" json:"category"`               // broad_market_sp500, technology, semiconductors, etc.
-	Exchange       string `db:"exchange" json:"exchange"`               // XNAS, XNYS, ARCX, BATS, etc.
+	AssetType      string `db:"asset_type" json:"asset_type"`             // ETF, CS (Common Stock), ADRC, etc.
+	IsETF          bool   `db:"is_etf" json:"is_etf"`                     // 1 if ETF, 0 if stock/other
+	Leverage       string `db:"leverage" json:"leverage"`                 // "none", "1.5x", "2x", "3x"
+	Direction      string `db:"direction" json:"direction"`               // "long", "inverse"
+	Category       string `db:"category" json:"category"`                 // broad_market_sp500, technology, semiconductors, etc.
+	Exchange       string `db:"exchange" json:"exchange"`                 // XNAS, XNYS, ARCX, BATS, etc.
 	FirstTradeDate string `db:"first_trade_date" json:"first_trade_date"` // YYYY-MM-DD
 	Active         bool   `db:"active" json:"active"`
 	Confirmed2021  bool   `db:"confirmed_2021" json:"confirmed_2021"`
@@ -88,14 +88,14 @@ type RawTicker struct {
 
 // Config controls universe discovery, verification, and persistence.
 type Config struct {
-	DBPath      string
-	PolygonKey  string
-	Workers     int
-	Limit       int
-	MaxChecks   int
-	StocksOnly  bool
-	ETFsOnly    bool
-	Out         io.Writer
+	DBPath     string
+	PolygonKey string
+	Workers    int
+	Limit      int
+	MaxChecks  int
+	StocksOnly bool
+	ETFsOnly   bool
+	Out        io.Writer
 }
 
 // DefaultConfig provides sensible defaults.

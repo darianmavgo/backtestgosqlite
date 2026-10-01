@@ -45,7 +45,7 @@ func (s *VooGldUtenStudy) SetDatabases(marketDBPath, resultsDBPath string) {
 
 func (s *VooGldUtenStudy) Run() error {
 	log.Printf("Running study: %s", s.name)
-	
+
 	if err := os.MkdirAll(filepath.Dir(s.resultsDBPath), 0755); err != nil {
 		return fmt.Errorf("failed to create output dir: %w", err)
 	}
@@ -62,7 +62,7 @@ func (s *VooGldUtenStudy) Run() error {
 	}
 
 	log.Println("Pivoting data into prototyping sandbox table...")
-	
+
 	// Create prototyping table by aligning minute data for VOO, GLD, UTEN
 	// We assume we want data strictly in March and April 2025
 	pivotSQL := `
@@ -100,7 +100,7 @@ func (s *VooGldUtenStudy) Run() error {
 	if _, err := db.Exec(pivotSQL); err != nil {
 		return fmt.Errorf("failed to create prototyping table: %w", err)
 	}
-	
+
 	var count int
 	_ = db.Get(&count, "SELECT COUNT(*) FROM prototyping;")
 	log.Printf("Successfully created prototyping sandbox with %d aligned 1-minute rows.", count)

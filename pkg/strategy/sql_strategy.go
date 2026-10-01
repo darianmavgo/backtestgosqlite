@@ -86,6 +86,8 @@ func RegimePredicate(signalSymbol, regime string) (string, bool) {
 		return "v.sma200 <= 0 OR v.close >= v.sma200", true
 	case regime == sym+"<SMA200":
 		return "v.sma200 <= 0 OR v.close < v.sma200", true
+	case regime == "bull" || regime == "bear" || regime == "sideways":
+		return "1=1", true // Predicate is handled externally by markov generator
 	default:
 		return "", false
 	}

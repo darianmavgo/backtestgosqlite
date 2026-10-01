@@ -45,4 +45,18 @@ func TestCalculatePerformanceMetrics(t *testing.T) {
 	if report.AvgMAE > -0.019 || report.AvgMAE < -0.021 {
 		t.Errorf("expected avg MAE ~ -0.02, got %f", report.AvgMAE)
 	}
+	if report.IdleKnown {
+		t.Error("equity points with no cash or positions must not report idle days")
+	}
+
+	withCash := []models.DailyEquityPoint{
+		{Date: "2023-01-01", Cash: 10000, PositionsValue: 0, TotalEquity: 10000, OpenPositions: 0},
+		{Date: "2023-01-02", Cash: 4000, PositionsValue: 6500, TotalEquity: 10500, OpenPositions: 1},
+		{Date: "2023-01-03", Cash: 0, PositionsValue: 11500, TotalEquity: 11500, OpenPositions: 1},
+		{Date: "2023-01-04", Cash: 11300, PositionsValue: 0, TotalEquity: 11300, OpenPositions: 0},
+	}
+	idleReport := CalculatePerformanceMetrics(initialCapital, trades, withCash)
+	if !idleReport.IdleKnown || idleReport.IdleDays != 2 {
+		t.Errorf("idle days = %d known %v, want 2 known", idleReport.IdleDays, idleReport.IdleKnown)
+	}
 }

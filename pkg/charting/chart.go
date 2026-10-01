@@ -15,6 +15,19 @@ import (
 //go:embed chart_template.html
 var defaultHTMLTemplate string
 
+func appendIdleKPI(kpis []KPICard, report models.PerformanceReport) []KPICard {
+	if !report.IdleKnown || report.TotalTradingDays == 0 {
+		return kpis
+	}
+	pct := float64(report.IdleDays) / float64(report.TotalTradingDays) * 100
+	return append(kpis, KPICard{
+		Label: "Idle Days",
+		Value: fmt.Sprintf("%d", report.IdleDays),
+		Sub:   fmt.Sprintf("%.1f%% of %d sessions with no open position", pct, report.TotalTradingDays),
+		Color: "#94a3b8",
+	})
+}
+
 // Series represents one equity/drawdown line on the charts.
 type Series struct {
 	Label       string    `json:"label"`
@@ -119,6 +132,7 @@ func FromPerformanceReport(
 			Color: "#f59e0b",
 		},
 	}
+	kpis = appendIdleKPI(kpis, report)
 
 	// Build a minimal benchmark overlay if bars provided.
 	chartData := ChartData{Dates: []string{}}
@@ -178,6 +192,7 @@ func FromEquityCurve(
 		{Label: "Max Drawdown", Value: fmt.Sprintf("%.2f%%", report.MaxDrawdownPct*100), Sub: fmt.Sprintf("Calmar Ratio: %.2f", report.CalmarRatio), Color: "#38bdf8"},
 		{Label: "Win Rate & Trades", Value: fmt.Sprintf("%.1f%%", report.WinRate*100), Sub: fmt.Sprintf("%d Trades (%dW / %dL) | %.1fd Avg Hold", report.TotalTrades, report.WinningTrades, report.LosingTrades, report.AvgHoldingDays), Color: "#f59e0b"},
 	}
+	kpis = appendIdleKPI(kpis, report)
 
 	dates := make([]string, len(curve))
 	stratEq := make([]float64, len(curve))
@@ -302,9 +317,13 @@ func FromMultiReports(title, subtitle string, results []MultiResult, benchmarkBa
 
 	jsonData, _ := json.Marshal(ChartData{Dates: dates, Series: seriesList})
 
-	tableHeaders := []string{"Rank", "Configuration", "Ending Capital", "Net Profit", "CAGR", "Max DD", "Calmar", "Win Rate", "Trades"}
+	tableHeaders := []string{"Rank", "Configuration", "Ending Capital", "Net Profit", "CAGR", "Max DD", "Calmar", "Win Rate", "Trades", "Idle Days"}
 	tableRows := make([][]string, len(results))
 	for i, r := range results {
+		idle := "—"
+		if r.Report.IdleKnown {
+			idle = fmt.Sprintf("%d", r.Report.IdleDays)
+		}
 		tableRows[i] = []string{
 			fmt.Sprintf("#%d", i+1),
 			r.Label,
@@ -315,6 +334,7 @@ func FromMultiReports(title, subtitle string, results []MultiResult, benchmarkBa
 			fmt.Sprintf("⭐ %.2f", r.Report.CalmarRatio),
 			fmt.Sprintf("%.1f%%", r.Report.WinRate*100),
 			fmt.Sprintf("%d", r.Report.TotalTrades),
+			idle,
 		}
 	}
 

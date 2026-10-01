@@ -11,10 +11,10 @@ import (
 
 func TestClassifyTicker(t *testing.T) {
 	tests := []struct {
-		sym         string
-		isLev       bool
-		factor      string
-		category    string
+		sym      string
+		isLev    bool
+		factor   string
+		category string
 	}{
 		{"SOXL", true, "3x Bull", "Leveraged ETF"},
 		{"TECL", true, "3x Bull", "Leveraged ETF"},

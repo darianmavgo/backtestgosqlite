@@ -1,0 +1,34 @@
+INSERT INTO markov_model_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
+SELECT
+    coalesce(t.idx, t.rowid, 0) AS idx,
+    '__TRADE_SYMBOL__' AS symbol,
+    p.Date,
+    t.open,
+    t.high,
+    t.low,
+    t.close,
+    t.volume,
+    t.close AS buylimit,
+    1 AS entry,
+    '__DIRECTION__' AS direction,
+    CASE 
+        WHEN p.current_state = 1 THEN 'bull'
+        WHEN p.current_state = -1 THEN 'bear'
+        ELSE 'sideways'
+    END AS regime,
+    __HOLD_DAYS__ AS hold_days_override,
+    t.close * __TAKE_PROFIT_MULT__ AS take_profit,
+    t.close * __STOP_LOSS_MULT__ AS stop_loss
+FROM markov_model_predictions p
+JOIN market.backtest_start t ON p.Date = substr(t.Date, 1, 10) AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
+WHERE p.symbol = '__SYMBOL__' 
+  AND CASE 
+        WHEN p.current_state = 1 THEN 'bull'
+        WHEN p.current_state = -1 THEN 'bear'
+        ELSE 'sideways'
+      END = lower('__REGIME_LABEL__')
+  AND (
+        (lower('__REGIME_LABEL__') = 'bull' AND p.signal > 0.10) OR
+        (lower('__REGIME_LABEL__') = 'bear' AND p.signal < -0.10) OR
+        (lower('__REGIME_LABEL__') = 'sideways' AND abs(p.signal) <= 0.10)
+      );

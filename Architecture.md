@@ -167,7 +167,7 @@ Written by `pkg/storage` into each strategy or shared DB:
 | `signals` | pre-simulator signals: strategy, symbol, date, order type, direction, entry, take-profit, stop, regime, metadata JSON |
 | `trades` | fills: entry/exit, reason, shares, PnL, hold, MAE, MFE, commission |
 | `equity_curve` | `date`, `total_equity`, `cash`, `invested`, `drawdown_pct` |
-| `performance_summary` | one row per strategy id, the metrics the scoreboard compiles |
+| `performance_summary` | one row per strategy id, the metrics the scoreboard compiles. `idle_days` is sessions with no open position (`equity_curve.invested` null or 0). Older rows leave it NULL and scoreboard counts the curve |
 | `return_breakdown` | price vs dividend split for total-return runs |
 | `run_metrics` | extra labeled metrics (covered-call notes and similar) |
 
@@ -178,7 +178,7 @@ Written by `pkg/storage` into each strategy or shared DB:
 | Table | What |
 |---|---|
 | `gridsearch_runs` | one row per strategy: status `running` / `done` / `failed`, best Calmar and resilience, `data_max_date` for staleness |
-| `gridsearch_results` | one row per config: label, baseline flag, CAGR, drawdown, Calmar, resilience, trades, win rate, and (added later) `symbol`, `signal_days`, `hold_days`, `take_profit_pct`, `stop_loss_pct`, `regime`, `signal_symbol`, `allocation_pct` |
+| `gridsearch_results` | one row per config: label, baseline flag, CAGR, drawdown, Calmar, resilience, trades, win rate, idle days, and (added later) `symbol`, `signal_days`, `hold_days`, `take_profit_pct`, `stop_loss_pct`, `regime`, `signal_symbol`, `allocation_pct`. Older sweeps leave `idle_days` NULL |
 
 `running` and `failed` are retried. `done` is skipped unless `-force`. `backtest optimized` reads the best row and applies it, including `DeclineDays` when the strategy implements `DeclineDaysConfigurable`. Many older rows have NULL `hold_days`; the label is `SYM/sigDaysd/holdd/+TP%-SL%/regime` or `SYM/Hold-Nd/TP+x%/SL-y%`. Older rows also have NULL `signal_symbol` and `allocation_pct`. `gridsearch promote` fills the watch symbol from the parent strategy's `ParameterSpace` when the column is NULL.
 

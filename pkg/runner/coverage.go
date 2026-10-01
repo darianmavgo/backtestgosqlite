@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/jmoiron/sqlx"
 )
 
 // This file is the single shared implementation of "has this strategy already
@@ -125,6 +127,7 @@ func ValidatePerformanceSummary(path string) ([]PerformanceRow, error) {
 			return nil, fmt.Errorf("malformed performance_summary row: %w", err)
 		}
 		r.Report = rep
+		attachIdleDays(db, r.StrategyID, &r.Report)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -134,6 +137,53 @@ func ValidatePerformanceSummary(path string) ([]PerformanceRow, error) {
 		return nil, fmt.Errorf("performance_summary table is empty")
 	}
 	return out, nil
+}
+
+// attachIdleDays fills IdleDays from performance_summary.idle_days when that
+// column is populated, and otherwise from equity_curve. An idle day is a
+// session whose invested value is null or zero. A row with no curve stays
+// unknown so a sleeve summary is not reported as fully idle.
+func attachIdleDays(db *sqlx.DB, strategyID string, rep *models.PerformanceReport) {
+	if columnExists(db, "performance_summary", "idle_days") {
+		var n sql.NullInt64
+		err := db.QueryRow(`SELECT idle_days FROM performance_summary WHERE strategy_id = ?`, strategyID).Scan(&n)
+		if err == nil && n.Valid {
+			rep.IdleDays = int(n.Int64)
+			rep.IdleKnown = true
+			return
+		}
+	}
+	var sessions, idle int
+	err := db.QueryRow(`
+		SELECT COUNT(*),
+			COALESCE(SUM(CASE WHEN invested IS NULL OR invested = 0 THEN 1 ELSE 0 END), 0)
+		FROM equity_curve WHERE strategy_id = ?`, strategyID).Scan(&sessions, &idle)
+	if err != nil || sessions == 0 {
+		return
+	}
+	rep.IdleDays = idle
+	rep.IdleKnown = true
+}
+
+func columnExists(db *sqlx.DB, table, column string) bool {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // fallbackNote describes what happens next when a candidate fails validation.

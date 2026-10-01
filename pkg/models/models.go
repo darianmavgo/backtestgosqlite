@@ -194,6 +194,11 @@ type PerformanceReport struct {
 	AvgMAE                  float64 `json:"avg_mae"`
 	AvgMFE                  float64 `json:"avg_mfe"`
 	TotalCommissionPaid     float64 `json:"total_commission_paid"`
+	// IdleDays is the number of sessions with no open position. IdleKnown is
+	// false when the equity curve did not record cash or positions (a sleeve
+	// curve built from trade PnL only), so a zero is not reported as fact.
+	IdleDays  int  `json:"idle_days,omitempty"`
+	IdleKnown bool `json:"idle_known,omitempty"`
 }
 
 // DailySnapshot records a single day's mark-to-market portfolio state for equity curves and drawdown charts.

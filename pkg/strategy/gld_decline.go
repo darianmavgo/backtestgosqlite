@@ -79,17 +79,17 @@ func (s *GLDDeclineStrategy) DefaultConfig() StrategyConfig {
 		holdingWindow = 12
 	}
 	return StrategyConfig{
-		ID:                 s.ID(),
-		Name:               s.Name(),
-		Description:        s.Description(),
-		Benchmark:          "GLD",
-		AllocationPct:      0.65,
-		TargetPct:          1.0 + takeProfitPct, // legacy-multiplier mirror of TakeProfitPct
-		TakeProfitPct:      takeProfitPct,
-		StopLossPct:        stopLossPct,
-		HoldingWindow:      holdingWindow,
-		PositionCap:        1,     // One position at a time
-		CashYieldAnnual:    0.045, // 4.5% idle cash APY
+		ID:              s.ID(),
+		Name:            s.Name(),
+		Description:     s.Description(),
+		Benchmark:       "GLD",
+		AllocationPct:   0.65,
+		TargetPct:       1.0 + takeProfitPct, // legacy-multiplier mirror of TakeProfitPct
+		TakeProfitPct:   takeProfitPct,
+		StopLossPct:     stopLossPct,
+		HoldingWindow:   holdingWindow,
+		PositionCap:     1,     // One position at a time
+		CashYieldAnnual: 0.045, // 4.5% idle cash APY
 		// GLD is one of the most liquid ETFs traded (heavy ADV, sub-penny-wide
 		// quotes) -- same 5bp slippage floor used for the other liquid,
 		// non-leveraged ETFs in this package. Commission matches Schwab's
