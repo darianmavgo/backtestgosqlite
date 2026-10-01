@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/jmoiron/sqlx"
@@ -26,9 +27,9 @@ import (
 var strategyFlag = flag.String("strategy", "", "comma-separated strategy ids to check; empty checks every registered strategy")
 
 // TestUnfilledBuyLimitSlippage confirms slippage on the orders a strategy
-// actually generated. Signals come from the latest reports/<id>[_N].db for
-// each registered strategy (or -strategy). Prices come from
-// data/market_history.db. Nothing is mocked.
+// actually generated. Signals come from the latest <id>[_N].db in the app
+// reports directory for each registered strategy (or -strategy). Prices
+// come from the app market database. Nothing is mocked.
 //
 // Next-day limit orders fill on the following session only when that
 // session trades at or below the limit: at the limit, or at the open when
@@ -42,12 +43,16 @@ func TestUnfilledBuyLimitSlippage(t *testing.T) {
 	t.Setenv("BACKTEST_SLIPPAGE_CHECK", "1")
 
 	root := moduleRoot(t)
-	marketPath := filepath.Join(root, "data", "market_history.db")
-	reportsDir := filepath.Join(root, "reports")
+	marketPath := appenv.MarketDB()
+	if _, err := os.Stat(marketPath); err != nil {
+		marketPath = filepath.Join(root, "data", "market_history.db")
+	}
+	reportsDir := appenv.Reports()
 	if _, err := os.Stat(marketPath); err != nil {
 		t.Skipf("market db not found at %s", marketPath)
 	}
-	if _, err := os.Stat(reportsDir); err != nil {
+	info, err := os.Stat(reportsDir)
+	if err != nil || !info.IsDir() {
 		t.Skipf("reports dir not found at %s", reportsDir)
 	}
 	strategy.AutoRegisterSQLStrategies(root, marketPath)

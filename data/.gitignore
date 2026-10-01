@@ -4,8 +4,10 @@
 *.sqlite-shm
 *.sqlite-wal
 
+market_history.zip
+
 # BEGIN ignore-over-50MB
 # Files larger than 52428800 bytes. Rewritten by ignore_over50MB.sh.
 /market_history.db
+/market_history.zip
 # END ignore-over-50MB
-market_history.zip
