@@ -279,6 +279,14 @@ func ScanAndValidate(outDir string, concurrency int) (byStrategy map[string]Comp
 					usedFallback++
 				}
 				for _, row := range rows {
+					// A shared-account file stores one combined row plus a
+					// sleeve row per member, under the members' own ids.
+					// Only the row that matches this file's name is that
+					// strategy's result. Sleeve rows must not replace the
+					// standalone reports/<id>.db.
+					if row.StrategyID != base {
+						continue
+					}
 					byStrategy[row.StrategyID] = CompiledResult{
 						StrategyID: row.StrategyID,
 						Report:     row.Report,

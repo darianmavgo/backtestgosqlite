@@ -56,6 +56,10 @@ type Signal struct {
 	// hold periods per leg (e.g. long=8 days, short=2 days).
 	HoldDaysOverride int `db:"hold_days_override" json:"hold_days_override,omitempty"`
 
+	// AllocationPctOverride, when > 0, overrides the strategy-level AllocationPct
+	// for this specific signal based on probability or conviction.
+	AllocationPctOverride float64 `db:"allocation_pct_override" json:"allocation_pct_override,omitempty"`
+
 	// StrategyID identifies the strategy that generated this signal (e.g. "sig-voo-buy-tecl", "bb-capitulation").
 	StrategyID string `db:"strategy_id" json:"strategy_id,omitempty"`
 
