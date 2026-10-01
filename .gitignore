@@ -18,6 +18,8 @@ gae/go/listfiles/listfiles
 coverage/
 
 # Data and SQLite databases
+# Data is separate repo now.
+data/
 data/*.db
 data/*.sqlite
 data/*.db-shm

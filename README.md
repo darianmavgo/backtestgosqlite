@@ -202,6 +202,8 @@ Copy winning sweep rows into `refdata/settings.db` table `streak_strategy`. Each
 
 Defaults for promote are win rate `0.6`, `30` trades, and `-top 5`. A sweep's own `-min-trades` default stays `5`. `-gridsearch-db` chooses the sweep file. Rows that share an id keep the higher win rate. A NULL `signal_symbol` (sweeps from before that column existed) uses the parent strategy's watch symbol.
 
+The walkthrough for writing a row, backtesting it, sweeping it, and ranking it is [docs/strategies/streak_strategy.md](docs/strategies/streak_strategy.md).
+
 ---
 
 ## scoreboard
