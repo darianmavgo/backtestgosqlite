@@ -1,8 +1,8 @@
 package runner
 
 import (
-	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"path/filepath"
@@ -154,6 +154,9 @@ type StackEvalOptions struct {
 	// the pairwise ranking. 1 = pairwise only; default 3.
 	StackDepth  int
 	PersistBest bool
+	// Override is applied to the primary and every overlay. AllocPct 0.10
+	// sizes each position at 10% of equity for the ranking and the final stack.
+	Override ConfigOverride
 }
 
 // ExecuteStackEval runs the primary standalone, then each candidate as a
@@ -196,6 +199,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 		Persist:      false,
 		Signals:      primSignals,
 		CalcDir:      calcDir,
+		Override:     opts.Override,
 	})
 	res.Baseline = baseline
 	baselineEquity := baseline.CombinedReport.FinalEquity
@@ -267,6 +271,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 				Persist:      opts.PersistBest,
 				Signals:      merged,
 				CalcDir:      calcDir,
+				Override:     opts.Override,
 			})
 			res.BestStack = &best
 			res.BestStackIDs = ids
@@ -303,6 +308,7 @@ func evaluateOverlay(
 		Persist:      false,
 		Signals:      merged,
 		CalcDir:      calcDir,
+		Override:     opts.Override,
 	})
 	if run.Err != nil {
 		eval.Err = run.Err

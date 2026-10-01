@@ -26,6 +26,76 @@ func (m *evalMock) GenerateSignals(map[string][]models.Bar) []models.Signal {
 	return m.sigs
 }
 
+func TestExecuteStackAllocOverrideSizesTenPercent(t *testing.T) {
+	const price = 100.0
+	bar := func(sym string) []models.Bar {
+		return []models.Bar{
+			{Date: "2026-01-02", Open: price, High: price, Low: price, Close: price},
+			{Date: "2026-01-05", Open: price, High: price, Low: price, Close: price},
+		}
+	}
+	mk := func(id, sym string, priority int) *evalMock {
+		return &evalMock{
+			id: id,
+			cfg: strategy.StrategyConfig{
+				ID: id, AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
+				PositionSizing: "fixed_pct",
+			},
+			sigs: []models.Signal{{
+				Date: "2026-01-02", Symbol: sym, Close: price, BuyLimit: price,
+				StrategyID: id, Priority: priority, OrderType: "limit",
+			}},
+		}
+	}
+	primary := mk("primary", "AAA", 0)
+	secondary := mk("secondary", "BBB", 1)
+	res := ExecuteStack(StackRequest{
+		Primary:      primary,
+		Secondaries:  []strategy.Strategy{secondary},
+		BarsBySymbol: map[string][]models.Bar{"AAA": bar("AAA"), "BBB": bar("BBB")},
+		SortedDates:  []string{"2026-01-02", "2026-01-05"},
+		Capital:      100000,
+		Persist:      false,
+		Signals:      append(append([]models.Signal{}, primary.sigs...), secondary.sigs...),
+		Override:     ConfigOverride{AllocPct: 0.10},
+	})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if res.AllocPct != 0.10 {
+		t.Errorf("AllocPct = %v, want 0.10", res.AllocPct)
+	}
+	if res.PreemptedCount != 0 {
+		t.Errorf("preempted %d trades; 10%% slots on different symbols should both fit", res.PreemptedCount)
+	}
+	if len(res.Trades) != 2 {
+		t.Fatalf("trades = %d, want 2", len(res.Trades))
+	}
+	for _, tr := range res.Trades {
+		if tr.Shares != 100 {
+			t.Errorf("%s shares = %d, want 100 (10%% of $100k at $100), default alloc was 65%%", tr.StrategyID, tr.Shares)
+		}
+	}
+}
+
+func TestBuildConfigAllocForcesFixedPct(t *testing.T) {
+	m := &evalMock{
+		id: "one-share",
+		cfg: strategy.StrategyConfig{
+			ID: "one-share", AllocationPct: 1, PositionSizing: "fixed_shares",
+			FixedShares: 1, PositionCap: 1, HoldingWindow: 1,
+		},
+	}
+	over := ConfigOverride{AllocPct: 0.10}.Apply(m.DefaultConfig())
+	if over.AllocationPct != 0.10 || over.PositionSizing != "fixed_pct" {
+		t.Fatalf("override = %+v, want 10%% fixed_pct", over)
+	}
+	kept := ConfigOverride{}.Apply(m.DefaultConfig())
+	if kept.AllocationPct != 1 || kept.PositionSizing != "fixed_shares" {
+		t.Fatalf("zero override changed config: %+v", kept)
+	}
+}
+
 func TestOverlayCandidates_SkipsPrimarySQLAndSiblings(t *testing.T) {
 	primary, ok := strategy.Get("sig-voo-buy-tecl")
 	if !ok {

@@ -1,6 +1,7 @@
 package simulator
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -139,6 +140,68 @@ func TestSharedAccountPreemption(t *testing.T) {
 	}
 
 	t.Logf("Combined Total Return: %.2f%%", report.TotalReturnPct*100)
+}
+
+func TestSharedAccountTenPercentBookFillsEverySlot(t *testing.T) {
+	const (
+		n       = 10
+		capital = 100000.0
+		price   = 100.0
+	)
+	entries := make([]StrategyPriorityEntry, n)
+	bars := map[string][]models.Bar{}
+	var signals []models.Signal
+	dates := []string{"2026-01-02", "2026-01-05"}
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("slot-%d", i)
+		sym := fmt.Sprintf("S%02d", i)
+		cfg := strategy.StrategyConfig{
+			ID:                 id,
+			AllocationPct:      0.10,
+			PositionCap:        1,
+			HoldingWindow:      20,
+			PositionSizing:     "fixed_pct",
+			SlippagePct:        0.0005,
+			CommissionPerShare: 0.0001,
+		}
+		entries[i] = StrategyPriorityEntry{
+			Strategy: &mockStrategy{id: id, name: id, cfg: cfg},
+			Priority: i,
+			Config:   cfg,
+		}
+		bars[sym] = []models.Bar{
+			{Date: dates[0], Open: price, High: price, Low: price, Close: price},
+			{Date: dates[1], Open: price, High: price, Low: price, Close: price},
+		}
+		signals = append(signals, models.Signal{
+			Date: dates[0], Symbol: sym, Close: price, BuyLimit: price,
+			StrategyID: id, Priority: i, OrderType: "limit",
+		})
+	}
+
+	sim := NewSharedAccountSimulator(entries, capital)
+	_, _, trades, curve := sim.Run(signals, bars, dates)
+
+	if sim.PreemptedTradeCount != 0 {
+		t.Errorf("PreemptedTradeCount = %d, want 0; a 10%% primary must not evict other 10%% slots while cash remains", sim.PreemptedTradeCount)
+	}
+	if len(trades) != n {
+		t.Fatalf("filled %d positions, want %d", len(trades), n)
+	}
+	if len(curve) > 0 && curve[0].OpenPositions != n {
+		t.Errorf("day-1 open positions = %d, want %d", curve[0].OpenPositions, n)
+	}
+	var invested float64
+	for _, tr := range trades {
+		invested += tr.InvestedCapital
+		pct := tr.InvestedCapital / capital
+		if pct < 0.09 || pct > 0.101 {
+			t.Errorf("%s invested $%.2f (%.2f%% of equity), want about 10%%", tr.Symbol, tr.InvestedCapital, pct*100)
+		}
+	}
+	if invested > capital {
+		t.Errorf("total invested $%.2f exceeds capital $%.2f", invested, capital)
+	}
 }
 
 func TestSharedAccountSecondaryDoesNotPreemptTertiary(t *testing.T) {

@@ -326,6 +326,9 @@ func (s *SharedAccountSimulator) Run(
 					}
 				} else {
 					// Subordinates never preempt. They trade leftover cash only.
+					// A full 10% slot can miss by a few cents of commission;
+					// shrink to the shares cash can afford instead of skipping
+					// the position.
 					shares = sizer.CalculateShares(s.Cash, totalEquity, entryPrice, cfg)
 					if shares <= 0 {
 						continue
@@ -334,7 +337,16 @@ func (s *SharedAccountSimulator) Run(
 					commission := float64(shares) * cfg.CommissionPerShare
 					requiredCapital = cost + commission
 					if requiredCapital > s.Cash {
-						continue
+						shares = int(s.Cash / (entryPrice + cfg.CommissionPerShare))
+						if shares <= 0 {
+							continue
+						}
+						cost = float64(shares) * entryPrice
+						commission = float64(shares) * cfg.CommissionPerShare
+						requiredCapital = cost + commission
+						if requiredCapital > s.Cash {
+							continue
+						}
 					}
 				}
 

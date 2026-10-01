@@ -23,6 +23,7 @@ func runStackEvalCommand(
 	autoDownload bool,
 	downloadYears int,
 	persistBest bool,
+	override runner.ConfigOverride,
 ) error {
 	if primaryID == "" {
 		return fmt.Errorf("stack-eval requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack-eval -primary sig-voo-buy-tecl")
@@ -70,6 +71,9 @@ func runStackEvalCommand(
 	}
 
 	fmt.Printf("Evaluating %d overlay candidates on idle cash of %s...\n", len(cands), primary.ID())
+	if override.AllocPct > 0 {
+		fmt.Printf("Allocation: %.0f%% of equity per position\n", override.AllocPct*100)
+	}
 	for _, c := range cands {
 		fmt.Printf("  • %s\n", c.ID())
 	}
@@ -85,6 +89,7 @@ func runStackEvalCommand(
 		Concurrency:  concurrency,
 		StackDepth:   stackDepth,
 		PersistBest:  persistBest,
+		Override:     override,
 	})
 	runner.PrintStackEvalTearSheet(result)
 

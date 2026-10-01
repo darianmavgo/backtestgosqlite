@@ -1,8 +1,8 @@
 package runner
 
 import (
-	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,7 +28,10 @@ type SharedRunResult struct {
 	DbPath             string
 	PreemptedCount     int
 	Idle               simulator.IdleStats
-	Err                error
+	// AllocPct is the per-position equity fraction applied to every member.
+	// 0 means each strategy kept its own DefaultConfig allocation.
+	AllocPct float64
+	Err      error
 }
 
 // SharedAccountID builds the combined-portfolio strategy_id used to persist and
@@ -66,6 +69,9 @@ type StackRequest struct {
 	Signals []models.Signal
 	// CalcDir holds isolated SQL-pipeline calc DBs. Defaults to OutDir.
 	CalcDir string
+	// Override replaces each member's DefaultConfig where a field is non-zero.
+	// AllocPct 0.10 sizes every position at 10% of equity.
+	Override ConfigOverride
 }
 
 // ExecuteSharedAccount runs a stacked backtest and persists a unique results DB.
@@ -158,13 +164,13 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	}
 
 	entries := []simulator.StrategyPriorityEntry{
-		{Strategy: req.Primary, Priority: 0, Config: req.Primary.DefaultConfig()},
+		{Strategy: req.Primary, Priority: 0, Config: req.Override.Apply(req.Primary.DefaultConfig())},
 	}
 	for secIdx, sec := range req.Secondaries {
 		entries = append(entries, simulator.StrategyPriorityEntry{
 			Strategy: sec,
 			Priority: secIdx + 1,
-			Config:   sec.DefaultConfig(),
+			Config:   req.Override.Apply(sec.DefaultConfig()),
 		})
 	}
 
@@ -226,6 +232,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		DbPath:             outDBPath,
 		PreemptedCount:     sim.PreemptedTradeCount,
 		Idle:               idle,
+		AllocPct:           req.Override.AllocPct,
 	}
 }
 
@@ -237,6 +244,9 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 	fmt.Printf("   Primary Strategy:   %s (ID: %s) [Priority 0 - Capital Precedence]\n", res.Primary.Name(), res.Primary.ID())
 	for i, sec := range res.Secondaries {
 		fmt.Printf("   Secondary Strategy: %s (ID: %s) [Priority %d - Idle Cash Utilization]\n", sec.Name(), sec.ID(), i+1)
+	}
+	if res.AllocPct > 0 {
+		fmt.Printf("   Position Size:      %.0f%% of equity per position\n", res.AllocPct*100)
 	}
 	fmt.Printf("   Preempted Trades:   %d secondary positions liquidated to obey primary signals\n", res.PreemptedCount)
 	fmt.Printf("   Idle Cash:          avg %.1f%% of equity (fully flat %.1f%% of days, deployed %.1f%%)\n",

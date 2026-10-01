@@ -60,7 +60,7 @@ func bestParamsFor(gdb *sqlx.DB, strategyID string) (optimizedParams, bool) {
 // DefaultConfig() instead (there's no "optimized" params to apply) and are
 // called out explicitly, since a silent fallback would look like every
 // strategy got optimized when some didn't.
-func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath string, capital float64, symbolFilter string, autoDownload bool, downloadYears, concurrency int, reinvestDividends bool) error {
+func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath string, capital float64, symbolFilter string, autoDownload bool, downloadYears, concurrency int, reinvestDividends bool, allocPct float64) error {
 	targets, err := runner.ResolveStrategies(stratArg, "all")
 	if err != nil {
 		return fmt.Errorf("%v. Run with -list to see available strategies.", err)
@@ -161,6 +161,7 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 				} else {
 					cfg = s.DefaultConfig()
 				}
+				cfg = runner.ConfigOverride{AllocPct: allocPct}.Apply(cfg)
 
 				res := runner.ExecuteStrategyWithDividends(s, cfg, barsBySymbol, sortedDates, capital, symbolFilter, outDir, targetDb, reinvestDividends)
 				results[idx] = res

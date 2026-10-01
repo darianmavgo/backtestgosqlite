@@ -39,6 +39,7 @@ type Config struct {
 	Stoploss            float64  // -stoploss
 	Target              float64  // -target
 	Hold                int      // -hold
+	Alloc               float64  // -alloc
 	Html                string   // -html
 	AutoDownload        bool     // -auto-download
 	DownloadYears       int      // -download-years
@@ -78,6 +79,7 @@ func DefaultConfig() Config {
 		Stoploss:            0.0,
 		Target:              0.0,
 		Hold:                0,
+		Alloc:               0,
 		Html:                appenv.ReportFile("backtest_report.html"),
 		AutoDownload:        true,
 		DownloadYears:       5,
@@ -97,6 +99,31 @@ func DefaultConfig() Config {
 		OptSlip:             0.05,
 		NoReinvestDividends: false,
 	}
+}
+
+// runOverride is the CLI's optional replacement for each strategy's DefaultConfig.
+// Alloc 0.10 sizes every position at 10% of equity.
+func runOverride(conf Config) runner.ConfigOverride {
+	return runner.ConfigOverride{
+		StopLoss:     conf.Stoploss,
+		Target:       conf.Target,
+		Hold:         conf.Hold,
+		MaxPositions: conf.MaxPositions,
+		AllocPct:     conf.Alloc,
+	}
+}
+
+// validateAlloc rejects values the sizer would silently rewrite. AllocationPct
+// is a fraction of equity: 10% per position is 0.10. A value above 1 (such as
+// 10) is not 10%; FixedPctSizer would replace it with 20%.
+func validateAlloc(alloc float64) error {
+	if alloc == 0 {
+		return nil
+	}
+	if alloc <= 0 || alloc > 1 {
+		return fmt.Errorf("-alloc must be a fraction of equity in (0, 1]; 10%% per position is -alloc 0.10 (got %v)", alloc)
+	}
+	return nil
 }
 
 // Main is the CLI entry point.
@@ -130,6 +157,7 @@ func Main() {
 	flag.Float64Var(&conf.Stoploss, "stoploss", d.Stoploss, "Optional override: Stop-loss floor multiplier (e.g. 0.93 for -7%)")
 	flag.Float64Var(&conf.Target, "target", d.Target, "Optional override: Take-profit multiplier (e.g. 1.18 for +18%)")
 	flag.IntVar(&conf.Hold, "hold", d.Hold, "Optional override: Max holding days window")
+	flag.Float64Var(&conf.Alloc, "alloc", d.Alloc, "Fraction of equity per position (0.10 = 10%). 0 keeps each strategy's own allocation. Applies to standalone runs, shared-account stacks, and stack-eval.")
 	flag.StringVar(&conf.Html, "html", d.Html, "Path to export interactive HTML dashboard report")
 	flag.BoolVar(&conf.AutoDownload, "auto-download", d.AutoDownload, "Automatically detect missing market data and run download")
 	flag.IntVar(&conf.DownloadYears, "download-years", d.DownloadYears, "Number of years of history to fetch when downloading missing data")
@@ -160,6 +188,9 @@ func Main() {
 func Run(conf Config) error {
 	backtestStart = conf.Start
 	reinvestDividends := !conf.NoReinvestDividends
+	if err := validateAlloc(conf.Alloc); err != nil {
+		return err
+	}
 
 	if conf.Mode == "covered-call" {
 		ccStart := conf.Start
@@ -190,7 +221,7 @@ func Run(conf Config) error {
 		if optArg == "" && len(conf.Args) > 0 {
 			optArg = strings.Join(conf.Args, ",")
 		}
-		if err := runOptimizedCommand(optArg, conf.Db, conf.Table, conf.OutDir, conf.GridsearchDb, conf.Capital, conf.Symbol, conf.AutoDownload, conf.DownloadYears, conf.Concurrency, !conf.NoReinvestDividends); err != nil {
+		if err := runOptimizedCommand(optArg, conf.Db, conf.Table, conf.OutDir, conf.GridsearchDb, conf.Capital, conf.Symbol, conf.AutoDownload, conf.DownloadYears, conf.Concurrency, !conf.NoReinvestDividends, conf.Alloc); err != nil {
 			return err
 		}
 		return nil
@@ -213,6 +244,7 @@ func Run(conf Config) error {
 			conf.Capital, conf.Symbol,
 			conf.AutoDownload, conf.DownloadYears,
 			conf.PersistBest,
+			runOverride(conf),
 		)
 		return nil
 	}
@@ -348,14 +380,26 @@ func Run(conf Config) error {
 		// and RequiredSymbolsFor only picks up non-empty benchmarks.
 		reqSymbols := append(runner.RequiredSymbolsFor(allStrats, conf.Symbol), "SPY")
 		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Shared-Account Simulation (Starting Capital: $%.2f)...\n", reqSymbols, conf.Table, conf.Capital)
+		if conf.Alloc > 0 {
+			fmt.Printf("   Allocation: %.0f%% of equity per position\n", conf.Alloc*100)
+		}
 		barsBySymbol, sortedDates, err := storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, "")
 		if err != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", err)
 		}
 
-		sharedRes := runner.ExecuteSharedAccount(
-			primaryStrat, secondaryStrats, barsBySymbol, sortedDates, conf.Capital, conf.Symbol, conf.OutDir, conf.Db,
-		)
+		sharedRes := runner.ExecuteStack(runner.StackRequest{
+			Primary:      primaryStrat,
+			Secondaries:  secondaryStrats,
+			BarsBySymbol: barsBySymbol,
+			SortedDates:  sortedDates,
+			Capital:      conf.Capital,
+			SymbolFilter: conf.Symbol,
+			OutDir:       conf.OutDir,
+			MarketDBPath: conf.Db,
+			Persist:      true,
+			Override:     runOverride(conf),
+		})
 		if sharedRes.Err != nil {
 			return fmt.Errorf("Shared account backtest failed: %v", sharedRes.Err)
 		}
@@ -529,7 +573,7 @@ func Run(conf Config) error {
 		// (toRun == selectedStrategies here since skip-filtering only applies
 		// when more than one strategy was selected).
 		strat := toRun[0]
-		cfg := runner.BuildConfig(strat, conf.Stoploss, conf.Target, conf.Hold, conf.MaxPositions)
+		cfg := runOverride(conf).Apply(strat.DefaultConfig())
 
 		fmt.Printf("\n========================================================================================\n")
 		fmt.Printf("🎯 STRATEGY SELECTED: %s (ID: %s)\n", strat.Name(), strat.ID())
@@ -542,8 +586,8 @@ func Run(conf Config) error {
 		if slPct > 50 {
 			slPct = (1.0 - cfg.StopLossPct) * 100
 		}
-		fmt.Printf("   Target:       +%.1f%% | Stop-Loss: -%.1f%% | Max Hold: %d days | Max Positions: %d\n",
-			tpPct, slPct, cfg.HoldingWindow, cfg.PositionCap)
+		fmt.Printf("   Target:       +%.1f%% | Stop-Loss: -%.1f%% | Max Hold: %d days | Max Positions: %d | Allocation: %.0f%%\n",
+			tpPct, slPct, cfg.HoldingWindow, cfg.PositionCap, cfg.AllocationPct*100)
 		fmt.Printf("========================================================================================\n")
 
 		res := runner.ExecuteStrategyWithDividends(strat, cfg, barsBySymbol, sortedDates, conf.Capital, conf.Symbol, conf.OutDir, conf.Db, reinvestDividends)
@@ -569,6 +613,9 @@ func Run(conf Config) error {
 		fmt.Printf("🚀 CONCURRENT STRATEGY BACKTESTING (%d STRATEGIES TO RUN, %d TOTAL SELECTED)\n", len(toRun), len(selectedStrategies))
 		fmt.Printf("   Market Data:  %d symbols across %d dates loaded from %s\n", len(barsBySymbol), len(sortedDates), conf.Db)
 		fmt.Printf("   Output Dir:   %s/ (each strategy writes to an isolated, uniquely suffixed SQLite DB)\n", conf.OutDir)
+		if conf.Alloc > 0 {
+			fmt.Printf("   Allocation:   %.0f%% of equity per position\n", conf.Alloc*100)
+		}
 		fmt.Printf("========================================================================================\n\n")
 
 		freshResults := make([]runner.RunResult, len(toRun))
@@ -600,7 +647,7 @@ func Run(conf Config) error {
 				defer wg.Done()
 				for idx := range jobs {
 					s := toRun[idx]
-					cfg := runner.BuildConfig(s, conf.Stoploss, conf.Target, conf.Hold, conf.MaxPositions)
+					cfg := runOverride(conf).Apply(s.DefaultConfig())
 					res := runner.ExecuteStrategyWithDividends(s, cfg, barsBySymbol, sortedDates, conf.Capital, conf.Symbol, conf.OutDir, conf.Db, reinvestDividends)
 					freshResults[idx] = res
 					if res.Err != nil {

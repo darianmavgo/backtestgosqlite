@@ -9,6 +9,21 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
+func TestValidateAlloc(t *testing.T) {
+	if err := validateAlloc(0); err != nil {
+		t.Errorf("unset alloc: %v", err)
+	}
+	if err := validateAlloc(0.10); err != nil {
+		t.Errorf("10%% alloc: %v", err)
+	}
+	if err := validateAlloc(1); err != nil {
+		t.Errorf("100%% alloc: %v", err)
+	}
+	if err := validateAlloc(10); err == nil {
+		t.Error("alloc 10 must be rejected; 10%% is 0.10")
+	}
+}
+
 func TestDetectAndDownloadMissingData_Disabled(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test_market.db")

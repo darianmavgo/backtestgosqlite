@@ -1,10 +1,10 @@
 package runner
 
 import (
-	"math"
 	"fmt"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"log"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -242,21 +242,46 @@ func PrintComparisonTable(results []RunResult) {
 	table.Render()
 }
 
-func BuildConfig(s strategy.Strategy, stopLoss, profitTarget float64, holdWindow, maxPositions int) strategy.StrategyConfig {
-	cfg := s.DefaultConfig()
-	if stopLoss > 0 {
-		cfg.StopLossPct = stopLoss
+// ConfigOverride replaces fields of a strategy's DefaultConfig. Zero values
+// keep the strategy's own setting. AllocPct is a fraction of equity per
+// position (0.10 = 10%). When set, sizing is fixed_pct so that fraction is
+// what the fill uses, including strategies whose default is fixed shares.
+type ConfigOverride struct {
+	StopLoss     float64
+	Target       float64
+	Hold         int
+	MaxPositions int
+	AllocPct     float64
+}
+
+// Apply returns cfg with every non-zero override written in.
+func (o ConfigOverride) Apply(cfg strategy.StrategyConfig) strategy.StrategyConfig {
+	if o.StopLoss > 0 {
+		cfg.StopLossPct = o.StopLoss
 	}
-	if profitTarget > 0 {
-		cfg.TargetPct = profitTarget
+	if o.Target > 0 {
+		cfg.TargetPct = o.Target
 	}
-	if holdWindow > 0 {
-		cfg.HoldingWindow = holdWindow
+	if o.Hold > 0 {
+		cfg.HoldingWindow = o.Hold
 	}
-	if maxPositions > 0 {
-		cfg.PositionCap = maxPositions
+	if o.MaxPositions > 0 {
+		cfg.PositionCap = o.MaxPositions
+	}
+	if o.AllocPct > 0 {
+		cfg.AllocationPct = o.AllocPct
+		cfg.PositionSizing = "fixed_pct"
 	}
 	return cfg
+}
+
+func BuildConfig(s strategy.Strategy, stopLoss, profitTarget float64, holdWindow, maxPositions int) strategy.StrategyConfig {
+	return ConfigOverride{
+		StopLoss:     stopLoss,
+		Target:       profitTarget,
+		Hold:         holdWindow,
+		MaxPositions: maxPositions,
+	}.Apply(s.DefaultConfig())
 }
 
 // scopeDatesToStrategy restricts a global, DB-wide sorted date list down to the
