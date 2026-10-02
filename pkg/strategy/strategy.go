@@ -144,6 +144,11 @@ type StrategyConfig struct {
 	TradeSymbol     string `json:"trade_symbol,omitempty"`
 	StreakDirection string `json:"streak_direction,omitempty"`
 	Regime          string `json:"regime,omitempty"`
+	
+	// Tree-specific parameters substituted in tree_strategy SQL
+	TreeCoilMax  float64 `json:"tree_coil_max,omitempty"`
+	TreeSMAMin   float64 `json:"tree_sma_min,omitempty"`
+	TreeSMAMax   float64 `json:"tree_sma_max,omitempty"`
 
 	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow mirror
 	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg

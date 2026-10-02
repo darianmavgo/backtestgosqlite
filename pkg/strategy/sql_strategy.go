@@ -144,6 +144,11 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 		}
 	}
 	sqlText = substituteStreakPlaceholders(sqlText, id, fileName, cfg)
+	
+	sqlText = strings.ReplaceAll(sqlText, "__COIL_MAX__", strconv.FormatFloat(cfg.TreeCoilMax, 'f', -1, 64))
+	sqlText = strings.ReplaceAll(sqlText, "__SMA_MIN__", strconv.FormatFloat(cfg.TreeSMAMin, 'f', -1, 64))
+	sqlText = strings.ReplaceAll(sqlText, "__SMA_MAX__", strconv.FormatFloat(cfg.TreeSMAMax, 'f', -1, 64))
+	
 	return sqlText
 }
 

@@ -1,0 +1,60 @@
+package park_sweep
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+)
+
+// Main is the park_sweep command.
+func Main() {
+	dbPath := flag.String("db", "", "sweep database (default reports/park_googl.db)")
+	market := flag.String("market-db", "", "market history database (default data/market_history.db)")
+	settings := flag.String("settings-db", "", "reference database (default refdata/settings.db)")
+	concurrency := flag.Int("concurrency", runtime.NumCPU(), "worker count")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: park_sweep [flags] seed|run|rank\n\n")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	if *dbPath == "" {
+		*dbPath = filepath.Join(appenv.Reports(), "park_googl.db")
+	}
+	if *market == "" {
+		*market = appenv.MarketDB()
+	}
+	if *settings == "" {
+		*settings = appenv.RefDB()
+	}
+	if flag.NArg() != 1 {
+		flag.Usage()
+		os.Exit(2)
+	}
+	var err error
+	switch flag.Arg(0) {
+	case "seed":
+		counts, seedErr := Seed(*dbPath, *settings, *market)
+		err = seedErr
+		if err == nil {
+			fmt.Printf("seed %s\n", *dbPath)
+			for _, c := range counts {
+				fmt.Printf("  %-14s %6d rows   %6d pending   %6d skipped\n", c.Kind, c.Rows, c.Pending, c.Skipped)
+			}
+		}
+	case "run":
+		err = Run(*dbPath, *market, *concurrency)
+	case "rank":
+		err = Rank(*dbPath)
+	default:
+		flag.Usage()
+		os.Exit(2)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "park_sweep: %v\n", err)
+		os.Exit(1)
+	}
+}

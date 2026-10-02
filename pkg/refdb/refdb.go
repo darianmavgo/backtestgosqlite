@@ -78,6 +78,28 @@ CREATE TABLE IF NOT EXISTS streak_strategy (
 	total_trades     INTEGER
 );
 -- One runnable markov strategy per row, similar to streak_strategy.
+CREATE TABLE IF NOT EXISTS tree_strategy (
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	signal_symbol    TEXT NOT NULL,
+	trade_symbol     TEXT NOT NULL,
+	direction        TEXT NOT NULL,
+	hold_days        INTEGER NOT NULL,
+	take_profit_pct  REAL NOT NULL,
+	stop_loss_pct    REAL NOT NULL,
+	allocation_pct   REAL NOT NULL,
+	cash_yield       REAL NOT NULL,
+	slippage_pct     REAL NOT NULL,
+	next_day_limit   INTEGER NOT NULL,
+	coil_range_max   REAL NOT NULL,
+	sma_bounce_min   REAL NOT NULL,
+	sma_bounce_max   REAL NOT NULL,
+	source_strategy  TEXT,
+	source_label     TEXT,
+	win_rate         REAL,
+	total_trades     INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS markov_strategy (
 	id               TEXT PRIMARY KEY,
 	name             TEXT NOT NULL,
@@ -321,6 +343,28 @@ func UpsertMarkovStrategies(db *sqlx.DB, rows []MarkovStrategy) error {
 		return err
 	}
 	const q = `
+CREATE TABLE IF NOT EXISTS tree_strategy (
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	signal_symbol    TEXT NOT NULL,
+	trade_symbol     TEXT NOT NULL,
+	direction        TEXT NOT NULL,
+	hold_days        INTEGER NOT NULL,
+	take_profit_pct  REAL NOT NULL,
+	stop_loss_pct    REAL NOT NULL,
+	allocation_pct   REAL NOT NULL,
+	cash_yield       REAL NOT NULL,
+	slippage_pct     REAL NOT NULL,
+	next_day_limit   INTEGER NOT NULL,
+	coil_range_max   REAL NOT NULL,
+	sma_bounce_min   REAL NOT NULL,
+	sma_bounce_max   REAL NOT NULL,
+	source_strategy  TEXT,
+	source_label     TEXT,
+	win_rate         REAL,
+	total_trades     INTEGER
+);
+
 		INSERT INTO markov_strategy (
 			id, name, signal_symbol, trade_symbol, direction, target_state, hold_days,
 			take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
@@ -343,6 +387,90 @@ func UpsertMarkovStrategies(db *sqlx.DB, rows []MarkovStrategy) error {
 			cash_yield = excluded.cash_yield,
 			slippage_pct = excluded.slippage_pct,
 			next_day_limit = excluded.next_day_limit,
+			source_strategy = excluded.source_strategy,
+			source_label = excluded.source_label,
+			win_rate = excluded.win_rate,
+			total_trades = excluded.total_trades`
+	for _, r := range rows {
+		if _, err := tx.NamedExec(q, r); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// TreeStrategy is one row of tree_strategy.
+type TreeStrategy struct {
+	ID             string   `db:"id"`
+	Name           string   `db:"name"`
+	SignalSymbol   string   `db:"signal_symbol"`
+	TradeSymbol    string   `db:"trade_symbol"`
+	Direction      string   `db:"direction"`
+	HoldDays       int      `db:"hold_days"`
+	TakeProfitPct  float64  `db:"take_profit_pct"`
+	StopLossPct    float64  `db:"stop_loss_pct"`
+	AllocationPct  float64  `db:"allocation_pct"`
+	CashYield      float64  `db:"cash_yield"`
+	SlippagePct    float64  `db:"slippage_pct"`
+	NextDayLimit   int      `db:"next_day_limit"`
+	CoilRangeMax   float64  `db:"coil_range_max"`
+	SMABounceMin   float64  `db:"sma_bounce_min"`
+	SMABounceMax   float64  `db:"sma_bounce_max"`
+	SourceStrategy string   `db:"source_strategy"`
+	SourceLabel    string   `db:"source_label"`
+	WinRate        *float64 `db:"win_rate"`
+	TotalTrades    *int     `db:"total_trades"`
+}
+
+// TreeStrategies returns every tree_strategy row, ordered by id.
+func TreeStrategies(db *sqlx.DB) ([]TreeStrategy, error) {
+	var out []TreeStrategy
+	err := db.Select(&out, `
+		SELECT id, name, signal_symbol, trade_symbol, direction, hold_days,
+		       take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
+		       slippage_pct, next_day_limit, coil_range_max, sma_bounce_min, sma_bounce_max,
+		       COALESCE(source_strategy, '') AS source_strategy,
+		       COALESCE(source_label, '') AS source_label,
+		       win_rate, total_trades
+		FROM tree_strategy
+		ORDER BY id`)
+	return out, err
+}
+
+// UpsertTreeStrategies inserts or replaces each row by id.
+func UpsertTreeStrategies(db *sqlx.DB, rows []TreeStrategy) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	const q = `
+		INSERT INTO tree_strategy (
+			id, name, signal_symbol, trade_symbol, direction, hold_days,
+			take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
+			slippage_pct, next_day_limit, coil_range_max, sma_bounce_min, sma_bounce_max,
+			source_strategy, source_label, win_rate, total_trades
+		) VALUES (
+			:id, :name, :signal_symbol, :trade_symbol, :direction, :hold_days,
+			:take_profit_pct, :stop_loss_pct, :allocation_pct, :cash_yield,
+			:slippage_pct, :next_day_limit, :coil_range_max, :sma_bounce_min, :sma_bounce_max,
+			:source_strategy, :source_label, :win_rate, :total_trades
+		)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			signal_symbol = excluded.signal_symbol,
+			trade_symbol = excluded.trade_symbol,
+			direction = excluded.direction,
+			hold_days = excluded.hold_days,
+			take_profit_pct = excluded.take_profit_pct,
+			stop_loss_pct = excluded.stop_loss_pct,
+			allocation_pct = excluded.allocation_pct,
+			cash_yield = excluded.cash_yield,
+			slippage_pct = excluded.slippage_pct,
+			next_day_limit = excluded.next_day_limit,
+			coil_range_max = excluded.coil_range_max,
+			sma_bounce_min = excluded.sma_bounce_min,
+			sma_bounce_max = excluded.sma_bounce_max,
 			source_strategy = excluded.source_strategy,
 			source_label = excluded.source_label,
 			win_rate = excluded.win_rate,

@@ -94,7 +94,7 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -primary sig-voo-buy-tecl -secondary mara_tree -alloc 0.10 -default-asset VYM
 ```
 
-`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `reports/shared_<primary>_<secondaries>_default-<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
+`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `reports/shared_<primary>_<secondaries>_default-<symbol>.db`. When that name would make the SQLite journal longer than 255 bytes, the file is `reports/default_asset_<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
 
 ### backtest stale
 
@@ -204,6 +204,24 @@ Copy winning sweep rows into `refdata/settings.db` table `streak_strategy`. Each
 Defaults for promote are win rate `0.6`, `30` trades, and `-top 5`. A sweep's own `-min-trades` default stays `5`. `-gridsearch-db` chooses the sweep file. Rows that share an id keep the higher win rate. A NULL `signal_symbol` (sweeps from before that column existed) uses the parent strategy's watch symbol.
 
 The walkthrough for writing a row, backtesting it, sweeping it, and ranking it is [docs/strategies/streak_strategy.md](docs/strategies/streak_strategy.md).
+
+---
+
+## park_sweep
+
+Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` with leftover cash parked in one symbol. The lists, the window, and the results stay in SQLite. The park symbol for the default config is GOOGL.
+
+**Reads:** `refdata/settings.db` (`streak_strategy`, `markov_strategy`, `etf_dt_strategies`) and `data/market_history.db`.
+
+**Writes:** `reports/park_googl.db` (`sweep_config`, `park_asset`, `sweep_strategy`, `strategy_run`). Nothing is inserted into the settings tables, and no per-strategy file is written under `reports/`.
+
+```bash
+./bin/park_sweep seed
+./bin/park_sweep run
+./bin/park_sweep rank
+```
+
+`sweep_config` holds the window (`2021-10-01` through `2026-10-01`), capital (`100000`), and park symbol (`GOOGL`). `allocation_pct` NULL uses each row's own allocation. A symbol that does not cover the window is stored as `skipped`. `run` retries `failed` and `running` rows and leaves `done` rows. `rank` prints whatever is already `done`. `-db`, `-market-db`, `-settings-db`, and `-concurrency` override the defaults.
 
 ---
 

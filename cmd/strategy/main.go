@@ -10,6 +10,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -17,6 +18,7 @@ func main() {
 	// Initialize databases and register all strategies.
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), appenv.MarketDB())
 	streak_strategy.Register()
+	tree_strategy.Register()
 	markov_strategy.Register()
 
 	strategies := strategy.List()

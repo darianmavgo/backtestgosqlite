@@ -105,7 +105,16 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 			baseName += fmt.Sprintf("_%s", sec.ID())
 		}
 		if defaultAsset != "" {
-			baseName += "_default-" + strings.ToLower(defaultAsset)
+			// SQLite also creates <file>-journal. A single path component
+			// cannot pass 255 bytes, and the eleven-sleeve shared_* name is
+			// already near that limit. Fall back to a short file when the
+			// suffixed name would not open.
+			suffixed := baseName + "_default-" + strings.ToLower(defaultAsset)
+			if len(suffixed)+len(".db-journal") <= 255 {
+				baseName = suffixed
+			} else {
+				baseName = "default_asset_" + strings.ToLower(defaultAsset)
+			}
 		}
 		path, outDB, err := storage.CreateUniqueDB(outDir, baseName)
 		if err != nil {

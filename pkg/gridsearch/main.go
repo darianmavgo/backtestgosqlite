@@ -46,6 +46,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
 	_ "modernc.org/sqlite"
 )
 
@@ -215,6 +216,7 @@ func Main() {
 func Run(conf Config) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
 	streak_strategy.Register()
+	tree_strategy.Register()
 	markov_strategy.Register()
 
 	if conf.Subcommand == "stale" {
