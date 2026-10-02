@@ -628,6 +628,21 @@ func RequiredSymbolsFor(strategies []strategy.Strategy, symbolFilter string) []s
 	return out
 }
 
+// ScopedSymbols returns RequiredSymbolsFor(strategies, symbolFilter) and true
+// when every strategy declares the symbols it needs (RequiredSymbols is
+// implemented and non-empty). If any strategy does not (for example a
+// universe-wide SQL pipeline), the bar set cannot be narrowed and it returns
+// nil, false: the caller must load every symbol.
+func ScopedSymbols(strategies []strategy.Strategy, symbolFilter string) ([]string, bool) {
+	for _, s := range strategies {
+		p, ok := s.(strategy.RequiredSymbolsProvider)
+		if !ok || len(p.RequiredSymbols()) == 0 {
+			return nil, false
+		}
+	}
+	return RequiredSymbolsFor(strategies, symbolFilter), true
+}
+
 func DetectAndDownloadMissingData(
 	targetDb string,
 	tableName string,

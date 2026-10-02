@@ -624,9 +624,16 @@ func runOnce(conf Config) error {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", fetchErr)
 		}
 	} else {
-		fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", conf.Table, conf.Capital)
+		// Load only the symbols the batch declares it needs. A batch that
+		// includes any universe-wide strategy loads every symbol.
+		reqSymbols, scoped := runner.ScopedSymbols(toRun, conf.Symbol)
+		if scoped {
+			fmt.Printf("\n⚙️ Loading bars for %d symbols from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", len(reqSymbols), conf.Table, conf.Capital)
+		} else {
+			fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", conf.Table, conf.Capital)
+		}
 		var fetchErr error
-		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, nil, backtestStart, backtestEnd)
+		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, backtestEnd)
 		if fetchErr != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", fetchErr)
 		}
