@@ -24,13 +24,13 @@ func runStackEvalCommand(
 	downloadYears int,
 	persistBest bool,
 	override runner.ConfigOverride,
-) error {
+) (stackEvalOutcome, error) {
 	if primaryID == "" {
-		return fmt.Errorf("stack-eval requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack-eval -primary sig-voo-buy-tecl")
+		return stackEvalOutcome{}, fmt.Errorf("stack-eval requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack-eval -primary sig-voo-buy-tecl")
 	}
 	primary, ok := strategy.Get(primaryID)
 	if !ok {
-		return fmt.Errorf("Primary strategy %q not found. Run ./bin/backtest -list", primaryID)
+		return stackEvalOutcome{}, fmt.Errorf("Primary strategy %q not found. Run ./bin/backtest -list", primaryID)
 	}
 
 	// park-<symbol> in the candidate list is the residual book for every run.
@@ -41,7 +41,7 @@ func runStackEvalCommand(
 			if st, ok := strategy.Get(id); ok {
 				if rp, isPark := st.(strategy.ResidualProvider); isPark {
 					if parkSym != "" && parkSym != rp.ParkSymbol() {
-						return fmt.Errorf("stack-eval takes one park, got %s and %s", parkSym, rp.ParkSymbol())
+						return stackEvalOutcome{}, fmt.Errorf("stack-eval takes one park, got %s and %s", parkSym, rp.ParkSymbol())
 					}
 					parkSym = rp.ParkSymbol()
 					continue
@@ -50,7 +50,7 @@ func runStackEvalCommand(
 			kept = append(kept, id)
 		}
 		if len(kept) == 0 && len(explicitSecondaries) > 0 {
-			return fmt.Errorf("stack-eval needs at least one overlay besides the park")
+			return stackEvalOutcome{}, fmt.Errorf("stack-eval needs at least one overlay besides the park")
 		}
 		explicitSecondaries = kept
 	}
@@ -61,17 +61,17 @@ func runStackEvalCommand(
 		DTTop:           dtTop,
 	})
 	if len(cands) == 0 {
-		return fmt.Errorf("No overlay candidates for %s. Pass -secondary id1,id2 or -include-dt / -include-universe.", primary.ID())
+		return stackEvalOutcome{}, fmt.Errorf("No overlay candidates for %s. Pass -secondary id1,id2 or -include-dt / -include-universe.", primary.ID())
 	}
 
 	all := append([]strategy.Strategy{primary}, cands...)
 	if err := runner.DetectAndDownloadMissingData(targetDb, tableName, all, symbolFilter, autoDownload, downloadYears); err != nil {
-		return fmt.Errorf("Market data resolution error: %v", err)
+		return stackEvalOutcome{}, fmt.Errorf("Market data resolution error: %v", err)
 	}
 
 	db, err := storage.OpenSQLite(targetDb)
 	if err != nil {
-		return fmt.Errorf("Failed to open source DB %s: %v", targetDb, err)
+		return stackEvalOutcome{}, fmt.Errorf("Failed to open source DB %s: %v", targetDb, err)
 	}
 	defer db.Close()
 
@@ -89,9 +89,9 @@ func runStackEvalCommand(
 		fmt.Printf("\nLoading bars for %v from '%s' for stack-eval of %s (capital $%.0f)...\n",
 			reqSymbols, tableName, primary.ID(), capital)
 	}
-	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, fetchSymbols, backtestStart, "")
+	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, fetchSymbols, backtestStart, backtestEnd)
 	if err != nil {
-		return fmt.Errorf("Error loading historical bars: %v", err)
+		return stackEvalOutcome{}, fmt.Errorf("Error loading historical bars: %v", err)
 	}
 
 	fmt.Printf("Evaluating %d overlay candidates on idle cash of %s...\n", len(cands), primary.ID())
@@ -118,7 +118,11 @@ func runStackEvalCommand(
 	})
 	runner.PrintStackEvalTearSheet(result)
 
-	return nil
+	out := stackEvalOutcome{DefaultAsset: parkSym}
+	if result.BestStack != nil && len(result.BestStackIDs) > 0 {
+		out.StackID = result.BestStack.CombinedID
+	}
+	return out, nil
 }
 
 func parseSecondaryList(raw string) []string {

@@ -50,7 +50,7 @@ The search that produced the current numbers, in order:
 4. `backtest stack-eval` over the survivors for several primaries and `-alloc` sizes.
 5. Re-run the frozen stacks on the held-out year with `-start`.
 
-Result to date: no stack reached 79% CAGR with drawdown under 6%. Liquid stacks held a Calmar of about 4 to 8 in-sample and about 4.5 on the holdout. The benchmark to beat is in [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md).
+Every `backtest` and `stack-eval` run now does step 5 itself (see the holdout note under `backtest`). Result to date: no stack reached 79% CAGR with drawdown under 6%. Liquid stacks held a Calmar of about 4 to 8 in-sample and about 4.5 on the holdout. The benchmark to beat is in [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md).
 
 ## Paths
 
@@ -133,6 +133,8 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -alloc 0.10 streak-voo-buy-tecl+mara_tree+pdd_tree
 ./bin/backtest -primary streak-voo-buy-tecl -secondary mara_tree -alloc 0.10 -default-asset VYM
 ```
+
+**Out-of-sample holdout (default).** The last 12 months of history are held out. The main pass runs from `-start` through the cutoff (the last bar minus `-holdout-months`), prints as `IN-SAMPLE`, and writes its usual files. Then the same strategy, or for `stack-eval` the stack it found (park included), runs once on the held-out months, flat at the start, printed as `OUT-OF-SAMPLE` and written to `data/reports/oos/` with an `_oos` HTML file. Select and tune on the in-sample pass only. `-holdout-months 0` simulates all history in one pass; `-end YYYY-MM-DD` ends history earlier. The split is skipped, with a message, when less than a year would be left in-sample. It does not apply to `-list`, `-signals-only`, `stale`, `optimized` or `covered-call`. Two caveats: single-strategy results in `data/reports/<id>.db` now cover the in-sample window only, and a strategy whose SQL pipeline or tree was fitted on all history can still see the future inside the held-out months.
 
 `-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `data/reports/shared_<primary>_<secondaries>_default-<symbol>.db`. When that name would make the SQLite journal longer than 255 bytes, the file is `data/reports/default_asset_<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
 

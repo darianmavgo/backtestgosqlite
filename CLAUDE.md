@@ -48,6 +48,7 @@ In `models.Signal`, `TakeProfit` and `StopLoss` are absolute dollar prices (`150
 
 ## Data gotchas
 
+- `backtest` and `backtest stack-eval` hold out the last 12 months by default (`pkg/backtest/holdout.go`: in-sample pass, then one out-of-sample pass into `data/reports/oos/`). Tests or tooling that need a single full-history pass must pass `-holdout-months 0`; single-strategy result DBs otherwise cover only the in-sample window.
 - Walk-forward and stack results depend on the market DB window: a stack found by screening many strategies on the full history is in-sample. Keep a held-out final period and report it separately (see `docs/omnifunds_benchmark.md` for the bar to beat).
 - Daily simulation reads rows with `length(Date) = 10`; minute bars share the same table and are skipped.
 - Result DBs are written per run: `data/reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`. Do not assume a fixed filename.

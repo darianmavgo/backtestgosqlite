@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
@@ -19,15 +18,15 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	_ "modernc.org/sqlite"
 )
 
 // backtestStart is the -start flag value: the default backtest window start.
 var backtestStart string
+
+// backtestEnd is the -end flag value: the last bar date to load ("" = latest).
+var backtestEnd string
 
 // Config holds the settings of a run.
 type Config struct {
@@ -58,6 +57,8 @@ type Config struct {
 	StackDepth          int      // -stack-depth
 	PersistBest         bool     // -persist-best
 	Start               string   // -start
+	End                 string   // -end
+	HoldoutMonths       int      // -holdout-months
 	SignalsOnly         bool     // -signals-only
 	Bars                int      // -bars
 	Otm                 float64  // -otm
@@ -67,6 +68,8 @@ type Config struct {
 	DefaultAsset        string   // -default-asset
 	Mode                string   // subcommand (empty = default)
 	Args                []string // positional arguments
+
+	outcome *stackEvalOutcome // set by runOnce for stack-eval
 }
 
 // DefaultConfig returns the CLI defaults.
@@ -99,6 +102,8 @@ func DefaultConfig() Config {
 		StackDepth:          3,
 		PersistBest:         true,
 		Start:               storage.DefaultStartDate,
+		End:                 "",
+		HoldoutMonths:       DefaultHoldoutMonths,
 		SignalsOnly:         false,
 		Bars:                0,
 		Otm:                 2.0,
@@ -189,6 +194,8 @@ func Main() {
 	flag.IntVar(&conf.StackDepth, "stack-depth", d.StackDepth, "(stack-eval) greedy complementary overlays to combine after pairwise ranking")
 	flag.BoolVar(&conf.PersistBest, "persist-best", d.PersistBest, "(stack-eval) write a shared_*.db for the greedy N-way stack")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to simulate; earlier bars are only used for SMA warmup. Empty = full history")
+	flag.StringVar(&conf.End, "end", d.End, "Last bar date (YYYY-MM-DD) to simulate. Empty = latest bar")
+	flag.IntVar(&conf.HoldoutMonths, "holdout-months", d.HoldoutMonths, "Months at the end of history kept out of the main run and reported separately as out-of-sample (0 = use all history). Applies to plain runs and stack-eval")
 	flag.BoolVar(&conf.SignalsOnly, "signals-only", d.SignalsOnly, "Skip portfolio simulation; run the same GenerateSignals live window as cmd/livescan (tip bar → next session)")
 	flag.IntVar(&conf.Bars, "bars", d.Bars, "(with -signals-only) recent bars per symbol; 0 = strategy MinHistoryBars")
 	flag.Float64Var(&conf.Otm, "otm", d.Otm, "(covered-call) target call strike as % above spot at each monthly roll")
@@ -204,9 +211,12 @@ func Main() {
 	}
 }
 
-// Run executes the command with cfg. It returns errors instead of exiting.
-func Run(conf Config) error {
+// runOnce executes one pass over [conf.Start, conf.End]. For stack-eval it
+// stores the stack it found in conf.outcome so the caller can test it out of
+// sample.
+func runOnce(conf Config) error {
 	backtestStart = conf.Start
+	backtestEnd = conf.End
 	reinvestDividends := !conf.NoReinvestDividends
 	if err := validateAlloc(conf.Alloc); err != nil {
 		return err
@@ -227,12 +237,7 @@ func Run(conf Config) error {
 	conf.Html = appenv.ReportFile(conf.Html)
 
 	// Auto-discover any SQL pipeline strategies in sql/strategies/
-	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterAll(appenv.Folder(), conf.Db)
 
 	if conf.Mode == "stale" {
 		if err := runStaleCommand(conf.OutDir, conf.Db, conf.Concurrency); err != nil {
@@ -260,7 +265,7 @@ func Run(conf Config) error {
 		if primaryID == "" && len(conf.Args) > 0 {
 			primaryID = strings.TrimSpace(conf.Args[0])
 		}
-		runStackEvalCommand(
+		out, err := runStackEvalCommand(
 			primaryID,
 			parseSecondaryList(conf.Secondary),
 			conf.IncludeUniverse, conf.IncludeDt,
@@ -271,6 +276,12 @@ func Run(conf Config) error {
 			conf.PersistBest,
 			runOverride(conf),
 		)
+		if err != nil {
+			return err
+		}
+		if conf.outcome != nil {
+			*conf.outcome = out
+		}
 		return nil
 	}
 
@@ -427,7 +438,7 @@ func Run(conf Config) error {
 		if conf.Alloc > 0 {
 			fmt.Printf("   Allocation: %.0f%% of equity per position\n", conf.Alloc*100)
 		}
-		barsBySymbol, sortedDates, err := storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, "")
+		barsBySymbol, sortedDates, err := storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, backtestEnd)
 		if err != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", err)
 		}
@@ -603,14 +614,14 @@ func Run(conf Config) error {
 		reqSymbols := runner.RequiredSymbolsFor([]strategy.Strategy{toRun[0]}, conf.Symbol)
 		fmt.Printf("\n⚙️ Loading bars for %v from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", reqSymbols, conf.Table, conf.Capital)
 		var fetchErr error
-		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, "")
+		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, backtestEnd)
 		if fetchErr != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", fetchErr)
 		}
 	} else {
 		fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", conf.Table, conf.Capital)
 		var fetchErr error
-		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, nil, backtestStart, "")
+		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, nil, backtestStart, backtestEnd)
 		if fetchErr != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", fetchErr)
 		}
