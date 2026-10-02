@@ -53,7 +53,7 @@ func (s *PriceActionReclaimStrategy) SetDatabases(marketDBPath, calcDBPath strin
 
 func (s *PriceActionReclaimStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
-	cfg := s.DefaultConfig()
+
 
 	for symbol, bars := range barsBySymbol {
 		if len(bars) < 250 {
@@ -93,7 +93,8 @@ func (s *PriceActionReclaimStrategy) GenerateSignals(barsBySymbol map[string][]m
 			if reclaimed {
 				// Pillar 3: Invalidation
 				// Stop loss is placed at the support level.
-				stopLossMult := (support * 0.995) / bars[i].Close
+				stopLossPrice := support * 0.995
+				stopLossMult := stopLossPrice / bars[i].Close
 
 				// Filter out trades with massive risk (stop loss > 15% away)
 				if stopLossMult < 0.85 {
@@ -111,8 +112,8 @@ func (s *PriceActionReclaimStrategy) GenerateSignals(barsBySymbol map[string][]m
 					Volume:     bars[i].Volume,
 					BuyLimit:   bars[i].Close,
 					Entry:      1,
-					StopLoss:   stopLossMult,
-					TakeProfit: cfg.TakeProfitPct,
+					StopLoss:   stopLossPrice,
+					TakeProfit: 0, // let simulator compute via TakeProfitPct
 					Direction:  "LONG",
 					Regime:     "Price > SMA200",
 					StrategyID: s.ID(),

@@ -16,8 +16,10 @@ func Main() {
 	market := flag.String("market-db", "", "market history database (default data/market_history.db)")
 	settings := flag.String("settings-db", "", "reference database (default refdata/settings.db)")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "worker count")
+	reportDB := flag.String("report-db", "", "report snapshot database (default reports/park_googl_report.db)")
+	htmlPath := flag.String("html", "", "report HTML (default reports/park_googl.html)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: park_sweep [flags] seed|run|rank\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: park_sweep [flags] seed|run|rank|report\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -49,6 +51,17 @@ func Main() {
 		err = Run(*dbPath, *market, *concurrency)
 	case "rank":
 		err = Rank(*dbPath)
+	case "report":
+		if *reportDB == "" {
+			*reportDB = filepath.Join(appenv.Reports(), "park_googl_report.db")
+		}
+		if *htmlPath == "" {
+			*htmlPath = filepath.Join(appenv.Reports(), "park_googl.html")
+		}
+		err = WriteReport(*dbPath, *reportDB, *htmlPath)
+		if err == nil {
+			fmt.Printf("report %s\nhtml %s\n", *reportDB, *htmlPath)
+		}
 	default:
 		flag.Usage()
 		os.Exit(2)

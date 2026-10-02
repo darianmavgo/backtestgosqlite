@@ -7,22 +7,29 @@ import (
 )
 
 var (
-	registryLock sync.RWMutex
-	registry     = make(map[string]Strategy)
+	registryLock       sync.RWMutex
+	registry           = make(map[string]Strategy)
+	normalizedRegistry = make(map[string]Strategy)
 )
 
 // Register adds a strategy to the central registry.
 func Register(s Strategy) {
 	registryLock.Lock()
 	defer registryLock.Unlock()
-	registry[strings.ToLower(s.ID())] = s
+	
+	key := strings.ToLower(s.ID())
+	registry[key] = s
+	normalizedRegistry[normalizeKey(key)] = s
 }
 
 // RegisterAlias registers an alternate lookup key/alias for a strategy.
 func RegisterAlias(alias string, s Strategy) {
 	registryLock.Lock()
 	defer registryLock.Unlock()
-	registry[strings.ToLower(alias)] = s
+	
+	key := strings.ToLower(alias)
+	registry[key] = s
+	normalizedRegistry[normalizeKey(key)] = s
 }
 
 func normalizeKey(k string) string {
@@ -44,11 +51,8 @@ func Get(id string) (Strategy, bool) {
 	}
 
 	// 2. Normalized match (ignores case, dashes, underscores, and spaces)
-	target := normalizeKey(id)
-	for key, s := range registry {
-		if normalizeKey(key) == target || normalizeKey(s.ID()) == target {
-			return s, true
-		}
+	if s, found := normalizedRegistry[normalizeKey(id)]; found {
+		return s, true
 	}
 
 	return nil, false

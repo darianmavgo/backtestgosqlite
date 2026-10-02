@@ -219,7 +219,10 @@ Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` w
 ./bin/park_sweep seed
 ./bin/park_sweep run
 ./bin/park_sweep rank
+./bin/park_sweep report
 ```
+
+`report` writes `reports/park_googl_report.db` and `reports/park_googl.html` from the sweep. The database holds every strategy row. The page shows the park buy-and-hold, every done streak, and the 25 Markov rows with the highest edge.
 
 `sweep_config` holds the window (`2021-10-01` through `2026-10-01`), capital (`100000`), and park symbol (`GOOGL`). `allocation_pct` NULL uses each row's own allocation. A symbol that does not cover the window is stored as `skipped`. `run` retries `failed` and `running` rows and leaves `done` rows. `rank` prints whatever is already `done`. `-db`, `-market-db`, `-settings-db`, and `-concurrency` override the defaults.
 
