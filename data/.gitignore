@@ -6,9 +6,12 @@
 
 market_history.zip
 
+reports/.DS_Store
+
 # BEGIN ignore-over-50MB
 # Files larger than 52428800 bytes. Rewritten by ignore_over50MB.sh.
 /market_history.db
 /market_history.zip
+/markov_models.db
+/reports/results.db
 # END ignore-over-50MB
-reports/.DS_Store

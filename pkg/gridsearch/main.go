@@ -3,13 +3,13 @@
 // Usage:
 //
 //	# Assess and optimize a single strategy:
-//	go run cmd/gridsearch/main.go gld_decline
-//	go run cmd/gridsearch/main.go -strategy sig_voo_buy_tecl
+//	go run cmd/gridsearch/main.go voo-up3
+//	go run cmd/gridsearch/main.go -strategy streak-voo-buy-tecl
 //
 //	# Assess and optimize many strategies at once (outer concurrency across
 //	# strategies, persisted to reports/gridsearch.db, skips strategies already
 //	# swept unless -force):
-//	go run cmd/gridsearch/main.go -strategy mara_tree,pdd_tree,gld_decline
+//	go run cmd/gridsearch/main.go -strategy mara_tree,pdd_tree,voo-up3
 //	go run cmd/gridsearch/main.go -strategy all
 //
 //	# List all optimizable strategies:
@@ -17,7 +17,7 @@
 //
 //	# Print the resolved parameter grid for a strategy (or 'all') without
 //	# running any backtests — no DB access required:
-//	go run cmd/gridsearch/main.go params gld_decline
+//	go run cmd/gridsearch/main.go params voo-up3
 //	go run cmd/gridsearch/main.go params all
 //
 //	# Assess every strategy with a completed sweep for staleness (renamed/

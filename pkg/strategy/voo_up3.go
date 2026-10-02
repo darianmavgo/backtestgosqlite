@@ -81,7 +81,7 @@ func (s *VOOUp3Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) [
 	}
 
 	// 1. Prefer the SQL pipeline (sql/strategies/voo_up3): the up-streak
-	// grouping + cross-symbol join belongs in SQL (see gld_decline.go's
+	// grouping + cross-symbol join belongs in SQL (see sql/strategies/streak_strategy's
 	// GenerateSignals for the same pattern on a decline streak).
 	if s.calcDBPath != "" && s.marketDBPath != "" {
 		dir := "sql/strategies/voo_up3"

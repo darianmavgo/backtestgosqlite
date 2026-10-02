@@ -12,12 +12,11 @@ A folder with no Go strategy is not registered. `AutoRegisterSQLStrategies` stil
 
 ```
 sql/strategies/
-├── sig_voo_buy_tecl/
-│   ├── 01_schema.sql
-│   └── 03_calc_combo_signals.sql
-└── gld_decline/
-    ├── 01_schema.sql
-    └── 03_calc_signals.sql
+├── streak_strategy/   one pipeline for every streak_strategy row
+├── tree_strategy/     one pipeline for every tree_strategy row
+├── markov_model/      reads the persisted Markov model (see train)
+├── markov_hmm/        reads hmm_regime.db from study hmm_regime
+└── voo_up3/           owned by the voo-up3 Go strategy
 ```
 
 ## Contract & Signal Extraction
@@ -34,5 +33,5 @@ The backtester looks for an output table containing trade triggers:
 
 ```bash
 ./bin/backtest -list
-./bin/backtest -strategy sig-voo-buy-tecl -capital 100000
+./bin/backtest -strategy streak-voo-buy-tecl -capital 100000
 ```

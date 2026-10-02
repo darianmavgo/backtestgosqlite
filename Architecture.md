@@ -128,7 +128,7 @@ A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrat
 
 Each strategy gets its own calc DB (`calc_<id>.db`) so pipeline tables do not collide. `SetDatabases(market, calc)` is called before `GenerateSignals`.
 
-Registered from this tree today: `voo-up3`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their SQL folders are orphaned. `mara_tree`, `nvdl_tree` and `pdd_tree` are rows of `tree_strategy`; their own SQL folders were deleted because the generic `tree_strategy` pipeline gives identical signals (109, 65 and 150 on the real market DB). Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
+Registered from this tree today: `voo-up3`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their orphaned SQL folders were deleted. `mara_tree`, `nvdl_tree` and `pdd_tree` are rows of `tree_strategy`; their own SQL folders were deleted because the generic `tree_strategy` pipeline gives identical signals (109, 65 and 150 on the real market DB). Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
 
 `voo-up3` calculates in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
 
@@ -252,7 +252,6 @@ It records the gates in `check_overfit_gate`.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
 - Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
 - `streak-*` registration also depends on `refdata/strategies.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
-- `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training`.
 
 Markov strategies do not train at backtest time. `train_markov` (`pkg/train_markov`) runs `sql/stages/markov_train` and publishes `markov_prediction` and `markov_model_meta` into `data/markov_models.db` (`appenv.MarkovDB()`). The `markov_model` pipeline attaches that file (`__MARKOV_DB__`) and reads one symbol's rows; `markov_strategy.GenerateSignals` refuses to run without a trained model for the symbol. `markov_hmm` attaches `hmm_regime.db` (`__HMM_DB__`), produced by `study hmm_regime`.
 

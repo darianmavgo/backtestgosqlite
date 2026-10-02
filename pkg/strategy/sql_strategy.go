@@ -22,7 +22,7 @@ import (
 // (and, for two-leg combos, its short-leg equivalents) are real tunable
 // parameters instead of hardcoded literals baked into the .sql file — the
 // same problem __DECLINE_DAYS__ solves for the consecutive decline/rally-day
-// window (e.g. sql/strategies/gld_decline, sig_voo_buy_tecl).
+// window (e.g. sql/strategies/streak_strategy).
 const (
 	declineDaysPlaceholder         = "__DECLINE_DAYS__"
 	takeProfitMultPlaceholder      = "__TAKE_PROFIT_MULT__"
@@ -498,7 +498,7 @@ var (
 
 // AutoRegisterSQLStrategies registers the SQL pipeline behind each Go strategy
 // defined in pkg/strategy. A sql/strategies folder with no matching Go
-// strategy in this package (archived under failed_training, or abandoned)
+// strategy in this package (abandoned)
 // is NOT registered: strategies come only from pkg/strategy, never
 // from other folders or subfolders.
 //
@@ -547,53 +547,6 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 
 			// Specific default config tuning for recognized strategies
 			switch dirName {
-			case "donchian_breakout":
-				cfg.TargetPct = 1.25
-				cfg.StopLossPct = 0.92
-				cfg.UseTrailingStop = true
-				cfg.TrailingStopPct = 0.06
-				cfg.HoldingWindow = 20
-			case "bb_capitulation":
-				cfg.TargetPct = 1.18
-				cfg.StopLossPct = 0.93
-				cfg.HoldingWindow = 10
-			case "rsi2_trend":
-				cfg.TargetPct = 1.10
-				cfg.StopLossPct = 0.94
-				cfg.HoldingWindow = 6
-			case "macd_crossover":
-				cfg.TargetPct = 1.15
-				cfg.StopLossPct = 0.95
-				cfg.HoldingWindow = 12
-			case "gld_decline":
-				cfg.Benchmark = "GLD"
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.08
-				cfg.TakeProfitPct = 0.08
-				cfg.StopLossPct = 0.98
-				cfg.HoldingWindow = 12
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
-				cfg.DeclineDays = 2 // matches GLDDeclineStrategy's default DeclineDays
-			case "sig_voo_buy_spxu":
-				// Matches SigVooBuySpxu's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.06
-				cfg.TakeProfitPct = 0.06
-				cfg.StopLossPct = 0.95
-				cfg.HoldingWindow = 2
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
-				cfg.DeclineDays = 3
-			case "sig_voo_up1_buy_tqqq":
-				// Matches SigVooUp1BuyTqqq's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.08
-				cfg.TakeProfitPct = 0.08
-				cfg.StopLossPct = 0.90
-				cfg.HoldingWindow = 10
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
 			case "voo_up3":
 				// Matches VOOUp3Strategy's own defaults.
 				cfg.AllocationPct = 0.65
@@ -604,28 +557,6 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
 				cfg.DeclineDays = 3 // VOOUp3Strategy's default GainDays
-			case "sig_qqq_up1_buy_sqqq", "sig_qqq_up1_buy_tqqq":
-				// Matches SigQqqUp1BuySqqq's/SigQqqUp1BuyTqqq's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.08
-				cfg.TakeProfitPct = 0.08
-				cfg.StopLossPct = 0.0
-				cfg.HoldingWindow = 1
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
-			case "sig_voo_buy_tecl":
-				// Matches SigVooBuyTecl's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.05
-				cfg.TakeProfitPct = 0.05
-				cfg.StopLossPct = 0.00
-				cfg.HoldingWindow = 8
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
-				cfg.DeclineDays = 3
-				cfg.ShortTakeProfitPct = 0.06
-				cfg.ShortStopLossPct = 0.95
-				cfg.ShortHoldingWindow = 2
 			}
 
 			NewSQLPipelineStrategy(id, name, desc, pipelinePath, cfg)

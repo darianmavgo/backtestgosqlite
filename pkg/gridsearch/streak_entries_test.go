@@ -38,7 +38,6 @@ func marketWith(t *testing.T, voo, tqqq []float64) string {
 	return path
 }
 
-
 func entryDates(t *testing.T, market, direction, start string, days int, regime string) []string {
 	t.Helper()
 	entries, err := buildStreakEntries(market, "t", "VOO", direction, start, []string{"TQQQ"}, []int{days}, []string{regime})

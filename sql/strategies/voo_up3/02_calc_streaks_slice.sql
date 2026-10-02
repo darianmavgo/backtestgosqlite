@@ -1,7 +1,6 @@
 -- Calculate VOO's consecutive up-close streak length per day, matching
 -- VOOUpStreakDates() in pkg/strategy/voo_up3.go. down_grp/up_grp style
--- streak grouping -- see sql/strategies/gld_decline/02_calc_gld_streaks_slice.sql
--- for why the grouping value must be zeroed on non-matching rows (a non-up day
+-- streak grouping. The grouping value must be zeroed on non-matching rows (a non-up day
 -- must never share a group with the up-streak that starts right after it).
 WITH diffs AS (
     SELECT

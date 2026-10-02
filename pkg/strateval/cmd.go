@@ -2,7 +2,7 @@
 // Does not modify STRATEGY_ALLOWLIST, evening-scan, or other live jobs.
 //
 //	strateval -list
-//	strateval -strategy sig_voo_buy_tecl
+//	strateval -strategy streak-voo-buy-tecl
 //	strateval -strategy all -optimize -allowlist "$STRATEGY_ALLOWLIST"
 //	strateval report
 //	strateval status

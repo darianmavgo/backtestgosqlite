@@ -11,7 +11,7 @@ import (
 func TestPipelineSQLResolvesWithoutRepoCheckout(t *testing.T) {
 	t.Chdir(t.TempDir()) // no sql/ here
 
-	for _, id := range []string{"mara_tree", "pdd_tree", "sig_voo_buy_tecl"} {
+	for _, id := range []string{"tree_strategy", "streak_strategy", "voo_up3"} {
 		dir := "sql/strategies/" + id
 		if pipelineOnDisk(dir) {
 			t.Fatalf("%s unexpectedly on disk in the temp cwd", dir)
