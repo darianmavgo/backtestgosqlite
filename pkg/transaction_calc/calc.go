@@ -2,8 +2,6 @@ package transaction_calc
 
 import (
 	"encoding/csv"
-	"fmt"
-	"io"
 	"math"
 	"os"
 	"sort"
@@ -22,8 +20,8 @@ type TradeRecord struct {
 	Comm     float64
 }
 
-// ParseIBKR parses an IBKR Activity Statement CSV.
-func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, error) {
+// ParseIBKR parses an IBKR Transaction History CSV.
+func ParseIBKR(path string) ([]models.Trade, []models.DailyEquityPoint, float64, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, 0, err
@@ -31,25 +29,17 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 	defer f.Close()
 
 	r := csv.NewReader(f)
-	r.FieldsPerRecord = -1 // Allow variable number of fields
+	r.FieldsPerRecord = -1
 	r.LazyQuotes = true
 
 	var tradeRecords []TradeRecord
-	var equityPoints []models.EquityPoint
 
-	var tradesHeader map[string]int
-	var navHeader map[string]int
-	var mtmHeader map[string]int
-
-	var initialCash float64
+	var thHeader map[string]int
 
 	for {
 		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
 		if err != nil {
-			continue // Skip bad rows
+			break // EOF or error
 		}
 
 		if len(rec) < 3 {
@@ -59,30 +49,36 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 		section := rec[0]
 		rowType := rec[1]
 
-		if section == "Trades" {
+		if section == "Transaction History" {
 			if rowType == "Header" {
-				tradesHeader = make(map[string]int)
+				thHeader = make(map[string]int)
 				for i, col := range rec {
-					tradesHeader[col] = i
+					thHeader[strings.TrimSpace(col)] = i
 				}
 			} else if rowType == "Data" {
-				if tradesHeader == nil {
+				if thHeader == nil {
 					continue
 				}
-				symIdx, ok1 := tradesHeader["Symbol"]
-				dateIdx, ok2 := tradesHeader["Date/Time"]
-				qtyIdx, ok3 := tradesHeader["Quantity"]
-				priceIdx, ok4 := tradesHeader["T. Price"]
-				commIdx, ok5 := tradesHeader["Comm/Fee"]
+				
+				ttIdx := thHeader["Transaction Type"]
+				if ttIdx == 0 || ttIdx >= len(rec) {
+					continue
+				}
+				tType := rec[ttIdx]
+				if tType != "Buy" && tType != "Sell" {
+					continue // Ignore Dividends, Disbursements, etc.
+				}
+
+				symIdx, ok1 := thHeader["Symbol"]
+				dateIdx, ok2 := thHeader["Date"]
+				qtyIdx, ok3 := thHeader["Quantity"]
+				priceIdx, ok4 := thHeader["Price"]
+				commIdx, ok5 := thHeader["Commission"]
+				
 				if !(ok1 && ok2 && ok3 && ok4 && ok5) {
 					continue
 				}
 				if symIdx >= len(rec) || dateIdx >= len(rec) || qtyIdx >= len(rec) || priceIdx >= len(rec) || commIdx >= len(rec) {
-					continue
-				}
-				
-				// Exclude summary rows (often they lack Date/Time)
-				if rec[dateIdx] == "" || strings.HasPrefix(rec[dateIdx], "Total") {
 					continue
 				}
 
@@ -90,6 +86,13 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 				qty, err := strconv.ParseFloat(qtyStr, 64)
 				if err != nil || qty == 0 {
 					continue
+				}
+				
+				// Make sure Buy is positive and Sell is negative quantity
+				if tType == "Sell" && qty > 0 {
+					qty = -qty
+				} else if tType == "Buy" && qty < 0 {
+					qty = -qty
 				}
 
 				price, _ := strconv.ParseFloat(strings.ReplaceAll(rec[priceIdx], ",", ""), 64)
@@ -108,68 +111,6 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 					Comm:     comm,
 				})
 			}
-		} else if section == "Net Asset Value" {
-			if rowType == "Header" {
-				navHeader = make(map[string]int)
-				for i, col := range rec {
-					navHeader[col] = i
-				}
-			} else if rowType == "Data" {
-				if navHeader == nil {
-					continue
-				}
-				assetClassIdx := navHeader["Asset Class"]
-				dateIdx := navHeader["Date"] // Could be "Field Name" in some exports? Let's check typical NAV.
-				totalIdx := navHeader["Total"]
-				if totalIdx == 0 {
-					continue // not found
-				}
-
-				// If dateIdx is missing, it might be horizontal NAV. But usually it's "Net Asset Value", "Data", "Total", ...
-				// Let's assume standard vertical NAV if dateIdx exists.
-				if dateIdx > 0 && dateIdx < len(rec) && totalIdx < len(rec) {
-					if assetClassIdx > 0 && assetClassIdx < len(rec) && rec[assetClassIdx] != "Total" {
-						continue // Only take the total NAV
-					}
-					dateStr := rec[dateIdx]
-					if len(dateStr) > 10 {
-						dateStr = dateStr[:10]
-					}
-					total, err := strconv.ParseFloat(strings.ReplaceAll(rec[totalIdx], ",", ""), 64)
-					if err == nil {
-						equityPoints = append(equityPoints, models.EquityPoint{
-							Date:        dateStr,
-							TotalEquity: total,
-						})
-					}
-				}
-			}
-		} else if section == "Mark-to-Market Performance Summary" {
-			if rowType == "Header" {
-				mtmHeader = make(map[string]int)
-				for i, col := range rec {
-					mtmHeader[col] = i
-				}
-			} else if rowType == "Data" {
-				if mtmHeader == nil {
-					continue
-				}
-				dateIdx := mtmHeader["Date"]
-				navIdx := mtmHeader["Total"] // or "NAV"
-				if dateIdx > 0 && navIdx > 0 && dateIdx < len(rec) && navIdx < len(rec) {
-					dateStr := rec[dateIdx]
-					if len(dateStr) > 10 {
-						dateStr = dateStr[:10]
-					}
-					nav, err := strconv.ParseFloat(strings.ReplaceAll(rec[navIdx], ",", ""), 64)
-					if err == nil {
-						equityPoints = append(equityPoints, models.EquityPoint{
-							Date:        dateStr,
-							TotalEquity: nav,
-						})
-					}
-				}
-			}
 		}
 	}
 
@@ -177,7 +118,7 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 	openLots := make(map[string][]TradeRecord)
 	var closedTrades []models.Trade
 
-	// Sort trade records by date just in case
+	// Sort trade records by date ascending
 	sort.Slice(tradeRecords, func(i, j int) bool {
 		return tradeRecords[i].Date < tradeRecords[j].Date
 	})
@@ -188,15 +129,12 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 
 		for math.Abs(qty) > 0.0001 && len(lots) > 0 {
 			lot := lots[0]
-			// Check if same direction - if so, just add to lots and break to handle below
 			if (lot.Quantity > 0 && qty > 0) || (lot.Quantity < 0 && qty < 0) {
 				break
 			}
 
-			// Opposing direction - match
 			matchedQty := math.Min(math.Abs(lot.Quantity), math.Abs(qty))
 			
-			// If lot was long and we are selling (qty < 0)
 			entryPrice := lot.Price
 			exitPrice := rec.Price
 			direction := "LONG"
@@ -209,10 +147,13 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 				grossPnl = (entryPrice - exitPrice) * matchedQty
 			}
 
-			// proportional commission
 			entryComm := lot.Comm * (matchedQty / math.Abs(lot.Quantity))
 			exitComm := rec.Comm * (matchedQty / math.Abs(rec.Quantity))
-			netPnl := grossPnl + entryComm + exitComm // comms are usually negative in IBKR
+			
+			// If commission is provided as a negative cost from IBKR, we add it to PnL.
+			// Or we just subtract its absolute value to be safe.
+			commPaid := math.Abs(entryComm) + math.Abs(exitComm)
+			netPnl := grossPnl - commPaid
 
 			entryTime, _ := time.Parse("2006-01-02", lot.Date)
 			exitTime, _ := time.Parse("2006-01-02", rec.Date)
@@ -221,7 +162,7 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 				holdDays = 0
 			}
 
-			closedTrades = append(closedTrades, models.Trade{
+			trade := models.Trade{
 				Symbol:          rec.Symbol,
 				EntryDate:       lot.Date,
 				ExitDate:        rec.Date,
@@ -231,12 +172,15 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 				InvestedCapital: entryPrice * matchedQty,
 				GrossPnL:        grossPnl,
 				NetPnL:          netPnl,
-				CommissionPaid:  math.Abs(entryComm + exitComm),
+				CommissionPaid:  commPaid,
 				HoldDays:        holdDays,
-				ExitReason:      models.ExitReasonSignal, // Default to Signal
-			})
+				ExitReason:      models.ExitReasonSignal,
+			}
+			if trade.InvestedCapital > 0 {
+				trade.ReturnPct = (trade.NetPnL / trade.InvestedCapital)
+			}
+			closedTrades = append(closedTrades, trade)
 
-			// adjust quantities
 			if qty > 0 {
 				qty -= matchedQty
 			} else {
@@ -250,9 +194,9 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 			}
 
 			if math.Abs(lot.Quantity) < 0.0001 {
-				lots = lots[1:] // remove consumed lot
+				lots = lots[1:]
 			} else {
-				lots[0] = lot // update remaining
+				lots[0] = lot
 			}
 		}
 
@@ -262,43 +206,49 @@ func ParseIBKR(path string) ([]models.Trade, []models.EquityPoint, float64, erro
 				Date:     rec.Date,
 				Quantity: qty,
 				Price:    rec.Price,
-				Comm:     rec.Comm, // Keep full comm, will be proportioned
+				Comm:     rec.Comm,
 			})
 		}
 		
 		openLots[rec.Symbol] = lots
 	}
 
-	// Calculate ReturnPct for closed trades
-	for i := range closedTrades {
-		if closedTrades[i].InvestedCapital > 0 {
-			closedTrades[i].ReturnPct = (closedTrades[i].NetPnL / closedTrades[i].InvestedCapital) * 100
-		}
-	}
-
-	// Sort equity points by date
-	sort.Slice(equityPoints, func(i, j int) bool {
-		return equityPoints[i].Date < equityPoints[j].Date
+	sort.Slice(closedTrades, func(i, j int) bool {
+		return closedTrades[i].ExitDate < closedTrades[j].ExitDate
 	})
 
-	if len(equityPoints) > 0 {
-		initialCash = equityPoints[0].TotalEquity
-	} else {
-		initialCash = 100000 // Fallback
-	}
+	// Generate a synthetic step-function equity curve
+	initialCash := 100000.0 // Default arbitrary capital since we only have trades
+	
+	// Create a daily curve spanning from first trade to last trade
+	var equityPoints []models.DailyEquityPoint
+	if len(closedTrades) > 0 {
+		startDate, _ := time.Parse("2006-01-02", closedTrades[0].EntryDate)
+		endDate, _ := time.Parse("2006-01-02", closedTrades[len(closedTrades)-1].ExitDate)
+		if startDate.After(endDate) {
+			startDate = endDate
+		}
 
-	// De-duplicate equity points by date (take last)
-	var deduped []models.EquityPoint
-	var lastDate string
-	for _, ep := range equityPoints {
-		if ep.Date != lastDate {
-			deduped = append(deduped, ep)
-			lastDate = ep.Date
-		} else {
-			deduped[len(deduped)-1] = ep
+		// Pre-compute daily PnL changes
+		pnlByDate := make(map[string]float64)
+		for _, t := range closedTrades {
+			pnlByDate[t.ExitDate] += t.NetPnL
+		}
+
+		currentEquity := initialCash
+		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+			// Skip weekends for trading days
+			if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+				continue
+			}
+			ds := d.Format("2006-01-02")
+			currentEquity += pnlByDate[ds]
+			equityPoints = append(equityPoints, models.DailyEquityPoint{
+				Date:        ds,
+				TotalEquity: currentEquity,
+			})
 		}
 	}
-	equityPoints = deduped
 
 	return closedTrades, equityPoints, initialCash, nil
 }
