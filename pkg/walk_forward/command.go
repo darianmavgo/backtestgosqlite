@@ -11,6 +11,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	_ "modernc.org/sqlite"
 )
 
@@ -20,6 +21,9 @@ type Config struct {
 	MarketDB string
 	Table    string
 	DB       string
+	// KeepGoing skips a strategy that cannot be walked (short history, no
+	// bars) and continues, instead of aborting a long list.
+	KeepGoing bool
 	Options
 }
 
@@ -34,12 +38,14 @@ func Main(out io.Writer) error {
 	flag.IntVar(&conf.TestMonths, "test-months", 6, "out-of-sample window, calendar months")
 	flag.IntVar(&conf.StepMonths, "step-months", 6, "how far each fold moves forward, calendar months")
 	flag.Float64Var(&conf.Capital, "capital", 100000, "starting capital for each window")
+	flag.BoolVar(&conf.KeepGoing, "keep-going", false, "skip strategies that cannot be walked (short history) instead of stopping")
 	flag.Parse()
 	return Run(context.Background(), out, conf)
 }
 
 // Run loads bars, walks each strategy, and writes fold rows plus the summary.
 func Run(ctx context.Context, out io.Writer, conf Config) error {
+	stratreg.RegisterAll(appenv.Folder(), conf.MarketDB)
 	ids := splitIDs(conf.Strategy)
 	if len(ids) == 0 {
 		return fmt.Errorf("walk_forward: -strategy is required")
@@ -79,6 +85,10 @@ func Run(ctx context.Context, out io.Writer, conf Config) error {
 		}
 		rows, err := RunStrategy(ctx, strat, bars, nil, conf.Options)
 		if err != nil {
+			if conf.KeepGoing {
+				fmt.Fprintf(out, "SKIP %s: %v\n", strat.ID(), err)
+				continue
+			}
 			return err
 		}
 		if err := Save(outDB, strat.ID(), rows); err != nil {

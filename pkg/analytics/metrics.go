@@ -199,12 +199,12 @@ func CalculatePerformanceMetricsWithBenchmark(
 		downsideStdDev := math.Sqrt(sumDownsideSqDiff / float64(len(dailyReturns)))
 
 		// Annualized Sharpe Ratio (assuming 0% risk-free rate)
-		if stdDevDaily > 0 {
+		if stdDevDaily > 1e-12 {
 			report.SharpeRatio = (meanDailyRet / stdDevDaily) * math.Sqrt(252.0)
 		}
 
 		// Annualized Sortino Ratio
-		if downsideStdDev > 0 {
+		if downsideStdDev > 1e-12 {
 			report.SortinoRatio = (meanDailyRet / downsideStdDev) * math.Sqrt(252.0)
 		}
 	}

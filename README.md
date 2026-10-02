@@ -16,10 +16,7 @@ make list           # ./bin/backtest -list
 
 | Variable | Default | Used for |
 |---|---|---|
-| `APP_FOLDER` | `.` | repository root |
-| `APP_DATA` | `data` | market history, under `APP_FOLDER` |
-| `APP_REF` | `refdata` | reference DB, under `APP_FOLDER` |
-| `APP_REPORTS` | `reports` | result DBs and HTML, under `APP_FOLDER` |
+| `APP_FOLDER` | `.` | repository root (contains data, refdata, and reports) |
 | `POLYGON_API_KEY` | empty | Polygon equity and option downloads, ETF universe |
 | `STRATEGY_ALLOWLIST` | empty | `strateval` live-list snapshot |
 | `STRATEGIES_DB` or `STRATEVAL_DB` | empty | overrides the strateval ledger path |

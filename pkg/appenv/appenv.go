@@ -4,9 +4,6 @@
 //
 //	POLYGON_API_KEY  Polygon.io key
 //	APP_FOLDER       project root (default: current directory)
-//	APP_REPORTS      reports folder, relative to APP_FOLDER (default: reports)
-//	APP_REF          reference-data folder, relative to APP_FOLDER (default: refdata)
-//	APP_DATA         market-data folder, relative to APP_FOLDER (default: data)
 //
 // Real environment variables win over .env values. .env is searched in the
 // current directory, its two parents, and beside/above the running binary.
@@ -77,13 +74,13 @@ func sub(key, def string) string {
 func Folder() string { return sub("APP_FOLDER", ".") }
 
 // Reports is the reports directory.
-func Reports() string { return filepath.Join(Folder(), sub("APP_REPORTS", "reports")) }
+func Reports() string { return filepath.Join(Folder(), "reports") }
 
 // Ref is the reference-data directory.
-func Ref() string { return filepath.Join(Folder(), sub("APP_REF", "refdata")) }
+func Ref() string { return filepath.Join(Folder(), "refdata") }
 
 // Data is the market-data directory.
-func Data() string { return filepath.Join(Folder(), sub("APP_DATA", "data")) }
+func Data() string { return filepath.Join(Folder(), "data") }
 
 // RefDB is the reference database (universes, DT configs, symbol tables).
 func RefDB() string { return filepath.Join(Ref(), "settings.db") }
