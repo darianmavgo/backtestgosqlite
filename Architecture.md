@@ -81,6 +81,8 @@ Option tables in the same market DB (`storage.EnsureOptionTables`):
 | `etf_universe` | `(list, symbol)`. Lists: `all` (Polygon active US ETFs), `6yr`, `sweep` |
 | `streak_strategy` | one runnable streak per row: watch symbol, bought symbol, direction (`drop` or `rally`), signal days, hold, take-profit and stop as fractional offsets, regime, allocation, cash yield, slippage, next-day limit. `pkg/streak_strategy.Register` loads it. `gridsearch promote` upserts winning rows |
 
+`strategy_family_param` says, per family column, whether `gridsearch` varies it and with which values (`sql/stages/family_params`, written on every open of the file). Streak rows search signal days, hold, take-profit, stop and regime. Tree and markov rows search the exits only (hold, take-profit, stop) over the entries their own pipeline produces. Hold and hold_bail rows have nothing to search.
+
 Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` is empty: the command that filled it was removed. The per-ETF CloudForest `dt_*` strategies and the `etf_dt_strategies` table were deleted; the tree family (`tree_strategy` rows) is the one decision-tree family. Stock and ETF discovery now goes to `refdata/universe.db` through `universe`. Registration reads the settings tables through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
 
 ## Strategies
@@ -130,18 +132,22 @@ Each strategy gets its own calc DB (`calc_<id>.db`) so pipeline tables do not co
 
 Registered from this tree today: `voo-up3`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their orphaned SQL folders were deleted. `mara_tree`, `nvdl_tree` and `pdd_tree` are rows of `tree_strategy`; their own SQL folders were deleted because the generic `tree_strategy` pipeline gives identical signals (109, 65 and 150 on the real market DB). Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
 
-`voo-up3` calculates in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
+Every strategy calculates its signals in SQL. `strategy.RunPipeline` runs a pipeline directory with the market database attached as `backtest_start` and the strategy's calc database for the slice tables, and gives the pipeline `__START_DATE__` and `__END_DATE__` (the window of bars the run loaded) plus the strategy's own `StrategyConfig.SQLParams`. With either database path empty it logs and returns no signals. Go only passes parameters and stamps the strategy id on the result.
 
-These are defined in Go and do not calculate their signals in SQL:
-
-| ID | What runs instead |
+| Pipeline | Strategies |
 |---|---|
-| `voo-buy-hold` | one market signal built in Go from the first VOO bar |
-| `schd-buy-hold`, `vym-buy-hold`, `dvy-buy-hold` | one market signal built in Go |
-| `tsll-daily-one-share` | one market signal per TSLL bar, in Go |
-| `biggest-winner` | annual-return ranking in Go |
-| `schd-covered-call`, `vym-covered-call`, `dvy-covered-call`, and the three `-5pct` ids | `GenerateSignals` returns nil; the covered-call overlay is Go in `pkg/options` |
-| `<dir>-sql` | duplicate registry id for a pipeline that already has a Go strategy. `stack-eval` drops these ids |
+| `streak_strategy`, `tree_strategy`, `markov_model` | the streak, tree and markov rows (`markov_model` reads the saved model, see `train`) |
+| `markov_hmm` | `markov_hmm_*`, reading `hmm_regime.db` from `study hmm_regime` |
+| `first_bar` | buy on the first bar and hold: the `hold` family and the `*-margin-buy-hold` ids. `__TOTAL_RETURN__` prices the signal on dividend-adjusted prices when the runner simulates on them (`strategy.DividendModeSetter`) |
+| `every_bar` | `tsll-daily-one-share`: one entry per bar with its own take-profit, stop and hold |
+| `hold_bail_strategy` | the `hold_bail` family: first bar, then every bar whose close is above its SMA of `sma_reentry_period` |
+| `price_action_reclaim` | `price-action-reclaim`, over every symbol with 250 bars in the window |
+| `annual_winner` | `biggest-winner` (long), `-short` and `-inverse`: the prior calendar year's best performer, traded for the new year. A symbol whose first open of the year is 0 has no return and is not ranked |
+| `voo_up3` | `voo-up3` |
+
+The covered-call ids (`schd-covered-call`, `vym-covered-call`, `dvy-covered-call` and the `-5pct` ids) return no stock signals: the overlay is simulated in Go in `pkg/options`. A `<dir>-sql` registry id (`voo_up3-sql`) is a duplicate of a pipeline that already has a Go strategy, and `stack-eval` drops it.
+
+Still Go, and not signal generation: the simulator and its metrics (`pkg/simulator`, `pkg/analytics`), the dividend-adjusted price copy and dividend recovery in `pkg/runner`, the covered-call overlay, and the studies in `pkg/study`.
 
 ## Simulation
 

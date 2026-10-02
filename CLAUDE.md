@@ -23,6 +23,8 @@ go test ./pkg/strategy -run TestName              # one test
 
 ## Layout rules
 
+- Signals are calculated in SQL and Go only runs them: a strategy builds its config, calls `strategy.RunPipeline` with a `sql/strategies/<name>/` directory and returns the result. Do not add a Go loop over bars that decides entries, and do not add an indicator function in Go.
+
 - `cmd/<name>/main.go` is a thin main that calls `pkg/<name>.Main` / `Run`. Flags, defaults and logic live in `pkg/<name>` so tests call `Run` without `os.Args`. Follow `pkg/backtest/main.go` and `pkg/livescan/main.go`.
 - `pkg/strategy` holds the `Strategy` interface and registry (`Register`, `RegisterAlias`, `Get`; lookup is case- and punctuation-insensitive). Keys differ by `-`/`_`, so do not add a second id that normalizes to an existing one.
 - Row-backed strategies (streak, hold, hold_bail, tree, markov) are not registered per row. Each table is one `strategy.Family` (`pkg/strategy/family.go`, `RowFamily`); `strategy.Get(id)` reads and builds the row on demand, with the same case/punctuation-insensitive match. `strategy.List()` returns only code and SQL-pipeline strategies; `strategy.ListAll()` also builds every row (use it only where "all" must mean every row). `pkg/stratreg.RegisterAll(root, db)` registers SQL pipelines plus the families; commands that only need the families call `stratreg.RegisterFamilies()`. Never loop over a table calling `strategy.Register`. Pick subsets with `stratlist` and a `.sql` file (`sql/lists/`).
