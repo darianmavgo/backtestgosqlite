@@ -45,7 +45,7 @@ reports/               one SQLite file per run, plus HTML
 | `RefDB()` | `Ref()/settings.db` |
 | `ReportFile(p)` | absolute paths pass through; a leading `reports/` is stripped and the rest is joined to `Reports()` |
 
-`cliutils.GetDefaultMarketDB` returns `MarketDB()` if the file exists, otherwise `Data()/leveraged_backtest.db`. `backtest`, `study`, and `livescan` use that helper. `market_history` and the batch tools call `MarketDB()` directly.
+`cliutils.GetDefaultMarketDB` returns `MarketDB()`. `backtest`, `study`, and `livescan` use that helper. `market_history` and the batch tools call `MarketDB()` directly.
 
 `strateval`'s ledger is special. It does not use `ReportFile`, because a deploy `.env` can set `APP_FOLDER` to a Linux path. Order: `STRATEGIES_DB`, then `STRATEVAL_DB`, then `<module root>/reports/strategies.db` found by walking up to `go.mod`.
 

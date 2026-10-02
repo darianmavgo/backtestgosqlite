@@ -34,7 +34,7 @@ Default files:
 | Shared-account results | `reports/shared_<primary>_<secondary>_….db` |
 | HTML tear sheet | `reports/backtest_report.html` |
 
-Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db` when that file exists and `data/leveraged_backtest.db` when it does not. `market_history`, `gridsearch`, `scoreboard`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
+Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db`. `market_history`, `gridsearch`, `scoreboard`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
 
 The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack-eval -primary …`, not `backtest -primary … stack-eval`.
 
