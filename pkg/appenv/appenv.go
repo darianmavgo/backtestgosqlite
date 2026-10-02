@@ -74,7 +74,7 @@ func sub(key, def string) string {
 func Folder() string { return sub("APP_FOLDER", ".") }
 
 // Reports is the reports directory.
-func Reports() string { return filepath.Join(Folder(), "reports") }
+func Reports() string { return filepath.Join(Data(), "reports") }
 
 // Ref is the reference-data directory.
 func Ref() string { return filepath.Join(Folder(), "refdata") }

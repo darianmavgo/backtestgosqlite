@@ -26,7 +26,7 @@ sql/studies            SQL text some studies execute
 sql/validation         walk-forward summary SQL
 refdata/settings.db    universes, symbol tables, etf_dt_strategies, streak_strategy
 data/market_history.db daily and intraday bars, option chains
-reports/               one SQLite file per run, plus HTML
+data/reports/          one SQLite file per run, plus HTML
 ```
 
 `cmd/*` does not hold strategy logic. A command's flags, defaults, and `Run` live in the matching `pkg` so tests can call `Run` without parsing `os.Args`.
@@ -40,7 +40,7 @@ reports/               one SQLite file per run, plus HTML
 | `Folder()` | `APP_FOLDER` or `.` |
 | `Data()` | `Folder()/data` |
 | `Ref()` | `Folder()/refdata` |
-| `Reports()` | `Folder()/reports` |
+| `Reports()` | `Folder()/data/reports` |
 | `MarketDB()` | `Data()/market_history.db` |
 | `RefDB()` | `Ref()/settings.db` |
 | `ReportFile(p)` | absolute paths pass through; a leading `reports/` is stripped and the rest is joined to `Reports()` |

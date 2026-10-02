@@ -27,9 +27,9 @@ Default files:
 |---|---|
 | Market bars | `data/market_history.db`, table `backtest_start` |
 | Reference lists and ETF trees | `refdata/settings.db` |
-| Per-strategy results | `reports/<id>.db`, then `reports/<id>_2.db`, `reports/<id>_3.db`, … |
-| Shared-account results | `reports/shared_<primary>_<secondary>_….db` |
-| HTML tear sheet | `reports/backtest_report.html` |
+| Per-strategy results | `data/reports/<id>.db`, then `data/reports/<id>_2.db`, `data/reports/<id>_3.db`, … |
+| Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
+| HTML tear sheet | `data/reports/backtest_report.html` |
 
 Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db`. `market_history`, `gridsearch`, `scoreboard`, and `etf_decision_trees` always default to `data/market_history.db` and create it when they write.
 
@@ -76,9 +76,9 @@ Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Poly
 
 Run one strategy, many strategies, or a shared cash account.
 
-**Reads:** market DB (`-db`, table `-table` `backtest_start`). `optimized` also reads `reports/gridsearch.db`. SQL pipelines read `sql/strategies/<id>/` when that directory exists, otherwise the copy embedded in the binary.
+**Reads:** market DB (`-db`, table `-table` `backtest_start`). `optimized` also reads `data/reports/gridsearch.db`. SQL pipelines read `sql/strategies/<id>/` when that directory exists, otherwise the copy embedded in the binary.
 
-**Writes:** `reports/<id>.db` (next free `reports/<id>_N.db` if the name is taken). Tables `signals`, `trades`, `equity_curve`, `performance_summary`, and when relevant `return_breakdown` and `run_metrics`. HTML at `reports/backtest_report.html`. Auto-download (`-auto-download`, default on) writes missing bars into the market DB. Window starts `2021-01-01` (`-start`); earlier bars warm up SMAs only. Capital default `$100,000`. `-download-years` default `5`.
+**Writes:** `data/reports/<id>.db` (next free `data/reports/<id>_N.db` if the name is taken). Tables `signals`, `trades`, `equity_curve`, `performance_summary`, and when relevant `return_breakdown` and `run_metrics`. HTML at `data/reports/backtest_report.html`. Auto-download (`-auto-download`, default on) writes missing bars into the market DB. Window starts `2021-01-01` (`-start`); earlier bars warm up SMAs only. Capital default `$100,000`. `-download-years` default `5`.
 
 ```bash
 ./bin/backtest -list
@@ -91,11 +91,11 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -primary sig-voo-buy-tecl -secondary mara_tree -alloc 0.10 -default-asset VYM
 ```
 
-`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `reports/shared_<primary>_<secondaries>_default-<symbol>.db`. When that name would make the SQLite journal longer than 255 bytes, the file is `reports/default_asset_<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
+`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `data/reports/shared_<primary>_<secondaries>_default-<symbol>.db`. When that name would make the SQLite journal longer than 255 bytes, the file is `data/reports/default_asset_<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
 
 ### backtest stale
 
-Print which `reports/*.db` results are stale (unknown strategy, newer market bars, or an edited SQL pipeline). No simulation.
+Print which `data/reports/*.db` results are stale (unknown strategy, newer market bars, or an edited SQL pipeline). No simulation.
 
 ```bash
 ./bin/backtest stale
@@ -103,7 +103,7 @@ Print which `reports/*.db` results are stale (unknown strategy, newer market bar
 
 ### backtest optimized
 
-Re-run strategies with the highest-resilience row in `reports/gridsearch.db` (`hold_days` must be set; older rows without it are ignored). No `-strategy` means every registered strategy. A strategy with no usable sweep runs on its own defaults and is named in the output.
+Re-run strategies with the highest-resilience row in `data/reports/gridsearch.db` (`hold_days` must be set; older rows without it are ignored). No `-strategy` means every registered strategy. A strategy with no usable sweep runs on its own defaults and is named in the output.
 
 ```bash
 ./bin/backtest optimized -strategy sig-voo-buy-tecl
@@ -112,7 +112,7 @@ Re-run strategies with the highest-resilience row in `reports/gridsearch.db` (`h
 
 ### backtest stack-eval
 
-Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
+Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `data/reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `data/reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
 
 Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`, `dt_*` trees, and any strategy that does not name its symbols. `-include-dt` adds the top `-dt-top` (15) ETF trees. `-include-universe` adds symbol-scanning strategies. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
 
@@ -154,7 +154,7 @@ Same signal generation as `backtest`, window fixed to the last completed session
 
 **Reads:** market DB, table `backtest_start`. `-bars 0` loads each strategy's minimum history.
 
-**Writes:** `reports/livescan.db` (`livescan_status`, `livescan_signals`). `-json` also prints the scan to stdout for `trade_orchestrator`.
+**Writes:** `data/reports/livescan.db` (`livescan_status`, `livescan_signals`). `-json` also prints the scan to stdout for `trade_orchestrator`.
 
 ```bash
 ./bin/livescan -list
@@ -171,15 +171,15 @@ Same signal generation as `backtest`, window fixed to the last completed session
 
 Sweep hold, take-profit, stop, and the strategy's other axes. One strategy writes HTML. Several strategies share one worker pool and record progress so a rerun skips finished ids.
 
-**Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `reports/voo_up3_etf.db`) ranked by `rank_cagr`.
+**Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`. `streak-*` strategies loaded from `refdata/settings.db` are excluded unless `-include-streak`.
+**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`. `streak-*` strategies loaded from `refdata/settings.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
 ./bin/gridsearch -strategy sig-voo-buy-tecl -top 20
 ./bin/gridsearch -strategy all -no-html
-./bin/gridsearch -strategy gld-decline -symbols-from reports/voo_up3_etf.db -top-cagr 10
+./bin/gridsearch -strategy gld-decline -symbols-from data/reports/voo_up3_etf.db -top-cagr 10
 ```
 
 `-force` redoes a strategy already marked done in `gridsearch_runs`.
@@ -221,7 +221,7 @@ Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` w
 
 **Reads:** `refdata/settings.db` (`streak_strategy`, `markov_strategy`, `etf_dt_strategies`) and `data/market_history.db`.
 
-**Writes:** `reports/park_googl.db` (`sweep_config`, `park_asset`, `sweep_strategy`, `strategy_run`). Nothing is inserted into the settings tables, and no per-strategy file is written under `reports/`.
+**Writes:** `data/reports/park_googl.db` (`sweep_config`, `park_asset`, `sweep_strategy`, `strategy_run`). Nothing is inserted into the settings tables, and no per-strategy file is written under `data/reports/`.
 
 ```bash
 ./bin/park_sweep seed
@@ -230,7 +230,7 @@ Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` w
 ./bin/park_sweep report
 ```
 
-`report` writes `reports/park_googl_report.db` and `reports/park_googl.html` from the sweep. The database holds every strategy row. The page shows the park buy-and-hold, every done streak, and the 25 Markov rows with the highest edge.
+`report` writes `data/reports/park_googl_report.db` and `data/reports/park_googl.html` from the sweep. The database holds every strategy row. The page shows the park buy-and-hold, every done streak, and the 25 Markov rows with the highest edge.
 
 `sweep_config` holds the window (`2021-10-01` through `2026-10-01`), capital (`100000`), and park symbol (`GOOGL`). `allocation_pct` NULL uses each row's own allocation. A symbol that does not cover the window is stored as `skipped`. `run` retries `failed` and `running` rows and leaves `done` rows. `rank` prints whatever is already `done`. `-db`, `-market-db`, `-settings-db`, and `-concurrency` override the defaults.
 
@@ -240,9 +240,9 @@ Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` w
 
 Backtest every registered strategy that lacks a usable result, then rank them.
 
-**Reads:** `data/market_history.db` (`backtest_start`) and existing `reports/<id>[_N].db`.
+**Reads:** `data/market_history.db` (`backtest_start`) and existing `data/reports/<id>[_N].db`.
 
-**Writes:** per-strategy `reports/<id>[_N].db` for anything it has to run, then `reports/scoreboard.db`. If that file is locked it writes `reports/scoreboard_N.db`. Capital `$100,000`, start `2021-01-01`, download horizon 5 years. No `-db` or `-out-dir` flag; both follow `APP_FOLDER`.
+**Writes:** per-strategy `data/reports/<id>[_N].db` for anything it has to run, then `data/reports/scoreboard.db`. If that file is locked it writes `data/reports/scoreboard_N.db`. Capital `$100,000`, start `2021-01-01`, download horizon 5 years. No `-db` or `-out-dir` flag; both follow `APP_FOLDER`.
 
 ```bash
 ./bin/scoreboard
@@ -261,7 +261,7 @@ Run one research study.
 
 **Reads:** market DB (`-db`).
 
-**Writes:** `reports/<study-id>.db`.
+**Writes:** `data/reports/<study-id>.db`.
 
 ```bash
 ./bin/study -list
@@ -283,7 +283,7 @@ In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live 
 
 **Reads:** `data/market_history.db`, table `backtest_start`. Allowlist from `-allowlist` or `STRATEGY_ALLOWLIST` (comma-separated ids).
 
-**Writes:** `reports/strategies.db` (`strategies`, `strategy_evals`, `deployments`), unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. Scratch artifacts under `reports/strateval_runs/`. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
+**Writes:** `data/reports/strategies.db` (`strategies`, `strategy_evals`, `deployments`), unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. Scratch artifacts under `data/reports/strateval_runs/`. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
 
 ```bash
 ./bin/strateval -list
@@ -305,7 +305,7 @@ Rolling train / test folds.
 
 **Reads:** `data/market_history.db`, table `backtest_start`.
 
-**Writes:** `reports/walk_forward.db` relative to the current directory. Tables `walk_forward_fold` and `walk_forward_summary`. Train 24 months, test 6, step 6. Capital `$100,000`.
+**Writes:** `data/reports/walk_forward.db` relative to the current directory. Tables `walk_forward_fold` and `walk_forward_summary`. Train 24 months, test 6, step 6. Capital `$100,000`.
 
 ```bash
 ./bin/walk_forward -strategy sig-voo-buy-tecl
@@ -316,11 +316,11 @@ Rolling train / test folds.
 
 Read a walk-forward DB and print a verdict per strategy: `HOLDS`, `DECAYS`, `CURVE_FIT`, or `INSUFFICIENT`.
 
-**Reads / writes:** `reports/walk_forward.db` (cwd-relative). Adds `check_overfit_gate` when it records the gates. Defaults: `-min-oos-trades 8`, `-trial-cutoff 20`, `-decay 0.25`.
+**Reads / writes:** `data/reports/walk_forward.db` (cwd-relative). Adds `check_overfit_gate` when it records the gates. Defaults: `-min-oos-trades 8`, `-trial-cutoff 20`, `-decay 0.25`.
 
 ```bash
 ./bin/check_overfit
-./bin/check_overfit -db reports/walk_forward.db -min-oos-trades 8
+./bin/check_overfit -db data/reports/walk_forward.db -min-oos-trades 8
 ```
 
 ---
@@ -356,5 +356,5 @@ Open a SQLite file in the Dataflare macOS app. No flags. Pass the DB as the only
 ```bash
 ./bin/dataflare
 ./bin/dataflare data/market_history.db
-./bin/dataflare reports/sig-voo-buy-tecl.db
+./bin/dataflare data/reports/sig-voo-buy-tecl.db
 ```

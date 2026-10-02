@@ -40,11 +40,11 @@ func defaultLedgerDB() string {
 	if v := strings.TrimSpace(os.Getenv("STRATEVAL_DB")); v != "" {
 		return v
 	}
-	// Prefer <repo>/reports/strategies.db when run from the module tree.
+	// Prefer <repo>/data/reports/strategies.db when run from the module tree.
 	if root := findModuleRoot(); root != "" {
-		return filepath.Join(root, "reports", "strategies.db")
+		return filepath.Join(root, "data", "reports", "strategies.db")
 	}
-	return filepath.Join("reports", "strategies.db")
+	return filepath.Join("data", "reports", "strategies.db")
 }
 
 func findModuleRoot() string {
