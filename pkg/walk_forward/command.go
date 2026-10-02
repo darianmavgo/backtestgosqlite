@@ -33,7 +33,7 @@ func Main(out io.Writer) error {
 	flag.StringVar(&conf.Strategy, "strategy", "", "strategy id, or a comma-separated list")
 	flag.StringVar(&conf.MarketDB, "market-db", appenv.MarketDB(), "market bars SQLite")
 	flag.StringVar(&conf.Table, "table", "backtest_start", "bars table")
-	flag.StringVar(&conf.DB, "db", "reports/walk_forward.db", "SQLite file for fold rows and walk_forward_summary")
+	flag.StringVar(&conf.DB, "db", appenv.ReportFile("walk_forward.db"), "SQLite file for fold rows and walk_forward_summary")
 	flag.IntVar(&conf.TrainMonths, "train-months", 24, "rolling in-sample window, calendar months")
 	flag.IntVar(&conf.TestMonths, "test-months", 6, "out-of-sample window, calendar months")
 	flag.IntVar(&conf.StepMonths, "step-months", 6, "how far each fold moves forward, calendar months")

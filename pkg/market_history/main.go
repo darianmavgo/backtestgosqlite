@@ -113,11 +113,11 @@ func Main() {
 	d := DefaultConfig()
 	cfg := d
 	flag.StringVar(&cfg.DB, "db", d.DB, "Target SQLite DB path for market history (default: APP_FOLDER/data/market_history.db)")
-	flag.StringVar(&cfg.SettingsDB, "settings", d.SettingsDB, "Reference DB path (etf_universe lists and symbol tables)")
+	flag.StringVar(&cfg.SettingsDB, "settings", d.SettingsDB, "Reference DB path (etf_universe lists and symbol tables; etf_universe is empty and no command fills it now)")
 	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, polygon-options, stooq")
 	flag.StringVar(&cfg.PolygonKey, "polygon-key", d.PolygonKey, "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated symbols to download (e.g. SPY,QQQ). Bare arguments work too: market_history VOO, IEF, GLD")
-	flag.StringVar(&cfg.Universe, "list", d.Universe, "etf_universe list in the settings DB to download (all, 6yr, sweep)")
+	flag.StringVar(&cfg.Universe, "list", d.Universe, "etf_universe list in the settings DB to download (all, 6yr, sweep); the table is currently empty")
 	flag.StringVar(&cfg.Table, "table", d.Table, "Table name in settings.db with symbols (fallback if no symbols specified)")
 	flag.IntVar(&cfg.Limit, "limit", d.Limit, "Limit number of symbols (0 for all)")
 	flag.IntVar(&cfg.Years, "years", d.Years, "Number of years of history")

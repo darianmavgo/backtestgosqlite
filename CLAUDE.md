@@ -17,14 +17,20 @@ go test ./pkg/strategy -run TestName              # one test
 ```
 
 - Flags go before positional args (Go `flag` stops at the first bare arg). A subcommand is arg 1: `backtest stack-eval -primary ...`.
-- `data/market_history.db` (table `backtest_start`) and `refdata/settings.db` are real data. Tests and experiments must not write to them; use `t.TempDir()` databases or `reports/`.
-- Paths come from `pkg/appenv` (e.g. `APP_FOLDER`). Do not hardcode `data/...` in Go; call `appenv.MarketDB()` / `cliutils.GetDefaultMarketDB`.
+- `data/market_history.db` (table `backtest_start`) and `refdata/settings.db` are real data. Tests and experiments must not write to them; use `t.TempDir()` databases or `data/reports/`. For a search or experiment on trimmed data, build a copy of the market DB and pass `-db` (and `-out-dir`).
+- Paths come from `pkg/appenv`. Only `APP_FOLDER` is configurable; `data/`, `refdata/` and `data/reports/` are fixed subfolders (`APP_DATA`, `APP_REF` and `APP_REPORTS` no longer exist). Do not hardcode `data/...` or `reports/...` in Go, including flag defaults; call `appenv.MarketDB()`, `appenv.ReportFile(name)` or `cliutils.GetDefaultMarketDB`.
+- `go vet ./...` currently fails: `pkg/backtest/main_test.go:53` calls `strategy.NewSigVooBuyTecl`, which was removed (it is now the `streak-voo-buy-tecl` row). `pkg/runner` stack-eval tests also look up the removed `sig-voo-buy-tecl`. Fix these before relying on a green `go test ./...`.
 
 ## Layout rules
 
 - `cmd/<name>/main.go` is a thin main that calls `pkg/<name>.Main` / `Run`. Flags, defaults and logic live in `pkg/<name>` so tests call `Run` without `os.Args`. Follow `pkg/backtest/main.go` and `pkg/livescan/main.go`.
 - `pkg/strategy` holds the `Strategy` interface and registry (`Register`, `RegisterAlias`, `Get`; lookup is case- and punctuation-insensitive). Keys differ by `-`/`_`, so do not add a second id that normalizes to an existing one.
-- Other packages: `simulator` (portfolio and shared-account), `runner` (load bars, run, stack, stack-eval), `storage` (schemas, `OpenSQLite`, `ExecuteSQLFile`), `refdb` (settings.db), `analytics` (metrics, HTML tear sheet), `calendar`.
+- `pkg/stratreg.RegisterAll(root, db)` registers SQL pipelines plus every settings-table family (streak, hold, hold_bail, tree, markov), the same sequence as `backtest`. A new command that resolves strategy ids must call it; `backtest`, `gridsearch`, `scoreboard`, `livescan` and `strateval` still register inline and should move to it.
+- Strategies are not only Go: about 65,600 are rows in `refdata/settings.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`). Add or change those with SQL on the table, not Go. `etf_dt_strategies` and `etf_universe` are empty; their generator commands were removed.
+- `park-<symbol>` (`strategy.ParkStrategy`) is a stack member for the residual-cash book. It is never a sleeve: `strategy.SplitResidual` removes it and the runner passes its symbol as `DefaultAsset`. Do not give it signals.
+- Other packages: `simulator` (portfolio and shared-account), `runner` (load bars, run, stack, stack-eval), `storage` (schemas, `OpenSQLite`, `ExecuteSQLFile`), `refdb` (settings.db), `analytics` (metrics, HTML tear sheet), `calendar`, `transaction_calc` (IBKR CSV to report), `universe` (Polygon discovery into `refdata/universe.db`), `walk_forward` and `check_overfit` (out-of-sample screening).
+- `sql/search/` holds the stack-search gate and liquidity screen as numbered slice-table stages. Run them with `sqlite3` against the walk-forward, market and settings DBs; there is no Go wrapper yet.
+- `cmd/markov_test` and `cmd/transaction_calc` hold logic in `cmd/`, which breaks the thin-wrapper rule. Move that logic into `pkg/` when touching them.
 
 ## Adding or changing a strategy
 
@@ -42,10 +48,11 @@ In `models.Signal`, `TakeProfit` and `StopLoss` are absolute dollar prices (`150
 
 ## Data gotchas
 
+- Walk-forward and stack results depend on the market DB window: a stack found by screening many strategies on the full history is in-sample. Keep a held-out final period and report it separately (see `docs/omnifunds_benchmark.md` for the bar to beat).
 - Daily simulation reads rows with `length(Date) = 10`; minute bars share the same table and are skipped.
-- Result DBs are written per run: `reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`. Do not assume a fixed filename.
-- `strateval`'s ledger path ignores `ReportFile`: `STRATEGIES_DB`, then `STRATEVAL_DB`, then `<module root>/reports/strategies.db`.
-- `*.db`, `bin/` and `reports/` are gitignored. Do not commit databases or binaries.
+- Result DBs are written per run: `data/reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`. Do not assume a fixed filename.
+- `strateval`'s ledger path ignores `ReportFile`: `STRATEGIES_DB`, then `STRATEVAL_DB`, then `<module root>/data/reports/strategies.db`.
+- `data/` (except `README.md` and `ignore_over50MB.sh`), `bin/` and `reports/*.html` are gitignored; `data/` also has its own `.git`. Do not commit databases or binaries.
 
 ## Before you finish
 

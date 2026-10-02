@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	_ "modernc.org/sqlite"
 )
 
@@ -19,7 +20,7 @@ type Config struct {
 // Main parses flags and runs. It returns errors instead of exiting.
 func Main(out io.Writer) error {
 	var conf Config
-	flag.StringVar(&conf.DB, "db", "reports/walk_forward.db", "SQLite file written by walk_forward")
+	flag.StringVar(&conf.DB, "db", appenv.ReportFile("walk_forward.db"), "SQLite file written by walk_forward")
 	flag.IntVar(&conf.Gates.MinOOSTrades, "min-oos-trades", 8, "below this many out-of-sample trades the verdict is INSUFFICIENT")
 	flag.IntVar(&conf.Gates.TrialCutoff, "trial-cutoff", 20, "parameter combinations at or above this can be CURVE_FIT when the out-of-sample Sharpe collapses")
 	flag.Float64Var(&conf.Gates.Decay, "decay", 0.25, "out-of-sample Sharpe below this fraction of in-sample Sharpe is DECAYS (and CURVE_FIT when trials are high)")

@@ -126,7 +126,7 @@ func runAll(concurrency int, force bool) error {
 
 	existing := map[string]runner.CompiledResult{}
 	if !force {
-		fmt.Println("🔎 Checking reports/ for strategies that already have a usable result...")
+		fmt.Println("🔎 Checking data/reports/ for strategies that already have a usable result...")
 		existing, _, _, _, _ = runner.ScanAndValidate(outDir, concurrency)
 	}
 

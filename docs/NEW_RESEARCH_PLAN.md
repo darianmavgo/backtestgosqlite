@@ -22,7 +22,7 @@ The platform distinguishes between **Strategies** (`pkg/strategy/`, standard bac
 - Given Go lacks native SciPy/scikit-learn, we can either:
   1. Port a simple K-Means clustering algorithm to Go.
   2. Have the study write a feature matrix to an isolated SQLite DB, and provide a companion Python script (`scripts/cluster.py`) to run the scikit-learn clustering and write the cluster IDs back into the DB.
-- The study outputs `reports/market_clustering.db` containing `cluster_assignments` and `cluster_centroids`.
+- The study outputs `data/reports/market_clustering.db` containing `cluster_assignments` and `cluster_centroids`.
 
 ## 3. Downscale Biggest Winner to Each Week
 **Concept:** Evaluate the biggest winner of the previous week and hold for a week.
@@ -39,7 +39,7 @@ The platform distinguishes between **Strategies** (`pkg/strategy/`, standard bac
 - Create `pkg/study/weekly_seasonality.go`.
 - It iterates over the historical data, grouping data by `ISO Week Number` (1-52).
 - For each stock, it calculates the historical probability of a positive return for that specific week number, and the average return.
-- Output: `reports/weekly_seasonality.db` with a view showing the most historically reliable stocks for each week of the year.
+- Output: `data/reports/weekly_seasonality.db` with a view showing the most historically reliable stocks for each week of the year.
 
 ## 5. Minute-Bar Cycle Detection (Polygon)
 **Concept:** Same cycle detection but using minute bars from Polygon.

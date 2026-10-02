@@ -6,17 +6,17 @@ Run the commands below from the repository root, after `make build`, so `.env` i
 
 ## Where the files are
 
-`.env` sets `APP_FOLDER`. On this machine that is `/Users/darianhickman/Documents/backtestgosqlite/`. Every command below reads and writes there, even when you launch it from the git repo.
+`APP_FOLDER` (from the environment or `.env`, default `.`) is the repository root. Every command below reads and writes under it. Data, reference data and reports sit in fixed subfolders: `data/`, `refdata/`, `data/reports/`.
 
 | What | Path |
 |---|---|
 | The strategy table | `$APP_FOLDER/refdata/settings.db`, table `streak_strategy` |
 | Daily bars | `$APP_FOLDER/data/market_history.db`, table `backtest_start` |
-| One strategy's result | `$APP_FOLDER/reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`, … |
-| A sweep | `$APP_FOLDER/reports/gridsearch.db` |
-| The ranking | `$APP_FOLDER/reports/scoreboard.db` |
+| One strategy's result | `$APP_FOLDER/data/reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`, … |
+| A sweep | `$APP_FOLDER/data/reports/gridsearch.db` |
+| The ranking | `$APP_FOLDER/data/reports/scoreboard.db` |
 
-The git repo has its own `refdata/settings.db` and `data/reports/`. A row inserted into the repo copy is invisible to `./bin/backtest`.
+There is one copy of each folder under `APP_FOLDER`. Point `APP_FOLDER` at the checkout you mean to use.
 
 ## What one row does
 
@@ -99,9 +99,6 @@ These parents can be promoted. Anything else is skipped with `direction is not a
 | Parent | Watch | Direction | What the sweep varies |
 |---|---|---|---|
 | `voo-up3` | VOO | rally | streak length, hold, take-profit, stop. Buy ticker is TQQQ until you pass `-symbol` |
-| `gld-decline` | GLD | drop | streak length, hold, take-profit, stop, and GLD versus its SMA200. Buy ticker is GLD |
-| `sig-voo-buy-tecl` | VOO | drop | streak length, hold, take-profit, stop, and `All Regimes` or `VOO>=SMA200`. Buy ticker is TECL |
-| `sig-voo-buy-spxu` | VOO | rally | the same axes, regime `All Regimes` or `VOO<SMA200`, and every buy ticker in the sweep universe |
 
 Sweep one parent. `-symbol` is allowed only when `-strategy` names a single id.
 
@@ -109,7 +106,7 @@ Sweep one parent. `-symbol` is allowed only when `-strategy` names a single id.
 ./bin/gridsearch -strategy voo-up3 -symbol TQQQ -no-html
 ```
 
-That writes `$APP_FOLDER/reports/gridsearch.db`. A sweep you already finished somewhere else has to be named:
+That writes `$APP_FOLDER/data/reports/gridsearch.db`. A sweep you already finished somewhere else has to be named:
 
 ```bash
 ./bin/gridsearch promote -strategy voo-up3 \
@@ -122,7 +119,7 @@ Leave `-gridsearch-db` off when the sweep used the default file.
 Promote defaults, used only for this subcommand: win rate `0.6`, at least `30` trades, `-top 5`. Pass the flag when you want a different cutoff (`-min-trades 20` is enough). `-strategy` is required. Parents are comma-separated.
 
 ```bash
-./bin/gridsearch promote -strategy voo-up3,gld-decline \
+./bin/gridsearch promote -strategy voo-up3 \
   -min-win-rate 0.6 -min-trades 30 -top 5
 ```
 
@@ -165,7 +162,7 @@ Several ids are comma-separated. `all` includes every streak row along with the 
 
 One named id always runs. A comma list, and `-strategy all`, skip any id that already has a usable result. Pass `-force` to redo those.
 
-The window starts `2021-01-01`. Capital is `$100,000`. The result database is `$APP_FOLDER/reports/streak-voo-up5-tqqq.db`. The next run of that same id writes `streak-voo-up5-tqqq_2.db`, then `_3`, and so on. The HTML tear sheet is `$APP_FOLDER/reports/backtest_report.html`.
+The window starts `2021-01-01`. Capital is `$100,000`. The result database is `$APP_FOLDER/data/reports/streak-voo-up5-tqqq.db`. The next run of that same id writes `streak-voo-up5-tqqq_2.db`, then `_3`, and so on. The HTML tear sheet is `$APP_FOLDER/data/reports/backtest_report.html`.
 
 `-hold`, `-target`, `-stoploss`, and `-alloc` override the row for that run when you set them. They do not change the table. On this command `-target 1.03` is a 3 percent target and `-stoploss 0.92` is an 8 percent stop.
 
@@ -197,7 +194,7 @@ Scoreboard has no strategy filter. It ranks every registered strategy, and strea
 
 `status` only reports which registered ids have a usable result. It does not write `scoreboard.db`.
 
-`./bin/scoreboard` backtests each registered id that lacks a usable result, then writes `$APP_FOLDER/reports/scoreboard.db`. An id you already backtested in step 4 is reused. `-force` redoes every strategy, including the Go baselines.
+`./bin/scoreboard` backtests each registered id that lacks a usable result, then writes `$APP_FOLDER/data/reports/scoreboard.db`. An id you already backtested in step 4 is reused. `-force` redoes every strategy, including the Go baselines.
 
 ```bash
 ./bin/scoreboard compile
@@ -208,7 +205,7 @@ Scoreboard has no strategy filter. It ranks every registered strategy, and strea
 `win_rate` in `scoreboard` is the same fraction as in the strategy table. `0.60` is 60 percent.
 
 ```bash
-sqlite3 /Users/darianhickman/Documents/backtestgosqlite/reports/scoreboard.db \
+sqlite3 $APP_FOLDER/data/reports/scoreboard.db \
   "SELECT strategy_id, round(win_rate, 3), trades, round(cagr, 3)
    FROM scoreboard
    WHERE strategy_id LIKE 'streak-%'

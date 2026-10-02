@@ -132,7 +132,7 @@ func (s *Cluster5Pct) requireOilGoldBondClusters() error {
 		return err
 	}
 	if n == 0 {
-		return fmt.Errorf("%s has no cluster_features table; pass -cluster-db reports/market_context_20d_nohyg.db", s.clusterDBPath)
+		return fmt.Errorf("%s has no cluster_features table; pass -cluster-db data/reports/market_context_20d_nohyg.db", s.clusterDBPath)
 	}
 	var features []string
 	if err := db.Select(&features, `SELECT ticker FROM cluster_features ORDER BY ticker`); err != nil {
@@ -140,7 +140,7 @@ func (s *Cluster5Pct) requireOilGoldBondClusters() error {
 	}
 	want := map[string]bool{"GLD": true, "IEF": true, "USO": true}
 	if len(features) != len(want) {
-		return fmt.Errorf("cluster features are %v; this study wants IEF, GLD, USO only (reports/market_context_20d_nohyg.db)", features)
+		return fmt.Errorf("cluster features are %v; this study wants IEF, GLD, USO only (data/reports/market_context_20d_nohyg.db)", features)
 	}
 	for _, f := range features {
 		if !want[f] {

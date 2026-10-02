@@ -1,9 +1,9 @@
-# Data Directory
+# data/
 
-This directory holds local SQLite databases used for backtesting, universe definition, and caching:
+Everything under `$APP_FOLDER/data/` is machine-generated and git-ignored (`*.db`, `*.sqlite`).
 
-- `settings.db` (now in `refdata/`, see `APP_REF` in `.env`): Master configuration and symbol lists (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`), the ETF universes (`etf_universe`: lists `all`, `6yr`, `sweep`) and per-ETF decision-tree configs (`etf_dt_strategies`). Ticker lists live in those SQLite tables.
-- `market_history.db`: Daily and intraday bars (`backtest_start`). This is the database commands read and write.
-- `leveraged_backtest.db`: Fallback market database when `market_history.db` is absent.
+- `market_history.db`: daily and intraday bars (table `backtest_start`) plus option chains. Written by `market_history` and by auto-download in `backtest` and `livescan`.
+- `reports/`: every result database and HTML page: per-strategy `<id>.db`, `shared_*.db`, `gridsearch.db`, `scoreboard.db`, `strategies.db`, `walk_forward.db`, `livescan.db`, study output, and `backtest_report.html`.
+- `ignore_over50MB.sh`: appends files over 50 MiB to this folder's `.gitignore`.
 
-*Note: Database files (`*.db`, `*.sqlite`) are ignored by Git.*
+Reference data (strategy tables, universe) lives beside it in `refdata/`, not here. See the repository README.

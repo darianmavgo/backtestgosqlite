@@ -3,14 +3,14 @@
 One SQLite file tracks the full lifecycle:
 
 ```text
-reports/strategies.db
+data/reports/strategies.db
 ```
 
 **Additive only** — does not change evening-scan, cron, or auto-edit `STRATEGY_ALLOWLIST`.
 
 ## Browse in any SQLite UI
 
-Open `reports/strategies.db` in **DB Browser for SQLite**, Datasette, VS Code SQLite, TablePlus, etc.
+Open `data/reports/strategies.db` in **DB Browser for SQLite**, Datasette, VS Code SQLite, TablePlus, etc.
 
 Useful views:
 
@@ -75,7 +75,7 @@ Do **not** `source` trade_orchestrator’s full `.env` into this repo — it set
 ```bash
 export STRATEGY_ALLOWLIST="$(grep -E '^STRATEGY_ALLOWLIST=' ~/Documents/trade_orchestrator/.env | cut -d= -f2- | tr -d '\"')"
 go run ./cmd/strateval sync-deployed -allowlist "$STRATEGY_ALLOWLIST"
-# or: -db reports/strategies.db
+# or: -db data/reports/strategies.db
 ```
 
 ## Default gates (tier A) — stack-friendly

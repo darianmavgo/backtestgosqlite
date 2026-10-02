@@ -12,12 +12,12 @@ import (
 
 // Main is the park_sweep command.
 func Main() {
-	dbPath := flag.String("db", "", "sweep database (default reports/park_googl.db)")
+	dbPath := flag.String("db", "", "sweep database (default data/reports/park_googl.db)")
 	market := flag.String("market-db", "", "market history database (default data/market_history.db)")
 	settings := flag.String("settings-db", "", "reference database (default refdata/settings.db)")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "worker count")
-	reportDB := flag.String("report-db", "", "report snapshot database (default reports/park_googl_report.db)")
-	htmlPath := flag.String("html", "", "report HTML (default reports/park_googl.html)")
+	reportDB := flag.String("report-db", "", "report snapshot database (default data/reports/park_googl_report.db)")
+	htmlPath := flag.String("html", "", "report HTML (default data/reports/park_googl.html)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: park_sweep [flags] seed|run|rank|report\n\n")
 		flag.PrintDefaults()

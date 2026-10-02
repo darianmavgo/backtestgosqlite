@@ -24,7 +24,7 @@ pkg/study              research studies; market_context is a subpackage
 sql/strategies/<id>/   ordered .sql pipeline for a strategy
 sql/studies            SQL text some studies execute
 sql/validation         walk-forward summary SQL
-refdata/settings.db    universes, symbol tables, etf_dt_strategies, streak_strategy
+refdata/settings.db    streak, hold, hold_bail, tree and markov strategy tables; symbol tables
 data/market_history.db daily and intraday bars, option chains
 data/reports/          one SQLite file per run, plus HTML
 ```
@@ -83,7 +83,7 @@ Option tables in the same market DB (`storage.EnsureOptionTables`):
 | `etf_dt_strategies_all` | created with the schema; no current command writes it |
 | `streak_strategy` | one runnable streak per row: watch symbol, bought symbol, direction (`drop` or `rally`), signal days, hold, take-profit and stop as fractional offsets, regime, allocation, cash yield, slippage, next-day limit. `pkg/streak_strategy.Register` loads it. `gridsearch promote` upserts winning rows |
 
-Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` fills `all`. `etf_decision_trees` reads a list and replaces `etf_dt_strategies`. Registration of `dt_*` strategies reads `etf_dt_strategies` through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
+Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` and `etf_dt_strategies` are empty: the commands that filled them were removed, so no `dt_*` strategies register. Stock and ETF discovery now goes to `refdata/universe.db` through `universe`. Registration reads the settings tables through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
 
 ## Strategies
 
@@ -130,9 +130,9 @@ A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrat
 
 Each strategy gets its own calc DB (`calc_<id>.db`) so pipeline tables do not collide. `SetDatabases(market, calc)` is called before `GenerateSignals`.
 
-Registered from this tree: `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `sig-voo-up1-buy-tqqq`, `sig-qqq-up1-buy-tqqq`, `sig-qqq-up1-buy-sqqq`, `voo-up3`, `gld-decline`, `mara_tree`, `nvdl_tree`, `pdd_tree`, `mara_pdd_nvdl` (aliases `tree_bounce_combo` and `mara_pdd_nvdl_combo`), `voo-buy-hold`, `biggest-winner`, `tsll-daily-one-share`, dividend buy-and-hold ids (`<symbol>-buy-hold`), dividend covered calls, and `dt_<symbol>` from `etf_dt_strategies`. `./bin/backtest -list` is the live set.
+Registered from this tree today: `voo-up3`, `mara_tree`, `nvdl_tree`, `pdd_tree`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their SQL folders are orphaned. Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
 
-`sig-voo-buy-tecl` and `sig-voo-buy-spxu` always calculate in SQL. `voo-up3`, `gld-decline`, the three up-volume strategies, `mara_tree`, `pdd_tree`, `nvdl_tree`, and `mara_pdd_nvdl` calculate in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
+`voo-up3`, `mara_tree`, `pdd_tree` and `nvdl_tree` calculate in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
 
 These are defined in Go and do not calculate their signals in SQL:
 
@@ -246,7 +246,7 @@ It records the gates in `check_overfit_gate`.
 ## Other commands
 
 
-`dataflare` is `open -a Dataflare [db]`.
+`universe` writes `refdata/universe.db`. `strategy` lists the registry. `transaction_calc` turns an IBKR CSV into a tear sheet. `markov_test` prints the GOOGL transition matrix. The `dataflare` and ETF commands no longer exist.
 
 ## Engine rules that are easy to get wrong
 
