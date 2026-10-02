@@ -36,6 +36,7 @@ func (s *PriceActionReclaimStrategy) DefaultConfig() StrategyConfig {
 		AllocationPct:      0.10,
 		TakeProfitPct:      0.10, // Default 10% TP
 		HoldingWindow:      20,
+		PositionCap:        1,
 		SlippagePct:        0.0005,
 		CommissionPerShare: 0.0001,
 	}
