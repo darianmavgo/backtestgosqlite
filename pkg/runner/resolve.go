@@ -19,7 +19,7 @@ func ResolveStrategies(arg, defaultID string) ([]strategy.Strategy, error) {
 		return nil, fmt.Errorf("no strategies selected")
 	}
 	if strings.EqualFold(arg, "all") {
-		list := strategy.List()
+		list := strategy.ListAll()
 		if len(list) == 0 {
 			return nil, fmt.Errorf("no strategies registered")
 		}

@@ -58,7 +58,7 @@ func runStaleCommand(gridDBPath, marketDBPath string) error {
 	}
 
 	var neverSwept []string
-	for _, s := range strategy.List() {
+	for _, s := range strategy.ListAll() {
 		if !swept[s.ID()] {
 			neverSwept = append(neverSwept, s.ID())
 		}

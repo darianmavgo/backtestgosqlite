@@ -2,8 +2,7 @@ package hold_bail_strategy
 
 import (
 	"fmt"
-	"log"
-	"os"
+	"github.com/jmoiron/sqlx"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -38,7 +37,7 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		StopLossPct:         0.001, // arbitrary small stop loss just in case, but actual is trailing stop
 		UseTrailingStop:     true,
 		TrailingStopPct:     s.Row.TrailingStopPct,
-		ReentryCooldownDays: 1, // minimum 1-day breath after exit to prevent same-day re-whipsaw
+		ReentryCooldownDays: 1,     // minimum 1-day breath after exit to prevent same-day re-whipsaw
 		HoldingWindow:       99999, // indefinite hold until trailing stop
 		PositionCap:         1,
 		CashYieldAnnual:     s.Row.CashYield,
@@ -104,36 +103,34 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	return signals
 }
 
+// NewFamily returns the hold_bail_strategy family reading the reference DB at path().
+// Rows are not registered one by one: a row is read and built when
+// strategy.Get asks for its id.
+func NewFamily(path func() string) *strategy.RowFamily {
+	return &strategy.RowFamily{
+		FamilyName: "hold_bail",
+		Table:      "hold_bail_strategy",
+		Path:       path,
+		Build: func(db *sqlx.DB, id string) (strategy.Strategy, bool, error) {
+			row, ok, err := refdb.HoldBailStrategyByID(db, id)
+			if err != nil || !ok {
+				return nil, false, err
+			}
+			if err := (&Strategy{Row: row}).Validate(); err != nil {
+				return nil, false, err
+			}
+			return &Strategy{Row: row}, true, nil
+		},
+	}
+}
+
+// Register adds the hold_bail family, reading refdb.DefaultPath. It reads no rows.
 func Register() {
 	RegisterFrom(refdb.DefaultPath)
 }
 
+// RegisterFrom adds the hold_bail family reading the reference DB at path,
+// replacing any earlier hold_bail family (tests point it at a temp DB).
 func RegisterFrom(path string) {
-	fi, err := os.Stat(path)
-	if err != nil || fi.Size() == 0 {
-		return
-	}
-	db, err := refdb.Open(path)
-	if err != nil || db == nil {
-		return
-	}
-	defer db.Close()
-	rows, err := refdb.HoldBailStrategies(db)
-	if err != nil {
-		return
-	}
-	for _, row := range rows {
-		s := &Strategy{Row: row}
-		if err := s.Validate(); err != nil {
-			log.Printf("hold_bail_strategy: skip %s: %v", row.ID, err)
-			continue
-		}
-		if existing, ok := strategy.Get(row.ID); ok {
-			if _, is := existing.(*Strategy); !is {
-				log.Printf("hold_bail_strategy: skip %s: id already used by %T", row.ID, existing)
-				continue
-			}
-		}
-		strategy.Register(s)
-	}
+	strategy.RegisterFamily(NewFamily(func() string { return path }))
 }

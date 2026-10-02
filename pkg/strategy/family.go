@@ -1,0 +1,186 @@
+package strategy
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"sort"
+	"sync"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/jmoiron/sqlx"
+)
+
+// Family is a kind of strategy whose members are rows in a table (streak,
+// hold, ...). The family is registered once; a member is built from its row
+// when Get asks for it. No row is registered individually.
+type Family interface {
+	// Name is the family name, for logs ("streak").
+	Name() string
+	// Lookup builds the member with this id, if the family has one.
+	Lookup(id string) (Strategy, bool)
+	// IDs lists every member id, ordered.
+	IDs() ([]string, error)
+}
+
+var (
+	familyLock sync.RWMutex
+	families   []Family
+)
+
+// RegisterFamily adds a family to the lookup chain used by Get. A family with
+// the same Name replaces the earlier one (so a test can point it at a temp DB).
+func RegisterFamily(f Family) {
+	familyLock.Lock()
+	defer familyLock.Unlock()
+	for i, old := range families {
+		if old.Name() == f.Name() {
+			families[i] = f
+			return
+		}
+	}
+	families = append(families, f)
+}
+
+// Families returns the registered families in registration order.
+func Families() []Family {
+	familyLock.RLock()
+	defer familyLock.RUnlock()
+	return append([]Family(nil), families...)
+}
+
+func lookupFamilies(id string) (Strategy, bool) {
+	for _, f := range Families() {
+		if s, ok := f.Lookup(id); ok {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+// RowFamily is the Family for one table in the reference DB. Build turns the
+// canonical id into a strategy (read the row, validate it); an error means
+// the row is unusable and is logged.
+type RowFamily struct {
+	FamilyName string
+	Table      string
+	Path       func() string // reference DB path; read at lookup time
+	Build      func(db *sqlx.DB, id string) (Strategy, bool, error)
+
+	mu    sync.Mutex
+	db    *sqlx.DB
+	dbAt  string
+	cache map[string]Strategy
+}
+
+func (f *RowFamily) Name() string { return f.FamilyName }
+
+// open returns the shared handle, reopening when the path changed. Callers hold f.mu.
+func (f *RowFamily) open() *sqlx.DB {
+	path := f.Path()
+	if f.db != nil && f.dbAt == path {
+		return f.db
+	}
+	if f.db != nil {
+		f.db.Close()
+		f.db, f.cache = nil, nil
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Size() == 0 {
+		return nil
+	}
+	db, err := refdb.Open(path)
+	if err != nil {
+		return nil
+	}
+	f.db, f.dbAt, f.cache = db, path, map[string]Strategy{}
+	return db
+}
+
+func (f *RowFamily) Lookup(id string) (Strategy, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	db := f.open()
+	if db == nil {
+		return nil, false
+	}
+	if s, ok := f.cache[id]; ok {
+		return s, true
+	}
+	canon, ok := refdb.CanonicalID(db, f.Table, id)
+	if !ok {
+		return nil, false
+	}
+	if s, ok := f.cache[canon]; ok {
+		f.cache[id] = s
+		return s, true
+	}
+	s, ok, err := f.Build(db, canon)
+	if err != nil {
+		log.Printf("%s: skip %s: %v", f.Table, canon, err)
+		return nil, false
+	}
+	if !ok {
+		return nil, false
+	}
+	f.cache[canon], f.cache[id] = s, s
+	return s, true
+}
+
+func (f *RowFamily) IDs() ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	db := f.open()
+	if db == nil {
+		return nil, fmt.Errorf("%s: reference DB %s not found or empty", f.Table, f.Path())
+	}
+	return refdb.IDs(db, f.Table)
+}
+
+// ListAll returns List() plus every member of every family, built on demand,
+// sorted by ID. Use it only where "all" must mean every row (a full backtest
+// or scoreboard); listings should print List() and FamilyCounts instead.
+func ListAll() []Strategy {
+	out := List()
+	for _, f := range Families() {
+		ids, err := f.IDs()
+		if err != nil {
+			log.Printf("%s: %v", f.Name(), err)
+			continue
+		}
+		for _, id := range ids {
+			if s, ok := f.Lookup(id); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID() < out[j].ID() })
+	return out
+}
+
+// FamilyCount is the number of rows one family holds.
+type FamilyCount struct {
+	Name  string
+	Count int
+}
+
+// FamilyCounts reports how many members each family has, in registration order.
+func FamilyCounts() []FamilyCount {
+	var out []FamilyCount
+	for _, f := range Families() {
+		ids, err := f.IDs()
+		if err != nil {
+			continue
+		}
+		out = append(out, FamilyCount{Name: f.Name(), Count: len(ids)})
+	}
+	return out
+}
+
+// PrintFamilyCounts writes one line per family telling the reader that its
+// rows are not listed and how to select them.
+func PrintFamilyCounts(w io.Writer) {
+	for _, fc := range FamilyCounts() {
+		fmt.Fprintf(w, "  %-10s %6d rows in %s_strategy (not listed; select with `stratlist` or name an id)\n", fc.Name, fc.Count, fc.Name)
+	}
+}

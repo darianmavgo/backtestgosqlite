@@ -205,7 +205,18 @@ type StreakStrategy struct {
 // StreakStrategies returns every streak_strategy row, ordered by id.
 // A missing table returns an error; callers that register strategies treat
 // that as an empty list.
-func StreakStrategies(db *sqlx.DB) ([]StreakStrategy, error) {
+func StreakStrategies(db *sqlx.DB) ([]StreakStrategy, error) { return streakStrategiesWhere(db, "") }
+
+// StreakStrategyByID returns the row whose id is exactly id.
+func StreakStrategyByID(db *sqlx.DB, id string) (StreakStrategy, bool, error) {
+	rows, err := streakStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return StreakStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func streakStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]StreakStrategy, error) {
 	var out []StreakStrategy
 	err := db.Select(&out, `
 		SELECT id, name, signal_symbol, trade_symbol, direction, signal_days, hold_days,
@@ -214,8 +225,7 @@ func StreakStrategies(db *sqlx.DB) ([]StreakStrategy, error) {
 		       COALESCE(source_strategy, '') AS source_strategy,
 		       COALESCE(source_label, '') AS source_label,
 		       win_rate, total_trades
-		FROM streak_strategy
-		ORDER BY id`)
+		FROM streak_strategy` + where + ` ORDER BY id`, args...)
 	return out, err
 }
 
@@ -284,7 +294,18 @@ type MarkovStrategy struct {
 }
 
 // MarkovStrategies returns every markov_strategy row, ordered by id.
-func MarkovStrategies(db *sqlx.DB) ([]MarkovStrategy, error) {
+func MarkovStrategies(db *sqlx.DB) ([]MarkovStrategy, error) { return markovStrategiesWhere(db, "") }
+
+// MarkovStrategyByID returns the row whose id is exactly id.
+func MarkovStrategyByID(db *sqlx.DB, id string) (MarkovStrategy, bool, error) {
+	rows, err := markovStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return MarkovStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func markovStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]MarkovStrategy, error) {
 	var out []MarkovStrategy
 	err := db.Select(&out, `
 		SELECT id, name, signal_symbol, trade_symbol, direction, target_state, hold_days,
@@ -293,8 +314,7 @@ func MarkovStrategies(db *sqlx.DB) ([]MarkovStrategy, error) {
 		       COALESCE(source_strategy, '') AS source_strategy,
 		       COALESCE(source_label, '') AS source_label,
 		       win_rate, total_trades
-		FROM markov_strategy
-		ORDER BY id`)
+		FROM markov_strategy` + where + ` ORDER BY id`, args...)
 	return out, err
 }
 
@@ -386,7 +406,18 @@ type TreeStrategy struct {
 }
 
 // TreeStrategies returns every tree_strategy row, ordered by id.
-func TreeStrategies(db *sqlx.DB) ([]TreeStrategy, error) {
+func TreeStrategies(db *sqlx.DB) ([]TreeStrategy, error) { return treeStrategiesWhere(db, "") }
+
+// TreeStrategyByID returns the row whose id is exactly id.
+func TreeStrategyByID(db *sqlx.DB, id string) (TreeStrategy, bool, error) {
+	rows, err := treeStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return TreeStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func treeStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]TreeStrategy, error) {
 	var out []TreeStrategy
 	err := db.Select(&out, `
 		SELECT id, name, signal_symbol, trade_symbol, direction, hold_days,
@@ -395,8 +426,7 @@ func TreeStrategies(db *sqlx.DB) ([]TreeStrategy, error) {
 		       COALESCE(source_strategy, '') AS source_strategy,
 		       COALESCE(source_label, '') AS source_label,
 		       win_rate, total_trades
-		FROM tree_strategy
-		ORDER BY id`)
+		FROM tree_strategy` + where + ` ORDER BY id`, args...)
 	return out, err
 }
 
@@ -459,13 +489,23 @@ type HoldBailStrategy struct {
 }
 
 // HoldBailStrategies returns every hold_bail_strategy row, ordered by id.
-func HoldBailStrategies(db *sqlx.DB) ([]HoldBailStrategy, error) {
+func HoldBailStrategies(db *sqlx.DB) ([]HoldBailStrategy, error) { return holdBailStrategiesWhere(db, "") }
+
+// HoldBailStrategyByID returns the row whose id is exactly id.
+func HoldBailStrategyByID(db *sqlx.DB, id string) (HoldBailStrategy, bool, error) {
+	rows, err := holdBailStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return HoldBailStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func holdBailStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HoldBailStrategy, error) {
 	var out []HoldBailStrategy
 	err := db.Select(&out, `
 		SELECT id, name, symbol, trailing_stop_pct, sma_reentry_period,
 		       allocation_pct, cash_yield, slippage_pct
-		FROM hold_bail_strategy
-		ORDER BY id`)
+		FROM hold_bail_strategy` + where + ` ORDER BY id`, args...)
 	return out, err
 }
 
@@ -481,11 +521,57 @@ type HoldStrategy struct {
 }
 
 // HoldStrategies returns every hold_strategy row, ordered by id.
-func HoldStrategies(db *sqlx.DB) ([]HoldStrategy, error) {
+func HoldStrategies(db *sqlx.DB) ([]HoldStrategy, error) { return holdStrategiesWhere(db, "") }
+
+// HoldStrategyByID returns the row whose id is exactly id.
+func HoldStrategyByID(db *sqlx.DB, id string) (HoldStrategy, bool, error) {
+	rows, err := holdStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return HoldStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func holdStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HoldStrategy, error) {
 	var out []HoldStrategy
 	err := db.Select(&out, `
 		SELECT id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct
-		FROM hold_strategy
-		ORDER BY id`)
+		FROM hold_strategy` + where + ` ORDER BY id`, args...)
+	return out, err
+}
+
+// strategyTables are the tables CanonicalID and IDs accept.
+var strategyTables = map[string]bool{
+	"streak_strategy": true, "hold_strategy": true, "hold_bail_strategy": true,
+	"tree_strategy": true, "markov_strategy": true,
+}
+
+// CanonicalID returns the stored id that matches id in table: exact first,
+// then ignoring case, "-", "_" and spaces (the same looseness strategy.Get
+// has always had). The loose match scans the table, so exact ids are cheap.
+func CanonicalID(db *sqlx.DB, table, id string) (string, bool) {
+	if !strategyTables[table] {
+		return "", false
+	}
+	var got string
+	if err := db.Get(&got, "SELECT id FROM "+table+" WHERE id = ?", id); err == nil {
+		return got, true
+	}
+	norm := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(id))
+	if norm == "" {
+		return "", false
+	}
+	err := db.Get(&got, "SELECT id FROM "+table+
+		" WHERE replace(replace(replace(lower(id),'-',''),'_',''),' ','') = ? ORDER BY id LIMIT 1", norm)
+	return got, err == nil
+}
+
+// IDs returns every id in a strategy table, ordered. A missing table returns an error.
+func IDs(db *sqlx.DB, table string) ([]string, error) {
+	if !strategyTables[table] {
+		return nil, fmt.Errorf("refdb: %q is not a strategy table", table)
+	}
+	var out []string
+	err := db.Select(&out, "SELECT id FROM "+table+" ORDER BY id")
 	return out, err
 }

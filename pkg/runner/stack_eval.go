@@ -100,7 +100,7 @@ func OverlayCandidates(primary strategy.Strategy, opts OverlayCandidateOptions) 
 	}
 
 	var out []strategy.Strategy
-	for _, s := range strategy.List() {
+	for _, s := range strategy.ListAll() {
 		if !isEligibleOverlay(primary, s, opts, allowedDT) {
 			continue
 		}

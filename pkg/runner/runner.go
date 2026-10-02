@@ -152,6 +152,8 @@ func PrintStrategyList() {
 		})
 	}
 	table.Render()
+	fmt.Printf("\nRow-backed families (not listed one by one):\n")
+	strategy.PrintFamilyCounts(os.Stdout)
 	fmt.Printf("\nRun any strategy with: ./bin/backtest -strategy <ID>\n\n")
 }
 

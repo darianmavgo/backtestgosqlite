@@ -13,15 +13,11 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	_ "modernc.org/sqlite"
 )
 
@@ -119,13 +115,9 @@ func runAll(concurrency int, force bool) error {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
-	allStrategies := strategy.List()
+	allStrategies := strategy.ListAll()
 	if len(allStrategies) == 0 {
 		return fmt.Errorf("No strategies registered.")
 	}
@@ -241,11 +233,7 @@ func runCompile(concurrency int) error {
 	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategy names/descriptions resolve too
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
 	if totalGroups == 0 {
@@ -292,13 +280,9 @@ func runStatus(concurrency int) error {
 	fmt.Println("🔎 SCOREBOARD STATUS — checking whether every registered strategy has a usable backtest result")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb)
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
-	total := len(strategy.List())
+	total := len(strategy.ListAll())
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
 
 	fmt.Printf("\n📋 %d strategies currently registered.\n", total)

@@ -383,9 +383,20 @@ Discover US stocks and ETFs from Polygon and classify them (leverage, direction,
 
 Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-etfs-only`, `-stocks-only`.
 
+## stratlist
+
+Run a SELECT from a `.sql` file against `refdata/strategies.db` and print the first column (the strategy id) of each row. Duplicates and blanks are dropped; the DB is opened query-only. Examples are in `sql/lists/`.
+
+```bash
+./bin/stratlist sql/lists/sample_100_per_table.sql          # one id per line
+./bin/backtest -strategy "$(./bin/stratlist -comma sql/lists/sample_100_per_table.sql)"
+```
+
+Flags: `-db` (default `refdata/strategies.db`), `-sql` (or give the file as the first argument), `-comma`.
+
 ## strategy
 
-Print every registered strategy with its definition source (a Go type, or the settings table that defines it). No flags.
+Print every registered code and SQL strategy with its definition source, then a row count per strategies.db table. Rows are not listed one by one. No flags.
 
 ```bash
 ./bin/strategy

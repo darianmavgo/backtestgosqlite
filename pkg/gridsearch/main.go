@@ -38,17 +38,13 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/charting"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	_ "modernc.org/sqlite"
 )
 
@@ -217,11 +213,7 @@ func Main() {
 // Run executes the command with cfg. It returns errors instead of exiting.
 func Run(conf Config) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
 	if conf.Subcommand == "stale" {
 		runStaleCommand(conf.GridsearchDb, conf.Db)
@@ -232,6 +224,7 @@ func Run(conf Config) error {
 		fmt.Println("\n=======================================================================================================================")
 		fmt.Println("📋 REGISTERED STRATEGIES AVAILABLE FOR GRID SEARCH OPTIMIZATION:")
 		fmt.Println("=======================================================================================================================")
+		strategy.PrintFamilyCounts(os.Stdout)
 		for _, s := range strategy.List() {
 			space := strategy.AssessParameterSpace(s)
 			fmt.Printf("  • %-20s %s\n", s.ID(), s.Name())
@@ -273,7 +266,7 @@ func Run(conf Config) error {
 
 	var targets []strategy.Strategy
 	if strings.EqualFold(stratArg, "all") {
-		for _, s := range strategy.List() {
+		for _, s := range strategy.ListAll() {
 			if !conf.IncludeDt && strings.HasPrefix(s.ID(), "dt_") {
 				continue
 			}

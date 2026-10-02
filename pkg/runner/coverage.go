@@ -70,7 +70,7 @@ func ScanAndValidate(outDir string, concurrency int) (byStrategy map[string]Comp
 // never been backtested, or every run it has was corrupted/incomplete.
 func MissingStrategies(byStrategy map[string]CompiledResult) []string {
 	var missing []string
-	for _, s := range strategy.List() {
+	for _, s := range strategy.ListAll() {
 		if _, ok := byStrategy[s.ID()]; !ok {
 			missing = append(missing, s.ID())
 		}

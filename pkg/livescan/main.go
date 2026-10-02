@@ -29,13 +29,9 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -77,11 +73,7 @@ func Run(ctx context.Context, cfg Config) (*runner.SignalScanResult, error) {
 	if cfg.StrategyRoot != "" {
 		strategy.AutoRegisterSQLStrategies(cfg.StrategyRoot, cfg.DB)
 	}
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
 	// "a+b+c" is backtest's shared-account stack syntax; a signal scan just
 	// needs each component's signals, so treat "+" like ",".
@@ -127,15 +119,12 @@ func Main() {
 
 	if *listStrategies {
 		strategy.AutoRegisterSQLStrategies(appenv.Folder(), cfg.DB)
-		streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-		markov_strategy.Register()
+		stratreg.RegisterFamilies()
 		fmt.Println("Available Strategies:")
 		for _, s := range strategy.List() {
 			fmt.Printf("  %-28s %s\n", s.ID(), s.Name())
 		}
+		strategy.PrintFamilyCounts(os.Stdout)
 		return
 	}
 

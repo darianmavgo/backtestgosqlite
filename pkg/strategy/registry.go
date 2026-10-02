@@ -55,7 +55,12 @@ func Get(id string) (Strategy, bool) {
 		return s, true
 	}
 
-	// 3. Park members (park-<symbol>) exist for every symbol, unregistered.
+	// 3. Row-backed families (streak, hold, ...), built on demand.
+	if s, ok := lookupFamilies(id); ok {
+		return s, true
+	}
+
+	// 4. Park members (park-<symbol>) exist for every symbol, unregistered.
 	if s, ok := parkFromID(id); ok {
 		return s, true
 	}

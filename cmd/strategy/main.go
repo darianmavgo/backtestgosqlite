@@ -7,23 +7,15 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	"github.com/olekukonko/tablewriter"
 )
 
 func main() {
 	// Initialize databases and register all strategies.
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), appenv.MarketDB())
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
 	strategies := strategy.List()
 
@@ -35,7 +27,7 @@ func main() {
 	for _, s := range strategies {
 		t := reflect.TypeOf(s)
 		var source string
-		
+
 		// If it's a pointer, get the underlying element
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
@@ -45,13 +37,9 @@ func main() {
 		typeName := t.Name()
 
 		if strings.Contains(pkgPath, "streak_strategy") {
-			source = "refdata/strategies.db (table: streak_strategy) -> pkg/streak_strategy"
 		} else if strings.Contains(pkgPath, "markov_strategy") {
-			source = "refdata/strategies.db (table: markov_strategy) -> pkg/markov_strategy"
 		} else if strings.Contains(pkgPath, "hold_strategy") {
-			source = "refdata/strategies.db (table: hold_strategy) -> pkg/hold_strategy"
 		} else if strings.Contains(pkgPath, "hold_bail_strategy") {
-			source = "refdata/strategies.db (table: hold_bail_strategy) -> pkg/hold_bail_strategy"
 		} else if typeName == "SQLPipelineStrategy" {
 			// Try to extract the directory if possible, but fallback to general text
 			source = "sql/strategies/... (SQL Pipeline) -> pkg/strategy"
@@ -70,5 +58,7 @@ func main() {
 
 	fmt.Printf("\nFound %d Registered Strategies:\n", len(strategies))
 	table.Render()
+	fmt.Println("\nRow-backed families (not listed one by one):")
+	strategy.PrintFamilyCounts(os.Stdout)
 	fmt.Println()
 }

@@ -21,13 +21,9 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 	_ "modernc.org/sqlite"
 )
 
@@ -217,16 +213,13 @@ func runEval(conf Config) error {
 	}
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.MarketDb)
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
+	stratreg.RegisterFamilies()
 
 	if conf.List {
 		for _, s := range strategy.List() {
 			fmt.Println(s.ID())
 		}
+		strategy.PrintFamilyCounts(os.Stdout)
 		return nil
 	}
 	if strings.TrimSpace(conf.Strategy) == "" {
@@ -294,7 +287,7 @@ func runEval(conf Config) error {
 func resolveStrategies(arg string) ([]strategy.Strategy, error) {
 	arg = strings.TrimSpace(arg)
 	if strings.EqualFold(arg, "all") {
-		all := strategy.List()
+		all := strategy.ListAll()
 		if len(all) == 0 {
 			return nil, fmt.Errorf("no strategies registered")
 		}
