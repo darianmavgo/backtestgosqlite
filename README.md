@@ -383,6 +383,22 @@ Discover US stocks and ETFs from Polygon and classify them (leverage, direction,
 
 Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-etfs-only`, `-stocks-only`.
 
+## train_markov
+
+Trains the Markov regime models and saves them in SQLite. `backtest` only reads a saved model; it never trains one, so run this first, and again when the market data has advanced.
+
+The model is per symbol: a bar is bull at +5% or more over 20 bars, bear at -5% or less, otherwise sideways. For each date it stores the walk-forward chance that the next bar is bull or bear, using only transitions known by that date. The calculation is SQL (`sql/stages/markov_train`, one slice table per stage).
+
+**Reads:** `data/market_history.db`, and `refdata/strategies.db` (`markov_strategy.signal_symbol`) when no symbols are given. **Writes:** `data/markov_models.db` (`markov_prediction`, `markov_model_meta`). Symbols already in the model are replaced. A symbol with fewer than 21 bars gets no model. A markov strategy whose signal symbol has no model produces no signals and logs which `train_markov` command to run.
+
+```bash
+./bin/train_markov                      # every signal_symbol in markov_strategy
+./bin/train_markov GOOGL AAPL           # just these
+./bin/train_markov -symbols GOOGL,AAPL -batch 100
+```
+
+Flags: `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables). `markov_hmm_*` strategies read `data/reports/hmm_regime.db`, written by `study hmm_regime`.
+
 ## stratlist
 
 Run a SELECT from a `.sql` file against `refdata/strategies.db` and print the first column (the strategy id) of each row. Duplicates and blanks are dropped; the DB is opened query-only. Examples are in `sql/lists/`.

@@ -91,6 +91,9 @@ func UniverseDB() string { return filepath.Join(Ref(), "universe.db") }
 // MarketDB is the market history database.
 func MarketDB() string { return filepath.Join(Data(), "market_history.db") }
 
+// MarkovDB is the trained Markov models (written by train_markov, read by backtest).
+func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
+
 // DataFile returns a path to name inside the data directory.
 func DataFile(name string) string { return filepath.Join(Data(), name) }
 

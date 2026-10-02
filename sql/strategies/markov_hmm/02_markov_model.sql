@@ -1,4 +1,4 @@
-ATTACH DATABASE 'reports/hmm_regime.db' AS hmm;
+ATTACH DATABASE '__HMM_DB__' AS hmm;
 
 -- Phase 1: Regime Definition (HMM)
 CREATE TEMP VIEW IF NOT EXISTS markov_model_regimes AS

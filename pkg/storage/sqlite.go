@@ -50,6 +50,23 @@ func OpenSQLite(dbPath string) (*sqlx.DB, error) {
 	return db, nil
 }
 
+// OpenSQLiteReadOnly opens an existing database without creating or changing
+// it. A missing file is an error, not a new empty database.
+func OpenSQLiteReadOnly(dbPath string) (*sqlx.DB, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, fmt.Errorf("sqlite db %s: %w", dbPath, err)
+	}
+	abs, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sqlx.Open("sqlite", "file:"+abs+"?mode=ro&_busy_timeout=15000")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open sqlite db at %s: %w", dbPath, err)
+	}
+	return db, nil
+}
+
 // ExecuteSQLFile reads and executes a SQL script file.
 func ExecuteSQLFile(db *sqlx.DB, filePath string) error {
 	content, err := ioutil.ReadFile(filePath)

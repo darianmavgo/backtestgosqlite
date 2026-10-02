@@ -3,10 +3,13 @@ package markov_strategy
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"log"
 	"strings"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
@@ -120,29 +123,53 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.calcDBPath = calcDBPath
 }
 
-// GenerateSignals runs the shared SQL pipeline.
+// GenerateSignals reads this symbol's persisted model and turns it into
+// entries with the shared SQL pipeline. It never trains: a symbol with no
+// trained model produces no signals and says how to train one.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	if s.marketDBPath != "" && s.calcDBPath != "" {
-		dir := s.PipelineDir
-		if dir == "" {
-			if strings.Contains(s.ID(), "hmm") {
-				dir = "sql/strategies/markov_hmm"
-			} else {
-				dir = pipelineDir
-			}
-		}
-		pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
-		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
-		sigs := pipe.GenerateSignals(barsBySymbol)
-		for i := range sigs {
-			sigs[i].StrategyID = s.ID()
-			if sigs[i].OrderType == "" {
-				sigs[i].OrderType = "limit"
-			}
-		}
-		return sigs
+	if s.marketDBPath == "" || s.calcDBPath == "" {
+		return nil // Go fallback not implemented for MarkovModel
 	}
-	return nil // Go fallback not implemented for MarkovModel
+	dir := s.PipelineDir
+	if dir == "" {
+		if strings.Contains(s.ID(), "hmm") {
+			dir = "sql/strategies/markov_hmm"
+		} else {
+			dir = pipelineDir
+		}
+	}
+	if dir == pipelineDir {
+		sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
+		if !hasModel(appenv.MarkovDB(), sym) {
+			log.Printf("markov_strategy %s: no trained model for %s in %s; run `train_markov -symbols %s`", s.ID(), sym, appenv.MarkovDB(), sym)
+			return nil
+		}
+	}
+	pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+	sigs := pipe.GenerateSignals(barsBySymbol)
+	for i := range sigs {
+		sigs[i].StrategyID = s.ID()
+		if sigs[i].OrderType == "" {
+			sigs[i].OrderType = "limit"
+		}
+	}
+	return sigs
+}
+
+// hasModel reports whether the model database at path holds a trained model
+// for symbol. The file is opened read-only and never created.
+func hasModel(path, symbol string) bool {
+	db, err := storage.OpenSQLiteReadOnly(path)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	var n int
+	if err := db.Get(&n, "SELECT COUNT(*) FROM markov_model_meta WHERE symbol = ?", symbol); err != nil {
+		return false
+	}
+	return n > 0
 }
 
 // ValidateRow reports why a markov_strategy row cannot be registered.

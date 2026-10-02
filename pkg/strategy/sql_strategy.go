@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
@@ -144,6 +145,9 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 		}
 	}
 	sqlText = substituteStreakPlaceholders(sqlText, id, fileName, cfg)
+	// Trained-model databases the markov pipelines attach (read only).
+	sqlText = strings.ReplaceAll(sqlText, "__MARKOV_DB__", appenv.MarkovDB())
+	sqlText = strings.ReplaceAll(sqlText, "__HMM_DB__", appenv.ReportFile("hmm_regime.db"))
 	
 	sqlText = strings.ReplaceAll(sqlText, "__COIL_MAX__", strconv.FormatFloat(cfg.TreeCoilMax, 'f', -1, 64))
 	sqlText = strings.ReplaceAll(sqlText, "__SMA_MIN__", strconv.FormatFloat(cfg.TreeSMAMin, 'f', -1, 64))

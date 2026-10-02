@@ -30,7 +30,6 @@ go test ./pkg/strategy -run TestName              # one test
 - `park-<symbol>` (`strategy.ParkStrategy`) is a stack member for the residual-cash book. It is never a sleeve: `strategy.SplitResidual` removes it and the runner passes its symbol as `DefaultAsset`. Do not give it signals.
 - Other packages: `simulator` (portfolio and shared-account), `runner` (load bars, run, stack, stack-eval), `storage` (schemas, `OpenSQLite`, `ExecuteSQLFile`), `refdb` (strategies.db), `analytics` (metrics, HTML tear sheet), `calendar`, `transaction_calc` (IBKR CSV to report), `universe` (Polygon discovery into `refdata/universe.db`), `walk_forward` and `check_overfit` (out-of-sample screening).
 - `sql/search/` holds the stack-search gate and liquidity screen as numbered slice-table stages. Run them with `sqlite3` against the walk-forward, market and settings DBs; there is no Go wrapper yet.
-- Markov models are trained by `train_markov` into `data/markov_models.db`; `backtest` reads them and must not train. Do not move training back into a strategy pipeline.
 - `cmd/markov_test` and `cmd/transaction_calc` hold logic in `cmd/`, which breaks the thin-wrapper rule. Move that logic into `pkg/` when touching them.
 
 ## Adding or changing a strategy

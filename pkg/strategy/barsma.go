@@ -86,21 +86,28 @@ func OpenCalcDB(marketDBPath, calcDBPath string) (*sqlx.DB, error) {
 	return openAttachedCalcDB(marketDBPath, calcDBPath)
 }
 
-// BuildBarSMA runs the sql/stages/bar_sma stage in db, filling the bar_sma
-// slice table for symbols (names with characters outside letters, digits and
-// . ^ = _ - are skipped).
-func BuildBarSMA(db *sqlx.DB, symbols []string) error {
+// SQLSymbolList quotes symbols for an IN (...) list in a stage. Names with
+// characters outside letters, digits and . ^ = _ - are skipped. It returns ""
+// when nothing is left.
+func SQLSymbolList(symbols []string) string {
 	var quoted []string
 	for _, sym := range symbols {
 		if barSMASymbol.MatchString(sym) {
 			quoted = append(quoted, "'"+sym+"'")
 		}
 	}
-	if len(quoted) == 0 {
+	sort.Strings(quoted)
+	return strings.Join(quoted, ",")
+}
+
+// BuildBarSMA runs the sql/stages/bar_sma stage in db, filling the bar_sma
+// slice table for symbols.
+func BuildBarSMA(db *sqlx.DB, symbols []string) error {
+	list := SQLSymbolList(symbols)
+	if list == "" {
 		return nil
 	}
-	sort.Strings(quoted)
-	return RunStage(db, "bar_sma", map[string]string{"__SYMBOL_LIST__": strings.Join(quoted, ",")})
+	return RunStage(db, "bar_sma", map[string]string{"__SYMBOL_LIST__": list})
 }
 
 // RunStage executes every .sql file of the embedded stage sql/stages/<stage>

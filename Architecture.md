@@ -258,3 +258,5 @@ It records the gates in `check_overfit_gate`.
 - `dt_*` registration depends on `refdata/strategies.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
 - `streak-*` registration also depends on `refdata/strategies.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
 - `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training`.
+
+Markov strategies do not train at backtest time. `train_markov` (`pkg/train_markov`) runs `sql/stages/markov_train` and publishes `markov_prediction` and `markov_model_meta` into `data/markov_models.db` (`appenv.MarkovDB()`). The `markov_model` pipeline attaches that file (`__MARKOV_DB__`) and reads one symbol's rows; `markov_strategy.GenerateSignals` refuses to run without a trained model for the symbol. `markov_hmm` attaches `hmm_regime.db` (`__HMM_DB__`), produced by `study hmm_regime`.
