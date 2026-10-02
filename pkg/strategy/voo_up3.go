@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
@@ -74,36 +73,16 @@ func (s *VOOUp3Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.calcDBPath = calcDBPath
 }
 
+// GenerateSignals runs the voo_up3 SQL pipeline: the up-streak grouping and the
+// cross-symbol join are calculated in SQL.
 func (s *VOOUp3Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	days := s.GainDays
 	if days <= 0 {
 		days = 3
 	}
-
-	// 1. Prefer the SQL pipeline (sql/strategies/voo_up3): the up-streak
-	// grouping + cross-symbol join belongs in SQL (see sql/strategies/streak_strategy's
-	// GenerateSignals for the same pattern on a decline streak).
-	if s.calcDBPath != "" && s.marketDBPath != "" {
-		dir := "sql/strategies/voo_up3"
-		if sqlStrat, exists := Get("voo_up3-sql"); exists {
-			if sp, ok := sqlStrat.(*SQLPipelineStrategy); ok {
-				dir = sp.PipelineDir()
-			}
-		}
-		cfg := s.DefaultConfig()
-		cfg.DeclineDays = days
-		pipe := NewSQLPipelineStrategy("voo-up3-pipeline", s.Name(), s.Description(), dir, cfg)
-		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
-		return pipe.GenerateSignals(barsBySymbol)
-	}
-
-	// 2. Pure Go calculation fallback for in-memory backtesting and unit testing.
-	voo := barsForSymbol(barsBySymbol, "VOO")
-	trade := barsForSymbol(barsBySymbol, s.TradeSymbol)
-	if len(voo) < s.GainDays+1 || len(trade) < 2 {
-		return nil
-	}
-	return VOOUpStreakSignals(s.TradeSymbol, voo, trade, days, s.TP, s.SL, s.Hold)
+	cfg := s.DefaultConfig()
+	cfg.DeclineDays = days
+	return RunPipeline(s.ID(), s.Name(), s.Description(), "sql/strategies/voo_up3", cfg, s.marketDBPath, s.calcDBPath, "", barsBySymbol)
 }
 
 func (s *VOOUp3Strategy) ParameterSpace() ParameterSpace {
@@ -131,90 +110,6 @@ func (s *VOOUp3Strategy) ParameterSpace() ParameterSpace {
 			Regime:     "All Regimes",
 		},
 	}
-}
-
-// VOOUpStreakDates returns dates on which VOO has closed up `streak` days in a row.
-func VOOUpStreakDates(voo []models.Bar, streak int) []string {
-	if streak < 1 || len(voo) < streak+1 {
-		return nil
-	}
-	var out []string
-	up := 0
-	for i := 1; i < len(voo); i++ {
-		if voo[i].Close > voo[i-1].Close {
-			up++
-		} else {
-			up = 0
-		}
-		if up >= streak {
-			d := voo[i].Date
-			if len(d) >= 10 {
-				d = d[:10]
-			}
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// VOOUpStreakSignals longs tradeSymbol on VOO up-streak dates, using that
-// symbol's close as the limit and the given TP/SL/hold.
-func VOOUpStreakSignals(tradeSymbol string, voo, trade []models.Bar, streak int, tpPct, slPct float64, holdDays int) []models.Signal {
-	upDates := make(map[string]bool, 64)
-	for _, d := range VOOUpStreakDates(voo, streak) {
-		upDates[d] = true
-	}
-	if len(upDates) == 0 {
-		return nil
-	}
-	var signals []models.Signal
-	for _, bar := range trade {
-		d := bar.Date
-		if len(d) >= 10 {
-			d = d[:10]
-		}
-		if !upDates[d] || bar.Close <= 0 {
-			continue
-		}
-		var takeProfit, stopLoss float64
-		if tpPct > 0 {
-			takeProfit = bar.Close * (1.0 + tpPct)
-		}
-		if slPct > 0 {
-			stopLoss = bar.Close * (1.0 - slPct)
-		}
-		signals = append(signals, models.Signal{
-			Idx:              bar.Idx,
-			Symbol:           tradeSymbol,
-			Date:             d,
-			Open:             bar.Open,
-			High:             bar.High,
-			Low:              bar.Low,
-			Close:            bar.Close,
-			Volume:           bar.Volume,
-			BuyLimit:         bar.Close,
-			Entry:            1,
-			OrderType:        "limit",
-			Direction:        "LONG",
-			Regime:           "All Regimes",
-			TakeProfit:       takeProfit,
-			StopLoss:         stopLoss,
-			HoldDaysOverride: holdDays,
-			AssetClass:       "equity",
-			StrategyID:       "voo-up3",
-			Priority:         0,
-		})
-	}
-	return signals
-}
-
-func barsForSymbol(barsBySymbol map[string][]models.Bar, want string) []models.Bar {
-	for sym, b := range barsBySymbol {
-		if strings.EqualFold(sym, want) {
-			return b
-		}
-	}
-	return nil
 }
 
 func init() {

@@ -73,8 +73,12 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 	}
 }
 
+// ParameterSpace is the exit grid gridsearch tries: hold, take-profit and stop,
+// from strategy_family_param, with the row's values included. The entries are
+// the row's own coil and bounce rule, run once, so only exits are searched.
 func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 	cfg := s.DefaultConfig()
+	ax := strategy.LoadFamilyAxes("tree")
 	return strategy.ParameterSpace{
 		StrategyID:   s.ID(),
 		StrategyName: s.Name(),
@@ -82,9 +86,12 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Symbols:      []string{cfg.TradeSymbol},
 		SignalSymbol: cfg.Benchmark,
 		Direction:    s.Row.Direction,
-		HoldDays:     []int{s.Row.HoldDays},
-		TakeProfits:  []float64{s.Row.TakeProfitPct},
-		StopLosses:   []float64{s.Row.StopLossPct},
+		FixedEntries: true,
+		SignalDays:   []int{1},
+		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{s.Row.HoldDays}),
+		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
+		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
+		Regimes:      []string{"All Regimes"},
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
@@ -101,26 +108,13 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.calcDBPath = calcDBPath
 }
 
+// GenerateSignals runs the shared SQL pipeline (sql/strategies/tree_strategy).
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	if s.marketDBPath != "" && s.calcDBPath != "" {
-		dir := s.PipelineDir
-		if dir == "" {
-			dir = pipelineDir
-		}
-		pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
-		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
-		sigs := pipe.GenerateSignals(barsBySymbol)
-		for i := range sigs {
-			sigs[i].StrategyID = s.ID()
-			if sigs[i].OrderType == "" {
-				sigs[i].OrderType = "limit"
-			}
-		}
-		return sigs
+	dir := s.PipelineDir
+	if dir == "" {
+		dir = pipelineDir
 	}
-
-	// Fallback to empty if DB not supplied (decision tree requires SQL for SMA/ATR)
-	return nil
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
 }
 
 func ValidateRow(row refdb.TreeStrategy) error {

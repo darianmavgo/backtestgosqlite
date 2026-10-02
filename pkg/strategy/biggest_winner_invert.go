@@ -7,7 +7,10 @@ import "github.com/darianmavgo/backtestgosqlite/pkg/models"
 // of that year. The position is cash-secured (collateral equals notional) and
 // pays ShortBorrowAnnual on market value. It is not the same trade as buying
 // the inverse ETF. That leg is BiggestWinnerInverseStrategy.
-type BiggestWinnerShortStrategy struct{}
+type BiggestWinnerShortStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&BiggestWinnerShortStrategy{})
@@ -33,18 +36,24 @@ func (s *BiggestWinnerShortStrategy) Validate() error {
 	return ValidateConfig(s.DefaultConfig())
 }
 
-func (s *BiggestWinnerShortStrategy) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *BiggestWinnerShortStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
 func (s *BiggestWinnerShortStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	return annualWinnerSignals(barsBySymbol, annualShort)
+	return annualWinnerSignals(s.ID(), s.Name(), s.Description(), s.DefaultConfig(), "short", s.marketDBPath, s.calcDBPath, barsBySymbol)
 }
 
 // BiggestWinnerInverseStrategy buys the matched-leverage inverse ETF of the
 // prior year's biggest winner (TQQQ → SQQQ, SOXL → SOXS, SPY → SH, ...).
-// A year whose winner has no pair in InverseETF, or whose pair did not trade
+// A year whose winner has no pair in the annual_winner pipeline, or whose pair did not trade
 // on the entry date, is left in cash. Holding a 3x inverse for a year is not
 // the negation of holding the 3x bull: both funds pay volatility decay.
-type BiggestWinnerInverseStrategy struct{}
+type BiggestWinnerInverseStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	Register(&BiggestWinnerInverseStrategy{})
@@ -67,8 +76,11 @@ func (s *BiggestWinnerInverseStrategy) Validate() error {
 	return ValidateConfig(s.DefaultConfig())
 }
 
-func (s *BiggestWinnerInverseStrategy) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *BiggestWinnerInverseStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
 func (s *BiggestWinnerInverseStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	return annualWinnerSignals(barsBySymbol, annualInverse)
+	return annualWinnerSignals(s.ID(), s.Name(), s.Description(), s.DefaultConfig(), "inverse", s.marketDBPath, s.calcDBPath, barsBySymbol)
 }

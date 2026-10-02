@@ -38,7 +38,7 @@ func resolveParamSpace(strat strategy.Strategy, opts sweepOptions) strategy.Para
 // are the deliberate exception: their entries come from a fitted decision
 // tree, not a streak count, so a fixed SignalDays there is correct.
 func declineRelevance(space strategy.ParameterSpace) (relevant bool, note string) {
-	if space.Direction == "tree_bounce" {
+	if space.EntriesFixed() {
 		return true, fmt.Sprintf("n/a — decision-tree entries, not a decline/rally streak (fixed at %v)", space.SignalDays)
 	}
 	if len(space.SignalDays) <= 1 {

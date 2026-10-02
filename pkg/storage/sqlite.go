@@ -242,8 +242,7 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 		query += fmt.Sprintf(" AND symbol IN (%s)", strings.Join(placeholders, ","))
 	}
 	// startDate is applied after the query (see below) so strategies still get
-	// their pre-start warmup bars. Bar.SMA50/SMA200 are not filled here; see
-	// strategy.LoadBarSMA.
+	// their pre-start warmup bars.
 	if endDate != "" {
 		query += " AND substr(Date, 1, 10) <= ?"
 		args = append(args, endDate)
@@ -276,8 +275,6 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 }
 
 // FetchRecentBars retrieves only the most recent N bars per symbol for fast live scanning,
-// Bar.SMA50/SMA200 are not filled here; see strategy.LoadBarSMA, which averages
-// the full history in SQL.
 func FetchRecentBars(db *sqlx.DB, tableName string, symbols []string, limitPerSymbol int) (map[string][]models.Bar, []string, error) {
 	if tableName == "" {
 		tableName = "backtest_start"

@@ -3,6 +3,7 @@ package hold_bail_strategy
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"strconv"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -10,8 +11,12 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
+const pipelineDir = "sql/strategies/hold_bail_strategy"
+
 type Strategy struct {
-	Row refdb.HoldBailStrategy
+	Row          refdb.HoldBailStrategy
+	marketDBPath string
+	calcDBPath   string
 }
 
 func (s *Strategy) ID() string { return s.Row.ID }
@@ -48,59 +53,51 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 
 func (s *Strategy) Validate() error { return strategy.ValidateConfig(s.DefaultConfig()) }
 
-func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
+// GenerateSignals runs the hold_bail_strategy SQL pipeline: enter on the first
+// bar, then on every bar whose close is above its SMA of Row.SMAReentryPeriod.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var bars []models.Bar
-	for sym, b := range barsBySymbol {
-		if strings.EqualFold(sym, s.Row.Symbol) {
-			bars = b
-			break
-		}
+	period := s.Row.SMAReentryPeriod
+	if period < 1 {
+		period = 20
 	}
-	if len(bars) == 0 {
-		return nil
+	cfg := s.DefaultConfig()
+	cfg.TradeSymbol = strings.ToUpper(strings.TrimSpace(s.Row.Symbol))
+	cfg.SQLParams = map[string]string{
+		"SMA_PERIOD":    strconv.Itoa(period),
+		"SMA_PRECEDING": strconv.Itoa(period - 1),
 	}
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), pipelineDir, cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
+}
 
-	smaPeriod := s.Row.SMAReentryPeriod
-	if smaPeriod < 1 {
-		smaPeriod = 20
+// ParameterSpace is the single point of the row. No hold_bail column is gridsearchable
+// (see strategy_family_param), so a sweep runs the row once.
+func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
+	cfg := s.DefaultConfig()
+	return strategy.ParameterSpace{
+		StrategyID:   s.ID(),
+		StrategyName: s.Name(),
+		Description:  s.Description(),
+		Symbols:      []string{s.Row.Symbol},
+		SignalSymbol: s.Row.Symbol,
+		Direction:    "long",
+		FixedEntries: true,
+		SignalDays:   []int{1},
+		HoldDays:     []int{cfg.HoldingWindow},
+		TakeProfits:  []float64{0},
+		StopLosses:   []float64{0},
+		Regimes:      []string{"All Regimes"},
+		Allocations:  []float64{s.Row.AllocationPct},
+		CashYield:    s.Row.CashYield,
+		Baseline: strategy.BaselineParams{
+			HoldDays:   cfg.HoldingWindow,
+			Allocation: s.Row.AllocationPct,
+		},
 	}
-	sma := strategy.CalcSMA(bars, smaPeriod)
-
-	signals := make([]models.Signal, 0, len(bars))
-	for i, b := range bars {
-		d := b.Date
-		if len(d) >= 10 {
-			d = d[:10]
-		}
-
-		canEnter := (i == 0)
-		if i >= smaPeriod && b.Close > sma[i] {
-			canEnter = true
-		}
-
-		if canEnter {
-			signals = append(signals, models.Signal{
-				Idx:        b.Idx,
-				Symbol:     s.Row.Symbol,
-				Date:       d,
-				Open:       b.Open,
-				High:       b.High,
-				Low:        b.Low,
-				Close:      b.Close,
-				Volume:     b.Volume,
-				BuyLimit:   b.Close,
-				OrderType:  "market",
-				Entry:      1,
-				Direction:  "LONG",
-				Regime:     fmt.Sprintf("Close>SMA%d", smaPeriod),
-				AssetClass: "equity",
-				StrategyID: s.ID(),
-			})
-		}
-	}
-	return signals
 }
 
 // NewFamily returns the hold_bail_strategy family reading the reference DB at path().

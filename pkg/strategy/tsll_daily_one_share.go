@@ -12,7 +12,10 @@ import (
 // edge (or lack of one) in a 2x leveraged single-stock ETF with a lopsided
 // 5% target / 20% stop. TakeProfitPct is a fractional offset (0.05 = +5%);
 // StopLossPct is a direct multiplier (0.80 = -20%), like every other strategy.
-type TSLLDailyOneShareStrategy struct{}
+type TSLLDailyOneShareStrategy struct {
+	marketDBPath string
+	calcDBPath   string
+}
 
 func init() {
 	s := &TSLLDailyOneShareStrategy{}
@@ -40,6 +43,7 @@ func (s *TSLLDailyOneShareStrategy) DefaultConfig() StrategyConfig {
 		Name:           s.Name(),
 		Description:    s.Description(),
 		Benchmark:      "TSLL",
+		TradeSymbol:    "TSLL",
 		PositionSizing: "fixed_shares",
 		FixedShares:    1,
 		AllocationPct:  1.0, // required by ValidateConfig; sizing is by FixedShares
@@ -63,41 +67,13 @@ func (s *TSLLDailyOneShareStrategy) DefaultConfig() StrategyConfig {
 
 func (s *TSLLDailyOneShareStrategy) Validate() error { return ValidateConfig(s.DefaultConfig()) }
 
-func (s *TSLLDailyOneShareStrategy) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *TSLLDailyOneShareStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
+// GenerateSignals runs the every_bar SQL pipeline: one entry per bar of TSLL,
+// each with its own take-profit, stop and one-day hold.
 func (s *TSLLDailyOneShareStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	bars := barsBySymbol["TSLL"]
-	if len(bars) == 0 {
-		return nil
-	}
-	cfg := s.DefaultConfig()
-
-	signals := make([]models.Signal, 0, len(bars))
-	for _, b := range bars {
-		d := b.Date
-		if len(d) >= 10 {
-			d = d[:10]
-		}
-		signals = append(signals, models.Signal{
-			Idx:              b.Idx,
-			Symbol:           "TSLL",
-			Date:             d,
-			Open:             b.Open,
-			High:             b.High,
-			Low:              b.Low,
-			Close:            b.Close,
-			Volume:           b.Volume,
-			BuyLimit:         b.Close,
-			OrderType:        "market",
-			Entry:            1,
-			Direction:        "LONG",
-			Regime:           "All Regimes",
-			TakeProfit:       b.Close * (1.0 + cfg.TakeProfitPct),
-			StopLoss:         b.Close * cfg.StopLossPct,
-			HoldDaysOverride: cfg.HoldingWindow,
-			AssetClass:       "equity",
-			StrategyID:       s.ID(),
-		})
-	}
-	return signals
+	return RunPipeline(s.ID(), s.Name(), s.Description(), "sql/strategies/every_bar", s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }

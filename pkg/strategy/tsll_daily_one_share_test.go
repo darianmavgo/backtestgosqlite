@@ -2,33 +2,42 @@ package strategy
 
 import (
 	"math"
+	"path/filepath"
 	"testing"
 
-	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
-func TestTSLLDailyOneShare_GenerateSignals(t *testing.T) {
+// Real TSLL bars: one entry per bar, each priced from that bar's own close.
+func TestTSLLDailyOneShareOnRealBars(t *testing.T) {
 	s := &TSLLDailyOneShareStrategy{}
 	if err := s.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	bars := []models.Bar{
-		{Idx: 0, Symbol: "TSLL", Date: "2025-01-02", Close: 10},
-		{Idx: 1, Symbol: "TSLL", Date: "2025-01-03T00:00:00Z", Close: 12},
-		{Idx: 2, Symbol: "TSLL", Date: "2025-01-06", Close: 9},
+	market := realbars.Copy(t, "TSLL", "AAPL")
+	db, err := storage.OpenSQLite(market)
+	if err != nil {
+		t.Fatal(err)
 	}
-	sigs := s.GenerateSignals(map[string][]models.Bar{"TSLL": bars, "AAPL": bars})
-	if len(sigs) != 3 {
-		t.Fatalf("expected one signal per TSLL bar, got %d", len(sigs))
+	defer db.Close()
+	bars, _, err := storage.FetchBars(db, "backtest_start", []string{"TSLL", "AAPL"}, "2021-01-01", "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if sigs[1].Date != "2025-01-03" {
-		t.Errorf("date not trimmed: %s", sigs[1].Date)
+	s.SetDatabases(market, filepath.Join(t.TempDir(), "calc.db"))
+	sigs := s.GenerateSignals(bars)
+	if len(sigs) != len(bars["TSLL"]) || len(sigs) < 500 {
+		t.Fatalf("got %d signals for %d TSLL bars", len(sigs), len(bars["TSLL"]))
 	}
-	if math.Abs(sigs[1].TakeProfit-12.6) > 1e-9 || math.Abs(sigs[1].StopLoss-9.6) > 1e-9 {
-		t.Errorf("TP/SL = %.4f/%.4f, want 12.60/9.60", sigs[1].TakeProfit, sigs[1].StopLoss)
-	}
-	if sigs[0].HoldDaysOverride != 1 {
-		t.Errorf("hold override = %d, want 1", sigs[0].HoldDaysOverride)
+	for i, sig := range sigs {
+		b := bars["TSLL"][i]
+		if sig.Symbol != "TSLL" || sig.Date != b.Date[:10] || sig.Entry != 1 || sig.HoldDaysOverride != 1 {
+			t.Fatalf("signal %d: %+v for bar %+v", i, sig, b)
+		}
+		if math.Abs(sig.TakeProfit-b.Close*1.05) > 1e-6 || math.Abs(sig.StopLoss-b.Close*0.80) > 1e-6 {
+			t.Fatalf("%s: TP/SL = %.4f/%.4f, want %.4f/%.4f", sig.Date, sig.TakeProfit, sig.StopLoss, b.Close*1.05, b.Close*0.80)
+		}
 	}
 	cfg := s.DefaultConfig()
 	if cfg.PositionSizing != "fixed_shares" || cfg.FixedShares != 1 {

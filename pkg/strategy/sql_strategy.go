@@ -149,6 +149,10 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 	sqlText = strings.ReplaceAll(sqlText, "__MARKOV_DB__", appenv.MarkovDB())
 	sqlText = strings.ReplaceAll(sqlText, "__HMM_DB__", appenv.ReportFile("hmm_regime.db"))
 	
+	for k, v := range cfg.SQLParams {
+		sqlText = strings.ReplaceAll(sqlText, "__"+k+"__", v)
+	}
+
 	sqlText = strings.ReplaceAll(sqlText, "__COIL_MAX__", strconv.FormatFloat(cfg.TreeCoilMax, 'f', -1, 64))
 	sqlText = strings.ReplaceAll(sqlText, "__SMA_MIN__", strconv.FormatFloat(cfg.TreeSMAMin, 'f', -1, 64))
 	sqlText = strings.ReplaceAll(sqlText, "__SMA_MAX__", strconv.FormatFloat(cfg.TreeSMAMax, 'f', -1, 64))
@@ -436,8 +440,8 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 			       coalesce(take_profit, 0.0) as take_profit,
 			       coalesce(stop_loss, 0.0) as stop_loss
 			FROM %s
-			WHERE entry = 1
-			ORDER BY date, symbol ASC;
+			WHERE entry <> 0
+			ORDER BY date, entry, symbol ASC;
 		`, tbl)
 		err = db.Select(&signals, extendedQuery)
 		if err == nil && len(signals) > 0 {
@@ -450,8 +454,8 @@ func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.B
 			       open, high, low, close, volume, buylimit, entry,
 			       0.0 as allocation_pct_override
 			FROM %s
-			WHERE entry = 1
-			ORDER BY date, symbol ASC;
+			WHERE entry <> 0
+			ORDER BY date, entry, symbol ASC;
 		`, tbl)
 		err = db.Select(&signals, query)
 		if err == nil && len(signals) > 0 {

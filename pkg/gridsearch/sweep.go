@@ -7,7 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -128,7 +130,7 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
 
 	var baseSignals []models.Signal
-	if paramSpace.Direction == "tree_bounce" {
+	if paramSpace.EntriesFixed() {
 		// Strategies whose entry rule reads one symbol but trades another (e.g. VOO
 		// volume → TQQQ) also need the trade symbol's bars to price the signal.
 		// Same-symbol tree strategies (MARA→MARA) add nothing here.
@@ -138,11 +140,22 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 				baseInput[sym] = bars
 			}
 		}
+		// The strategy's own pipeline decides the entries, once. It reads the market
+		// database and writes its slice tables to a scratch calc database.
+		if opts.MarketDB == "" {
+			return nil, nil, fmt.Errorf("%s: a fixed-entry sweep needs the market database path", strat.ID())
+		}
+		calcPath, cleanup := runner.CalcDBPath(appenv.Reports(), "gridsearch_base_"+strat.ID())
+		strat.SetDatabases(opts.MarketDB, calcPath)
 		baseSignals = strat.GenerateSignals(baseInput)
+		cleanup()
+		if len(baseSignals) == 0 {
+			return nil, nil, fmt.Errorf("%s produced no entries to search exits over (no saved model for it? run `train markov`)", strat.ID())
+		}
 	}
 
 	var entries map[streakEntryKey][]models.Signal
-	if paramSpace.Direction != "tree_bounce" {
+	if !paramSpace.EntriesFixed() {
 		var tradeSyms []string
 		for _, sym := range paramSpace.Symbols {
 			if _, ok := tradeBarsMap[sym]; ok {
@@ -181,7 +194,7 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 						for _, sl := range paramSpace.StopLosses {
 							for _, alloc := range paramSpace.Allocations {
 								isBase := false
-								if paramSpace.Direction == "tree_bounce" {
+								if paramSpace.EntriesFixed() {
 									isBase = (hold == paramSpace.Baseline.HoldDays &&
 										math.Abs(tp-paramSpace.Baseline.TakeProfit) < 1e-4 &&
 										math.Abs(sl-paramSpace.Baseline.StopLoss) < 1e-4)
@@ -234,7 +247,7 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 	}
 
 	var sigs []models.Signal
-	if ctx.ParamSpace.Direction == "tree_bounce" {
+	if ctx.ParamSpace.EntriesFixed() {
 		sigs = make([]models.Signal, len(ctx.BaseSignals))
 		for idx, bs := range ctx.BaseSignals {
 			sCopy := bs
@@ -269,7 +282,7 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 	label := ""
 	signalDays := t.sigDays
 	regime := t.regime
-	if ctx.ParamSpace.Direction == "tree_bounce" {
+	if ctx.ParamSpace.EntriesFixed() {
 		label = fmt.Sprintf("%s/Hold-%dd/TP+%.0f%%/SL-%.0f%%", t.sym, t.hold, t.tp*100, t.sl*100)
 		signalDays = 0 // tree_bounce's SignalDays axis is a fixed [1] placeholder, not a real decline-day window
 		regime = ""    // tree_bounce entries aren't regime-gated

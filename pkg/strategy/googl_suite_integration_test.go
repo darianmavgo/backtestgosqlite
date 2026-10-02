@@ -1,67 +1,47 @@
 package strategy_test
 
 import (
-	"math/rand"
+	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 )
 
-func TestGooglStrategies(t *testing.T) {
-	refdb.DefaultPath = "../../refdata/strategies.db"
-	strategy.AutoRegisterSQLStrategies("../../", "../../data/market_history.db")
-	streak_strategy.Register()
-	tree_strategy.Register()
-	hold_bail_strategy.Register()
-	hold_strategy.Register()
-	markov_strategy.Register()
-
-	// Define the IDs of the GOOGL strategies to test
-	googlIDs := []string{
-		"hold_bail_googl",
-		"googl-buy-hold",
-		"markov_hmm_googl",
-		"streak-googl-down3-googl",
-		"googl_tree",
+// The real GOOGL strategies run on real GOOGL bars (2021-01-01 to 2025-12-31).
+// hold_bail_googl's 760 entries are the SQL pipeline's, which matched the old Go
+// loop signal for signal on the full window.
+func TestGooglStrategiesOnRealBars(t *testing.T) {
+	refdb.DefaultPath = realbars.StrategiesDB(t)
+	stratreg.RegisterFamilies()
+	market := realbars.Copy(t, "GOOGL", "VOO")
+	db, err := storage.OpenSQLite(market)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	bars, _, err := storage.FetchBars(db, "backtest_start", []string{"GOOGL", "VOO"}, "2021-01-01", "2025-12-31")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Generate 200 days of dummy price data for GOOGL
-	barsBySymbol := make(map[string][]models.Bar)
-	var bars []models.Bar
-	price := 100.0
-	for i := 0; i < 200; i++ {
-		price = price * (1.0 + (rand.Float64()-0.5)*0.05)
-		bars = append(bars, models.Bar{
-			Idx:    i,
-			Symbol: "GOOGL",
-			Date:   time.Now().AddDate(0, 0, -200+i).Format("2006-01-02"),
-			Open:   price,
-			High:   price * 1.02,
-			Low:    price * 0.98,
-			Close:  price,
-			Volume: 1000000,
-		})
+	counts := map[string]int{}
+	for _, id := range []string{"hold_bail_googl", "googl-buy-hold", "streak-googl-down3-googl", "googl_tree"} {
+		s, ok := strategy.Get(id)
+		if !ok {
+			t.Fatalf("strategy %q not found", id)
+		}
+		s.SetDatabases(market, filepath.Join(t.TempDir(), id+".db"))
+		counts[id] = len(s.GenerateSignals(bars))
+		t.Logf("%s: %d signals", id, counts[id])
 	}
-	barsBySymbol["GOOGL"] = bars
-
-	for _, id := range googlIDs {
-		t.Run(id, func(t *testing.T) {
-			s, ok := strategy.Get(id)
-			if !ok {
-				t.Fatalf("Strategy %q not found in registry", id)
-			}
-			t.Logf("Testing strategy: %s (%s)", s.ID(), s.Name())
-			
-			signals := s.GenerateSignals(barsBySymbol)
-			t.Logf("  -> Generated %d signals", len(signals))
-		})
+	if counts["googl-buy-hold"] != 1 {
+		t.Errorf("googl-buy-hold: %d signals, want 1", counts["googl-buy-hold"])
+	}
+	if counts["hold_bail_googl"] != 760 {
+		t.Errorf("hold_bail_googl: %d signals, want 760", counts["hold_bail_googl"])
 	}
 }

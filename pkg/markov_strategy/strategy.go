@@ -89,9 +89,12 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 	}
 }
 
-// ParameterSpace returns the search space based on the row.
+// ParameterSpace is the exit grid gridsearch tries: hold, take-profit and stop,
+// from strategy_family_param, with the row's values included. The entries come
+// from the saved model for the row's state, run once, so only exits are searched.
 func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 	cfg := s.DefaultConfig()
+	ax := strategy.LoadFamilyAxes("markov")
 	return strategy.ParameterSpace{
 		StrategyID:   s.ID(),
 		StrategyName: s.Name(),
@@ -99,20 +102,19 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Symbols:      []string{cfg.TradeSymbol},
 		SignalSymbol: cfg.Benchmark,
 		Direction:    s.Row.Direction,
-		SignalDays:   []int{0},
-		HoldDays:     []int{s.Row.HoldDays},
-		TakeProfits:  []float64{s.Row.TakeProfitPct},
-		StopLosses:   []float64{s.Row.StopLossPct},
-		Regimes:      []string{s.Row.TargetState},
+		FixedEntries: true,
+		SignalDays:   []int{1},
+		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{s.Row.HoldDays}),
+		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
+		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
+		Regimes:      []string{"All Regimes"},
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
-			SignalDays: 0,
 			HoldDays:   s.Row.HoldDays,
 			TakeProfit: s.Row.TakeProfitPct,
 			StopLoss:   s.Row.StopLossPct,
 			Allocation: s.Row.AllocationPct,
-			Regime:     s.Row.TargetState,
 		},
 	}
 }
@@ -145,16 +147,7 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 			return nil
 		}
 	}
-	pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
-	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
-	sigs := pipe.GenerateSignals(barsBySymbol)
-	for i := range sigs {
-		sigs[i].StrategyID = s.ID()
-		if sigs[i].OrderType == "" {
-			sigs[i].OrderType = "limit"
-		}
-	}
-	return sigs
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
 }
 
 // hasModel reports whether the model database at path holds a trained model

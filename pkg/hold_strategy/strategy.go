@@ -10,8 +10,13 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
+const pipelineDir = "sql/strategies/first_bar"
+
 type Strategy struct {
-	Row refdb.HoldStrategy
+	Row          refdb.HoldStrategy
+	marketDBPath string
+	calcDBPath   string
+	reinvest     bool
 }
 
 func (s *Strategy) ID() string { return s.Row.ID }
@@ -36,6 +41,7 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		Name:               s.Name(),
 		Description:        s.Description(),
 		Benchmark:          "VOO",
+		TradeSymbol:        strings.ToUpper(strings.TrimSpace(s.Row.Symbol)),
 		TargetPct:          999.0,  // Never exit via profit target
 		StopLossPct:        0.0001, // Never exit via stop loss
 		HoldingWindow:      99999,  // Never exit via time limit
@@ -49,36 +55,54 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 
 func (s *Strategy) Validate() error { return strategy.ValidateConfig(s.DefaultConfig()) }
 
-func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {}
+func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}
 
+// GenerateSignals runs the first_bar SQL pipeline: one entry on the first bar of
+// the run, held to the end.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var bars []models.Bar
-	for sym, b := range barsBySymbol {
-		if strings.EqualFold(sym, s.Row.Symbol) {
-			bars = b
-			break
-		}
-	}
-	if len(bars) == 0 {
-		return nil
-	}
+	cfg := s.DefaultConfig()
+	cfg.SQLParams = map[string]string{"TOTAL_RETURN": totalReturnFlag(s.Row.TotalReturn > 0 && s.reinvest)}
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), pipelineDir, cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
+}
 
-	firstBar := bars[0]
-	return []models.Signal{{
-		Idx:        firstBar.Idx,
-		Symbol:     s.Row.Symbol,
-		Date:       firstBar.Date,
-		Open:       firstBar.Open,
-		High:       firstBar.High,
-		Low:        firstBar.Low,
-		Close:      firstBar.Close,
-		Volume:     firstBar.Volume,
-		BuyLimit:   firstBar.Close,
-		OrderType:  "market",
-		Entry:      1,
-		Direction:  "LONG",
-		StrategyID: s.ID(),
-	}}
+// SetReinvestDividends is called by the runner before GenerateSignals: a total
+// return run simulates on dividend-adjusted prices only when dividends are reinvested.
+func (s *Strategy) SetReinvestDividends(reinvest bool) { s.reinvest = reinvest }
+
+func totalReturnFlag(on bool) string {
+	if on {
+		return "1"
+	}
+	return "0"
+}
+
+// ParameterSpace is the single point of the row. No hold column is gridsearchable
+// (see strategy_family_param), so a sweep runs the row once.
+func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
+	cfg := s.DefaultConfig()
+	return strategy.ParameterSpace{
+		StrategyID:   s.ID(),
+		StrategyName: s.Name(),
+		Description:  s.Description(),
+		Symbols:      []string{s.Row.Symbol},
+		SignalSymbol: s.Row.Symbol,
+		Direction:    "long",
+		FixedEntries: true,
+		SignalDays:   []int{1},
+		HoldDays:     []int{cfg.HoldingWindow},
+		TakeProfits:  []float64{0},
+		StopLosses:   []float64{0},
+		Regimes:      []string{"All Regimes"},
+		Allocations:  []float64{s.Row.AllocationPct},
+		CashYield:    s.Row.CashYield,
+		Baseline: strategy.BaselineParams{
+			HoldDays:   cfg.HoldingWindow,
+			Allocation: s.Row.AllocationPct,
+		},
+	}
 }
 
 // NewFamily returns the hold_strategy family reading the reference DB at path().

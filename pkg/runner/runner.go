@@ -524,6 +524,9 @@ type splitReturn struct {
 // symbols and benchmark have OHLC scaled by AdjClose/Close. Other symbols and the
 // caller's slices are left untouched (strategies may run concurrently on one map).
 func toTotalReturnBars(strat strategy.Strategy, cfg strategy.StrategyConfig, in map[string][]models.Bar, reinvest bool) (map[string][]models.Bar, *totalReturnInfo) {
+	if m, ok := strat.(strategy.DividendModeSetter); ok {
+		m.SetReinvestDividends(reinvest)
+	}
 	need := map[string]bool{strings.ToUpper(strings.TrimSpace(cfg.Benchmark)): true}
 	if rp, ok := strat.(strategy.RequiredSymbolsProvider); ok {
 		for _, s := range rp.RequiredSymbols() {

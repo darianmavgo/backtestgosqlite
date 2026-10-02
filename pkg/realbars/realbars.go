@@ -39,6 +39,29 @@ func marketPath(t testing.TB) string {
 	}
 }
 
+// StrategiesDB returns the path of the real refdata/strategies.db, or skips.
+func StrategiesDB(t testing.TB) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			p := filepath.Join(dir, "refdata", "strategies.db")
+			if fi, err := os.Stat(p); err != nil || fi.Size() == 0 {
+				t.Skipf("real strategies database %s not present", p)
+			}
+			return p
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Skip("no go.mod above the test directory")
+		}
+		dir = parent
+	}
+}
+
 // Copy returns the path of a new market database whose backtest_start holds
 // every daily (timeframe 1d) row of symbols, copied unchanged.
 func Copy(t testing.TB, symbols ...string) string {

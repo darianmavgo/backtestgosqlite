@@ -16,11 +16,6 @@ type Bar struct {
 	AdjClose   float64   `db:"Adj Close" json:"adj_close,omitempty"`
 	Volume     int64     `db:"volume" json:"volume"`
 	ParsedDt   time.Time `json:"-"`
-	// SMA200 and SMA50 are optional moving averages populated by the storage
-	// layer when fetching signal bars (e.g. via FetchSignalBarsAsBar).
-	// Zero means not available; strategies should treat 0 as "no regime filter".
-	SMA200 float64 `db:"sma200" json:"sma200,omitempty"`
-	SMA50  float64 `db:"sma50" json:"sma50,omitempty"`
 }
 
 // Signal represents a trade trigger detected by a strategy.

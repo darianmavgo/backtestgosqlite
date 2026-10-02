@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"math"
-
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
@@ -51,78 +49,9 @@ func (s *PriceActionReclaimStrategy) SetDatabases(marketDBPath, calcDBPath strin
 	s.calcDBPath = calcDBPath
 }
 
+// GenerateSignals runs the price_action_reclaim SQL pipeline over every symbol
+// with 250 bars in the window: support, the break below it and the reclaim, in an
+// uptrend, are all calculated in SQL.
 func (s *PriceActionReclaimStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	var signals []models.Signal
-
-	// SMA200 comes from the bar_sma slice table in the calc database.
-	loadBarSMAOrWarn(s.ID(), s.marketDBPath, s.calcDBPath, barsBySymbol)
-
-	for symbol, bars := range barsBySymbol {
-		if len(bars) < 250 {
-			continue // Need history for SMA200 and support window
-		}
-
-		// Lookback window for establishing support
-		const lookbackStart = 25
-		const lookbackEnd = 5
-
-		for i := lookbackStart; i < len(bars); i++ {
-			// Pillar 1: Map (Support Level)
-			// Establish support as the minimum low in a past window, offset slightly
-			// so the breakdown doesn't lower the support level itself.
-			var support float64 = math.MaxFloat64
-			for j := i - lookbackStart; j <= i - lookbackEnd; j++ {
-				if bars[j].Low < support {
-					support = bars[j].Low
-				}
-			}
-
-			// Pillar 4: Context
-			// Broader market context check using SMA200.
-			if bars[i].SMA200 == 0 || bars[i].Close < bars[i].SMA200 {
-				continue // Must be in a broader uptrend
-			}
-
-			// Pillar 2: Confirmation (Break and Reclaim)
-			// Break down: the previous bar closed below support.
-			// Reclaim: the current bar closes back above support.
-			reclaimed := false
-
-			if bars[i-1].Close < support && bars[i].Close > support {
-				reclaimed = true
-			}
-
-			if reclaimed {
-				// Pillar 3: Invalidation
-				// Stop loss is placed at the support level.
-				stopLossPrice := support * 0.995
-				stopLossMult := stopLossPrice / bars[i].Close
-
-				// Filter out trades with massive risk (stop loss > 15% away)
-				if stopLossMult < 0.85 {
-					continue
-				}
-
-				signals = append(signals, models.Signal{
-					Idx:        bars[i].Idx,
-					Symbol:     symbol,
-					Date:       bars[i].Date,
-					Open:       bars[i].Open,
-					High:       bars[i].High,
-					Low:        bars[i].Low,
-					Close:      bars[i].Close,
-					Volume:     bars[i].Volume,
-					BuyLimit:   bars[i].Close,
-					Entry:      1,
-					StopLoss:   stopLossPrice,
-					TakeProfit: 0, // let simulator compute via TakeProfitPct
-					Direction:  "LONG",
-					Regime:     "Price > SMA200",
-					StrategyID: s.ID(),
-					Priority:   0,
-				})
-			}
-		}
-	}
-	return signals
+	return RunPipeline(s.ID(), s.Name(), s.Description(), "sql/strategies/price_action_reclaim", s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "", barsBySymbol)
 }

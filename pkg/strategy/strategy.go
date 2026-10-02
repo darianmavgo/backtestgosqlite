@@ -47,6 +47,14 @@ type TotalReturnProvider interface {
 	UsesTotalReturn() bool
 }
 
+// DividendModeSetter is implemented by total-return strategies that calculate
+// their signals in a SQL pipeline. The runner calls it before GenerateSignals
+// with whether dividends are reinvested: only then does the run simulate on
+// dividend-adjusted prices, so the pipeline must price its signals the same way.
+type DividendModeSetter interface {
+	SetReinvestDividends(reinvest bool)
+}
+
 // OverlaySpec configures a monthly covered-call overlay on a buy-and-hold underlying.
 type OverlaySpec struct {
 	Underlying       string
@@ -149,6 +157,10 @@ type StrategyConfig struct {
 	TreeCoilMax  float64 `json:"tree_coil_max,omitempty"`
 	TreeSMAMin   float64 `json:"tree_sma_min,omitempty"`
 	TreeSMAMax   float64 `json:"tree_sma_max,omitempty"`
+
+	// SQLParams are extra placeholders a pipeline substitutes: key K replaces
+	// __K__ in its .sql files. RunPipeline adds START_DATE and END_DATE.
+	SQLParams map[string]string `json:"-"`
 
 	// ShortTakeProfitPct/ShortStopLossPct/ShortHoldingWindow mirror
 	// TakeProfitPct/StopLossPct/HoldingWindow but for a strategy's short leg

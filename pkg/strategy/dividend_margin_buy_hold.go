@@ -11,8 +11,11 @@ import (
 // on Reg-T 2:1 margin (200% allocation of starting equity = $100k base cash borrows $100k margin to buy $200k worth).
 // Dividends flow directly into the cash account, while margin debit interest flows out of cash daily.
 type DividendMarginBuyHoldStrategy struct {
-	Symbol string
-	Label  string
+	Symbol       string
+	Label        string
+	marketDBPath string
+	calcDBPath   string
+	reinvest     bool
 }
 
 func init() {
@@ -49,6 +52,7 @@ func (s *DividendMarginBuyHoldStrategy) DefaultConfig() StrategyConfig {
 		Name:                 s.Name(),
 		Description:          s.Description(),
 		Benchmark:            "VOO",
+		TradeSymbol:          strings.ToUpper(s.Symbol),
 		TargetPct:            999.0,  // never exit via profit target
 		StopLossPct:          0.0001, // never exit via stop loss
 		HoldingWindow:        99999,  // hold throughout backtest window
@@ -64,19 +68,20 @@ func (s *DividendMarginBuyHoldStrategy) DefaultConfig() StrategyConfig {
 
 func (s *DividendMarginBuyHoldStrategy) Validate() error { return ValidateConfig(s.DefaultConfig()) }
 
+// GenerateSignals runs the first_bar SQL pipeline: one entry on the first bar.
 func (s *DividendMarginBuyHoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	for sym, bars := range barsBySymbol {
-		if !strings.EqualFold(sym, s.Symbol) || len(bars) == 0 {
-			continue
-		}
-		b := bars[0]
-		return []models.Signal{{
-			Idx: b.Idx, Symbol: s.Symbol, Date: b.Date,
-			Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume,
-			BuyLimit: b.Close, OrderType: "market", Entry: 1, StrategyID: s.ID(),
-		}}
+	cfg := s.DefaultConfig()
+	cfg.SQLParams = map[string]string{"TOTAL_RETURN": "0"}
+	if s.reinvest {
+		cfg.SQLParams["TOTAL_RETURN"] = "1"
 	}
-	return nil
+	return RunPipeline(s.ID(), s.Name(), s.Description(), "sql/strategies/first_bar", cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }
 
-func (s *DividendMarginBuyHoldStrategy) SetDatabases(marketDBPath, calcDBPath string) {}
+// SetReinvestDividends is called by the runner before GenerateSignals.
+func (s *DividendMarginBuyHoldStrategy) SetReinvestDividends(reinvest bool) { s.reinvest = reinvest }
+
+func (s *DividendMarginBuyHoldStrategy) SetDatabases(marketDBPath, calcDBPath string) {
+	s.marketDBPath = marketDBPath
+	s.calcDBPath = calcDBPath
+}

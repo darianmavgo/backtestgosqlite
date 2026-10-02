@@ -3,7 +3,6 @@ package streak_strategy
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
-	"log"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -111,9 +110,24 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 	}
 }
 
-// ParameterSpace is the single point stored in the row.
+// ParameterSpace is the grid gridsearch tries: the columns marked gridsearchable
+// for the streak family in strategy_family_param, with the row's own values
+// always included so the baseline is in the grid.
 func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 	cfg := s.DefaultConfig()
+	ax := strategy.LoadFamilyAxes("streak")
+	regime := strings.TrimSpace(s.Row.Regime)
+	regimes := []string{regime}
+	for _, t := range ax.Strs["regime"] {
+		r := strings.ReplaceAll(t, "{signal_symbol}", strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol)))
+		dup := false
+		for _, have := range regimes {
+			dup = dup || have == r
+		}
+		if !dup {
+			regimes = append(regimes, r)
+		}
+	}
 	return strategy.ParameterSpace{
 		StrategyID:   s.ID(),
 		StrategyName: s.Name(),
@@ -121,11 +135,11 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Symbols:      []string{cfg.TradeSymbol},
 		SignalSymbol: cfg.Benchmark,
 		Direction:    s.Row.Direction,
-		SignalDays:   []int{s.Row.SignalDays},
-		HoldDays:     []int{s.Row.HoldDays},
-		TakeProfits:  []float64{s.Row.TakeProfitPct},
-		StopLosses:   []float64{s.Row.StopLossPct},
-		Regimes:      []string{strings.TrimSpace(s.Row.Regime)},
+		SignalDays:   strategy.UnionInts(ax.Ints("signal_days"), []int{s.Row.SignalDays}),
+		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{s.Row.HoldDays}),
+		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
+		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
+		Regimes:      regimes,
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
@@ -134,7 +148,7 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 			TakeProfit: s.Row.TakeProfitPct,
 			StopLoss:   s.Row.StopLossPct,
 			Allocation: s.Row.AllocationPct,
-			Regime:     strings.TrimSpace(s.Row.Regime),
+			Regime:     regime,
 		},
 	}
 }
@@ -146,27 +160,13 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 }
 
 // GenerateSignals runs the shared SQL pipeline (sql/strategies/streak_strategy)
-// in the calc database. Both database paths must be set: without them there is
-// no market data to calculate from, so no signals are produced.
+// in the calc database. Both database paths must be set.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	if s.marketDBPath == "" || s.calcDBPath == "" {
-		log.Printf("streak_strategy %s: market and calc database paths are not set, no signals", s.ID())
-		return nil
-	}
 	dir := s.PipelineDir
 	if dir == "" {
 		dir = pipelineDir
 	}
-	pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
-	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
-	sigs := pipe.GenerateSignals(barsBySymbol)
-	for i := range sigs {
-		sigs[i].StrategyID = s.ID()
-		if sigs[i].OrderType == "" {
-			sigs[i].OrderType = "limit"
-		}
-	}
-	return sigs
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
 }
 
 // ValidateRow reports why a streak_strategy row cannot be registered or promoted.
