@@ -483,3 +483,47 @@ func UpsertTreeStrategies(db *sqlx.DB, rows []TreeStrategy) error {
 	}
 	return tx.Commit()
 }
+
+// HoldBailStrategy is one row of hold_bail_strategy.
+type HoldBailStrategy struct {
+	ID               string  `db:"id"`
+	Name             string  `db:"name"`
+	Symbol           string  `db:"symbol"`
+	TrailingStopPct  float64 `db:"trailing_stop_pct"`
+	SMAReentryPeriod int     `db:"sma_reentry_period"`
+	AllocationPct    float64 `db:"allocation_pct"`
+	CashYield        float64 `db:"cash_yield"`
+	SlippagePct      float64 `db:"slippage_pct"`
+}
+
+// HoldBailStrategies returns every hold_bail_strategy row, ordered by id.
+func HoldBailStrategies(db *sqlx.DB) ([]HoldBailStrategy, error) {
+	var out []HoldBailStrategy
+	err := db.Select(&out, `
+		SELECT id, name, symbol, trailing_stop_pct, sma_reentry_period,
+		       allocation_pct, cash_yield, slippage_pct
+		FROM hold_bail_strategy
+		ORDER BY id`)
+	return out, err
+}
+
+// HoldStrategy is one row of hold_strategy.
+type HoldStrategy struct {
+	ID            string  `db:"id"`
+	Name          string  `db:"name"`
+	Symbol        string  `db:"symbol"`
+	TotalReturn   int     `db:"total_return"`
+	AllocationPct float64 `db:"allocation_pct"`
+	CashYield     float64 `db:"cash_yield"`
+	SlippagePct   float64 `db:"slippage_pct"`
+}
+
+// HoldStrategies returns every hold_strategy row, ordered by id.
+func HoldStrategies(db *sqlx.DB) ([]HoldStrategy, error) {
+	var out []HoldStrategy
+	err := db.Select(&out, `
+		SELECT id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct
+		FROM hold_strategy
+		ORDER BY id`)
+	return out, err
+}

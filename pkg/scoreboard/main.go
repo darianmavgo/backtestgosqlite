@@ -20,6 +20,8 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
 	_ "modernc.org/sqlite"
 )
 
@@ -113,6 +115,8 @@ func runAll(concurrency int, force bool) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
 	streak_strategy.Register()
 	tree_strategy.Register()
+	hold_bail_strategy.Register()
+	hold_strategy.Register()
 	markov_strategy.Register()
 
 	allStrategies := strategy.List()
@@ -233,6 +237,8 @@ func runCompile(concurrency int) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategy names/descriptions resolve too
 	streak_strategy.Register()
 	tree_strategy.Register()
+	hold_bail_strategy.Register()
+	hold_strategy.Register()
 	markov_strategy.Register()
 
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
@@ -282,6 +288,8 @@ func runStatus(concurrency int) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb)
 	streak_strategy.Register()
 	tree_strategy.Register()
+	hold_bail_strategy.Register()
+	hold_strategy.Register()
 	markov_strategy.Register()
 
 	total := len(strategy.List())

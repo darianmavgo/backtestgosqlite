@@ -116,7 +116,7 @@ func (s *VOOUp3ETFStudy) Run() error {
 		return fmt.Errorf("load VOO: %w", err)
 	}
 	voo := vooMap["VOO"]
-	upDates := strategy.VOOUpStreakDates(voo, vooUp3GainDays)
+	upDates := VOOUpStreakDates(voo, vooUp3GainDays)
 	if len(upDates) == 0 {
 		return fmt.Errorf("no VOO %d-up-day signals since %s", vooUp3GainDays, storage.DefaultStartDate)
 	}
@@ -200,7 +200,7 @@ func evalVOOUp3Symbol(db *sqlx.DB, voo []models.Bar, sym string) vooUp3Row {
 		row.Status = "insufficient_bars"
 		return row
 	}
-	sigs := strategy.VOOUpStreakSignals(sym, voo, bars, vooUp3GainDays, vooUp3TP, vooUp3SL, vooUp3Hold)
+	sigs := VOOUpStreakSignals(sym, voo, bars, vooUp3GainDays, vooUp3TP, vooUp3SL, vooUp3Hold)
 	row.SignalDays = len(sigs)
 	if len(sigs) == 0 {
 		row.Status = "no_signals"
@@ -378,4 +378,79 @@ func persistVOOUp3(path string, upDates []string, rows []vooUp3Row) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// VOOUpStreakDates returns dates on which VOO has closed up `streak` days in a row.
+func VOOUpStreakDates(voo []models.Bar, streak int) []string {
+	if streak < 1 || len(voo) < streak+1 {
+		return nil
+	}
+	var out []string
+	up := 0
+	for i := 1; i < len(voo); i++ {
+		if voo[i].Close > voo[i-1].Close {
+			up++
+		} else {
+			up = 0
+		}
+		if up >= streak {
+			d := voo[i].Date
+			if len(d) >= 10 {
+				d = d[:10]
+			}
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// VOOUpStreakSignals longs tradeSymbol on VOO up-streak dates, using that
+// symbol's close as the limit and the given TP/SL/hold.
+func VOOUpStreakSignals(tradeSymbol string, voo, trade []models.Bar, streak int, tpPct, slPct float64, holdDays int) []models.Signal {
+	upDates := make(map[string]bool, 64)
+	for _, d := range VOOUpStreakDates(voo, streak) {
+		upDates[d] = true
+	}
+	if len(upDates) == 0 {
+		return nil
+	}
+	var signals []models.Signal
+	for _, bar := range trade {
+		d := bar.Date
+		if len(d) >= 10 {
+			d = d[:10]
+		}
+		if !upDates[d] || bar.Close <= 0 {
+			continue
+		}
+		var takeProfit, stopLoss float64
+		if tpPct > 0 {
+			takeProfit = bar.Close * (1.0 + tpPct)
+		}
+		if slPct > 0 {
+			stopLoss = bar.Close * (1.0 - slPct)
+		}
+		signals = append(signals, models.Signal{
+			Idx:              bar.Idx,
+			Symbol:           tradeSymbol,
+			Date:             d,
+			Open:             bar.Open,
+			High:             bar.High,
+			Low:              bar.Low,
+			Close:            bar.Close,
+			Volume:           bar.Volume,
+			BuyLimit:         bar.Close,
+			Entry:            1,
+			OrderType:        "limit",
+			Direction:        "LONG",
+			Regime:           "All Regimes",
+			TakeProfit:       takeProfit,
+			StopLoss:         stopLoss,
+			HoldDaysOverride: holdDays,
+			AssetClass:       "equity",
+			StrategyID:       "voo_up3_etf",
+			Priority:         0,
+		})
+	}
+	return signals
 }

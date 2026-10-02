@@ -11,6 +11,8 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -19,6 +21,8 @@ func main() {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), appenv.MarketDB())
 	streak_strategy.Register()
 	tree_strategy.Register()
+	hold_bail_strategy.Register()
+	hold_strategy.Register()
 	markov_strategy.Register()
 
 	strategies := strategy.List()
@@ -44,6 +48,10 @@ func main() {
 			source = "refdata/settings.db (table: streak_strategy) -> pkg/streak_strategy"
 		} else if strings.Contains(pkgPath, "markov_strategy") {
 			source = "refdata/settings.db (table: markov_strategy) -> pkg/markov_strategy"
+		} else if strings.Contains(pkgPath, "hold_strategy") {
+			source = "refdata/settings.db (table: hold_strategy) -> pkg/hold_strategy"
+		} else if strings.Contains(pkgPath, "hold_bail_strategy") {
+			source = "refdata/settings.db (table: hold_bail_strategy) -> pkg/hold_bail_strategy"
 		} else if typeName == "SQLPipelineStrategy" {
 			// Try to extract the directory if possible, but fallback to general text
 			source = "sql/strategies/... (SQL Pipeline) -> pkg/strategy"
