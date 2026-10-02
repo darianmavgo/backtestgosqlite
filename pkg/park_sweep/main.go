@@ -14,7 +14,7 @@ import (
 func Main() {
 	dbPath := flag.String("db", "", "sweep database (default data/reports/park_googl.db)")
 	market := flag.String("market-db", "", "market history database (default data/market_history.db)")
-	settings := flag.String("settings-db", "", "reference database (default refdata/settings.db)")
+	settings := flag.String("settings-db", "", "reference database (default refdata/strategies.db)")
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "worker count")
 	reportDB := flag.String("report-db", "", "report snapshot database (default data/reports/park_googl_report.db)")
 	htmlPath := flag.String("html", "", "report HTML (default data/reports/park_googl.html)")

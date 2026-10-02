@@ -45,13 +45,13 @@ func main() {
 		typeName := t.Name()
 
 		if strings.Contains(pkgPath, "streak_strategy") {
-			source = "refdata/settings.db (table: streak_strategy) -> pkg/streak_strategy"
+			source = "refdata/strategies.db (table: streak_strategy) -> pkg/streak_strategy"
 		} else if strings.Contains(pkgPath, "markov_strategy") {
-			source = "refdata/settings.db (table: markov_strategy) -> pkg/markov_strategy"
+			source = "refdata/strategies.db (table: markov_strategy) -> pkg/markov_strategy"
 		} else if strings.Contains(pkgPath, "hold_strategy") {
-			source = "refdata/settings.db (table: hold_strategy) -> pkg/hold_strategy"
+			source = "refdata/strategies.db (table: hold_strategy) -> pkg/hold_strategy"
 		} else if strings.Contains(pkgPath, "hold_bail_strategy") {
-			source = "refdata/settings.db (table: hold_bail_strategy) -> pkg/hold_bail_strategy"
+			source = "refdata/strategies.db (table: hold_bail_strategy) -> pkg/hold_bail_strategy"
 		} else if typeName == "SQLPipelineStrategy" {
 			// Try to extract the directory if possible, but fallback to general text
 			source = "sql/strategies/... (SQL Pipeline) -> pkg/strategy"

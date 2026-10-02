@@ -10,7 +10,7 @@ Run the commands below from the repository root, after `make build`, so `.env` i
 
 | What | Path |
 |---|---|
-| The strategy table | `$APP_FOLDER/refdata/settings.db`, table `streak_strategy` |
+| The strategy table | `$APP_FOLDER/refdata/strategies.db`, table `streak_strategy` |
 | Daily bars | `$APP_FOLDER/data/market_history.db`, table `backtest_start` |
 | One strategy's result | `$APP_FOLDER/data/reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`, … |
 | A sweep | `$APP_FOLDER/data/reports/gridsearch.db` |
@@ -67,7 +67,7 @@ A row is skipped when the id is empty or normalizes to `streakstrategy`, a symbo
 Open the app reference database, not the copy in the git repo.
 
 ```bash
-sqlite3 /Users/darianhickman/Documents/backtestgosqlite/refdata/settings.db
+sqlite3 /Users/darianhickman/Documents/backtestgosqlite/refdata/strategies.db
 ```
 
 The table appears the first time backtest, gridsearch, or scoreboard opens that file. If the `INSERT` says there is no such table, run `./bin/backtest -list` once and try again.
@@ -139,7 +139,7 @@ Both lists include `streak-voo-up5-tqqq` when the row is valid. A skipped row pr
 Read the table back:
 
 ```bash
-sqlite3 /Users/darianhickman/Documents/backtestgosqlite/refdata/settings.db \
+sqlite3 /Users/darianhickman/Documents/backtestgosqlite/refdata/strategies.db \
   "SELECT id, signal_symbol, trade_symbol, direction, signal_days, hold_days,
           take_profit_pct, stop_loss_pct, regime, win_rate, total_trades
    FROM streak_strategy ORDER BY id;"

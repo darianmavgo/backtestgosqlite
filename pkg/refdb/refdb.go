@@ -1,5 +1,5 @@
-// Package refdb is the reference database (refdata/settings.db): ticker
-// universes and per-ETF decision-tree configs live in SQLite tables.
+// Package refdb is the reference database (refdata/strategies.db): strategy
+// configs live in SQLite tables (streak, tree, markov, hold, hold_bail).
 package refdb
 
 import (
@@ -12,48 +12,10 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// DefaultPath is the reference DB location (APP_FOLDER/refdata/settings.db).
+// DefaultPath is the reference DB location (APP_FOLDER/refdata/strategies.db).
 var DefaultPath = appenv.RefDB()
 
-// Universe list names in the etf_universe table.
-const (
-	ListAll   = "all"   // every active US-listed ETF (cmd/etf_universe)
-	List6Yr   = "6yr"   // ETFs with 6+ years of history
-	ListSweep = "sweep" // liquid ETFs with bars back to 2021: the VOO-signal sweep set
-)
-
 const schema = `
-CREATE TABLE IF NOT EXISTS etf_universe (
-	list   TEXT NOT NULL,
-	symbol TEXT NOT NULL,
-	PRIMARY KEY (list, symbol)
-) WITHOUT ROWID;
--- Full decision-tree fit results for every ETF (archive/reference). Only
--- etf_dt_strategies below drives strategy registration.
-CREATE TABLE IF NOT EXISTS etf_dt_strategies_all (
-	symbol      TEXT PRIMARY KEY,
-	tp          REAL,
-	sl          REAL,
-	hold        INTEGER,
-	cagr        REAL,
-	max_dd      REAL,
-	max_dd_days INTEGER,
-	trades      INTEGER,
-	win_rate    REAL,
-	score       REAL
-);
-CREATE TABLE IF NOT EXISTS etf_dt_strategies (
-	symbol      TEXT PRIMARY KEY,
-	tp          REAL,
-	sl          REAL,
-	hold        INTEGER,
-	cagr        REAL,
-	max_dd      REAL,
-	max_dd_days INTEGER,
-	trades      INTEGER,
-	win_rate    REAL,
-	score       REAL
-);
 -- One runnable streak strategy per row. pkg/streak_strategy registers each
 -- row. take_profit_pct and stop_loss_pct are fractional offsets (0.08 = 8%),
 -- matching gridsearch_results, not StrategyConfig.StopLossPct's multiplier.

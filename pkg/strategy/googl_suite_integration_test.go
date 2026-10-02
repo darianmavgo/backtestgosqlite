@@ -16,7 +16,7 @@ import (
 )
 
 func TestGooglStrategies(t *testing.T) {
-	refdb.DefaultPath = "../../refdata/settings.db"
+	refdb.DefaultPath = "../../refdata/strategies.db"
 	strategy.AutoRegisterSQLStrategies("../../", "../../data/market_history.db")
 	streak_strategy.Register()
 	tree_strategy.Register()

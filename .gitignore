@@ -92,5 +92,5 @@ reports/strategy_evals.db
 
 # BEGIN refdata-git
 # Managed by scripts/refdata_git.sh. A database or zip at or under 52428800 bytes is tracked.
-!refdata/settings.db
+!refdata/strategies.db
 # END refdata-git

@@ -36,7 +36,7 @@ Strategies come from three places. `backtest -list` (or `./bin/strategy`) prints
 |---|---|---|
 | Go strategies | a handful (`voo-up3`, `price-action-reclaim`, `biggest-winner*`, `tsll-daily-one-share`, covered calls) | `pkg/strategy/` |
 | SQL pipelines | folders under `sql/strategies/` that have a Go owner | `sql/strategies/<id>/` |
-| Rows in `refdata/settings.db` | `streak_strategy` 13,136, `hold_strategy` 13,121, `hold_bail_strategy` 13,121, `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/hold_bail_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy` |
+| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 13,121, `hold_bail_strategy` 13,121, `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/hold_bail_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy` |
 
 Most streak rows are a generic "drop 3 days, buy the rebound" rule, one per symbol. A few were promoted from sweeps (`source_strategy` `voo-up3`, `gld-decline`, `universe-screen`, `manual`). `streak-voo-buy-tecl` is now `streak-voo-buy-tecl`. `park-<symbol>` resolves for any ticker without registration (see below). The older `streak-voo-buy-tecl`, `gld-decline` and `googl-hop` strategies are no longer registered; their SQL folders remain in `sql/strategies/`.
 
@@ -46,7 +46,7 @@ The search that produced the current numbers, in order:
 
 1. `walk_forward -keep-going` over the candidates on a market DB cut off before a held-out final year, then `check_overfit`.
 2. `sql/search/01_gate_walk_forward.sql`: strict out-of-sample gate (at least 30 OOS trades, OOS Sharpe 1.5, 75% positive folds, worst fold drawdown 6%).
-3. `sql/search/02_liquidity_returns.sql` and `03_liquidity_screen.sql`: dollar volume, price and split-jump screen. `04_candidates.sql` joins the survivors to their trade symbols. Run these with `sqlite3`, attaching the walk-forward DB (`wf`), market DB (`mkt`) and `refdata/settings.db` (`ref`).
+3. `sql/search/02_liquidity_returns.sql` and `03_liquidity_screen.sql`: dollar volume, price and split-jump screen. `04_candidates.sql` joins the survivors to their trade symbols. Run these with `sqlite3`, attaching the walk-forward DB (`wf`), market DB (`mkt`) and `refdata/strategies.db` (`ref`).
 4. `backtest stack-eval` over the survivors for several primaries and `-alloc` sizes.
 5. Re-run the frozen stacks on the held-out year with `-start`.
 
@@ -68,7 +68,7 @@ Default files:
 | Role | Path |
 |---|---|
 | Market bars | `data/market_history.db`, table `backtest_start` |
-| Strategy tables and symbol lists | `refdata/settings.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`; `etf_universe` and `etf_dt_strategies` exist but are empty) |
+| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`; `etf_universe` and `etf_dt_strategies` exist but are empty) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
 | Per-strategy results | `data/reports/<id>.db`, then `data/reports/<id>_2.db`, `data/reports/<id>_3.db`, … |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
@@ -86,14 +86,14 @@ Daily simulations load rows with `length(Date) = 10`. Minute bars stay in the sa
 
 Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Polygon is opt-in.
 
-**Reads:** `refdata/settings.db` when no tickers are passed (table `leveraged_etf`, limit 50) or when `-list` names an `etf_universe` list (`all`, `6yr`, `sweep`). Both tables are empty today and no command fills them, so pass tickers explicitly.
+**Reads:** `refdata/strategies.db` when no tickers are passed (table `leveraged_etf`, limit 50) or when `-list` names an `etf_universe` list (`all`, `6yr`, `sweep`). Both tables are empty today and no command fills them, so pass tickers explicitly.
 
 **Writes:** `data/market_history.db`, table `backtest_start`. Option history uses the same DB, tables `option_contracts`, `option_bars`, `option_expiry_scan`. Missing dates are filled; `-force` replaces the range.
 
 | Flag | Default |
 |---|---|
 | `-db` | `data/market_history.db` |
-| `-settings` | `refdata/settings.db` |
+| `-settings` | `refdata/strategies.db` |
 | `-source` | `yahoo` (`polygon`, `polygon-options`, `stooq`) |
 | `-target-table` | `backtest_start` |
 | `-timeframe` | `1d` |
@@ -218,7 +218,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`. `streak-*` strategies loaded from `refdata/settings.db` are excluded unless `-include-streak`.
+**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -248,7 +248,7 @@ Report which completed sweeps are stale. No new sweep.
 
 ### gridsearch promote
 
-Copy winning sweep rows into `refdata/settings.db` table `streak_strategy`. Each row becomes a strategy id `streak-<signal>-<up|down><days>-<trade>` with the watch symbol, the symbol bought, and the swept hold, take-profit, stop, and regime. Backtest, scoreboard, livescan, and strateval load those rows on the next run.
+Copy winning sweep rows into `refdata/strategies.db` table `streak_strategy`. Each row becomes a strategy id `streak-<signal>-<up|down><days>-<trade>` with the watch symbol, the symbol bought, and the swept hold, take-profit, stop, and regime. Backtest, scoreboard, livescan, and strateval load those rows on the next run.
 
 ```bash
 ./bin/gridsearch promote -strategy voo-up3 -min-win-rate 0.6 -min-trades 30 -top 5
@@ -264,7 +264,7 @@ The walkthrough for writing a row, backtesting it, sweeping it, and ranking it i
 
 Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` with leftover cash parked in one symbol. The lists, the window, and the results stay in SQLite. The park symbol for the default config is GOOGL.
 
-**Reads:** `refdata/settings.db` (`streak_strategy`, `markov_strategy`, `etf_dt_strategies`) and `data/market_history.db`.
+**Reads:** `refdata/strategies.db` (`streak_strategy`, `markov_strategy`, `etf_dt_strategies`) and `data/market_history.db`.
 
 **Writes:** `data/reports/park_googl.db` (`sweep_config`, `park_asset`, `sweep_strategy`, `strategy_run`). Nothing is inserted into the settings tables, and no per-strategy file is written under `data/reports/`.
 

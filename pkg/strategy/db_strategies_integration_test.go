@@ -19,7 +19,7 @@ import (
 
 func TestDBStrategies(t *testing.T) {
 	// 1. Register all strategies
-	refdb.DefaultPath = "../../refdata/settings.db"
+	refdb.DefaultPath = "../../refdata/strategies.db"
 	strategy.AutoRegisterSQLStrategies("../../", "../../data/market_history.db")
 	streak_strategy.Register()
 	tree_strategy.Register()

@@ -160,7 +160,8 @@ func loadSourceRows(settings *sqlx.DB) ([]Strategy, error) {
 		Hold   int     `db:"hold"`
 	}
 	if err := settings.Select(&trees, `SELECT symbol, tp, sl, hold FROM etf_dt_strategies ORDER BY symbol`); err != nil {
-		return nil, fmt.Errorf("etf_dt_strategies: %w", err)
+		// etf_dt_strategies is optional / dropped in strategies.db
+		trees = nil
 	}
 
 	out := make([]Strategy, 0, len(streaks)+len(markovs)+len(trees))

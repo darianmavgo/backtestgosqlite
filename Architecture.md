@@ -12,7 +12,7 @@ pkg/appenv             APP_FOLDER and .env
 pkg/datasource         Yahoo, Stooq, Polygon, Polygon options, SQLite reads
 pkg/market_history     gap-filling writer into the market DB
 pkg/storage            bar, trade, signal, equity, performance, option schemas
-pkg/refdb              settings.db universes, ETF-tree rows, streak_strategy
+pkg/refdb              strategies.db universes, ETF-tree rows, streak_strategy
 pkg/models             Bar, Signal, Trade, Position, PerformanceReport
 pkg/strategy           Strategy interface, Go strategies, SQL pipelines
 pkg/streak_strategy    one Strategy per streak_strategy row
@@ -24,7 +24,7 @@ pkg/study              research studies; market_context is a subpackage
 sql/strategies/<id>/   ordered .sql pipeline for a strategy
 sql/studies            SQL text some studies execute
 sql/validation         walk-forward summary SQL
-refdata/settings.db    streak, hold, hold_bail, tree and markov strategy tables; symbol tables
+refdata/strategies.db    streak, hold, hold_bail, tree and markov strategy tables; symbol tables
 data/market_history.db daily and intraday bars, option chains
 data/reports/          one SQLite file per run, plus HTML
 ```
@@ -42,7 +42,7 @@ data/reports/          one SQLite file per run, plus HTML
 | `Ref()` | `Folder()/refdata` |
 | `Reports()` | `Folder()/data/reports` |
 | `MarketDB()` | `Data()/market_history.db` |
-| `RefDB()` | `Ref()/settings.db` |
+| `RefDB()` | `Ref()/strategies.db` |
 | `ReportFile(p)` | absolute paths pass through; a leading `reports/` is stripped and the rest is joined to `Reports()` |
 
 `cliutils.GetDefaultMarketDB` returns `MarketDB()`. `backtest`, `study`, and `livescan` use that helper. `market_history` and the batch tools call `MarketDB()` directly.
@@ -74,7 +74,7 @@ Option tables in the same market DB (`storage.EnsureOptionTables`):
 
 ## Reference DB
 
-`pkg/refdb` opens `refdata/settings.db` and ensures:
+`pkg/refdb` opens `refdata/strategies.db` and ensures:
 
 | Table | Contents |
 |---|---|
@@ -255,6 +255,6 @@ It records the gates in `check_overfit_gate`.
 - Shared-account priority is list order. Overlays do not preempt each other.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
 - Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
-- `dt_*` registration depends on `refdata/settings.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
-- `streak-*` registration also depends on `refdata/settings.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
+- `dt_*` registration depends on `refdata/strategies.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
+- `streak-*` registration also depends on `refdata/strategies.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
 - `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training`.
