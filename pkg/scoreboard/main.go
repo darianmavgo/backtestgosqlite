@@ -43,6 +43,7 @@ var (
 // Config holds the settings of a run.
 type Config struct {
 	Concurrency int      // -concurrency
+	Serial      bool     // -serial
 	Start       string   // -start
 	Force       bool     // -force
 	Mode        string   // subcommand (empty = default)
@@ -66,12 +67,14 @@ func Main() {
 	//   scoreboard status   -> like compile, but just report whether all compute is done (no table, no save)
 	conf := DefaultConfig()
 	d := conf
+	flag.BoolVar(&conf.Serial, "serial", d.Serial, "Run one strategy at a time instead of -concurrency parallel workers")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent workers (defaults to all CPU cores; bounds memory/IO use with hundreds of strategies)")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to backtest; earlier bars only warm up SMAs. Empty = full history")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(default mode only) redo every strategy's backtest even if a usable result already exists")
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"compile": "compile", "status": "status"})
 	flag.Parse()
 	conf.Args = flag.Args()
+	defer storage.CloseSharedResults()
 	if err := Run(conf); err != nil {
 		log.Fatal(err)
 	}
@@ -79,6 +82,9 @@ func Main() {
 
 // Run executes the command with cfg. It returns errors instead of exiting.
 func Run(conf Config) error {
+	if conf.Serial {
+		conf.Concurrency = 1
+	}
 	startDate = conf.Start
 
 	if err := os.MkdirAll(outDir, 0755); err != nil {

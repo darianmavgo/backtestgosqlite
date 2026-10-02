@@ -30,11 +30,15 @@ func runStaleCommand(outDir, marketDBPath string, concurrency int) error {
 
 	var entries []runner.StaleEntry
 	for id, result := range byStrategy {
-		info, err := os.Stat(result.DbPath)
-		if err != nil {
-			continue
+		computed := result.ComputedAt
+		if computed.IsZero() {
+			info, err := os.Stat(result.DbPath)
+			if err != nil {
+				continue
+			}
+			computed = info.ModTime()
 		}
-		entries = append(entries, runner.AssessOne(id, info.ModTime(), result.Report.EndDate, marketDB))
+		entries = append(entries, runner.AssessOne(id, computed, result.Report.EndDate, marketDB))
 	}
 
 	runner.PrintStalenessReport(outDir, entries, runner.MissingStrategies(byStrategy))

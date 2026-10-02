@@ -22,3 +22,14 @@ If the drawdown is because 2022 great?
 
 I hate that there are multiple report folders, and multiple data folders. 
 Probably an execution environment setting issue.
+
+
+Can I improve any strategies by avoiding earnings reports? How often do earnings reports come out the on they are scheduled? 
+Who has the report calendar as a data feed? 
+
+
+How do I make $20k this month with a $109k base? 
+
+
+We now have 30,000+ strategies so creating a file per strategy per backtest run is annoying.  What you do recommend?
+Going to use WAL and concurrency to make big db.

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -459,11 +460,20 @@ func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error 
 		return err
 	}
 	defer tx.Rollback()
+	if err := insertSignals(tx, 0, strategyID, signals); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+// insertSignals writes signals inside the caller's transaction. runID > 0
+// tags the rows for the shared results database.
+func insertSignals(tx Execer, runID int64, strategyID string, signals []models.Signal) error {
+	cols, marks, lead := runCols(runID)
 	query := `
-		INSERT INTO signals (
+		INSERT INTO signals (` + cols + `
 			strategy_id, symbol, date, order_type, direction, entry_price, take_profit, stop_loss, regime, metadata
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (` + marks + `?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -500,14 +510,14 @@ func SaveSignals(db *sqlx.DB, strategyID string, signals []models.Signal) error 
 			metadataJSON = string(b)
 		}
 
-		_, err := stmt.Exec(
+		_, err := stmt.Exec(append(lead,
 			stratID, s.Symbol, s.Date, typ, dir, entryPrice, s.TakeProfit, s.StopLoss, s.Regime, metadataJSON,
-		)
+		)...)
 		if err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func EnsureEquityCurveTable(db *sqlx.DB) error {
@@ -555,12 +565,19 @@ func SaveEquityCurve(db *sqlx.DB, strategyID string, curve []models.DailyEquityP
 		return err
 	}
 	defer tx.Rollback()
+	if err := insertEquityCurve(tx, 0, strategyID, curve); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+func insertEquityCurve(tx Execer, runID int64, strategyID string, curve []models.DailyEquityPoint) error {
+	cols, marks, lead := runCols(runID)
 	query := `
-		INSERT INTO equity_curve (
+		INSERT INTO equity_curve (` + cols + `
 			strategy_id, date, total_equity, cash, invested, drawdown_pct,
 			buying_power, margin_debt, margin_interest, dividend_income
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (` + marks + `?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -569,13 +586,13 @@ func SaveEquityCurve(db *sqlx.DB, strategyID string, curve []models.DailyEquityP
 	defer stmt.Close()
 
 	for _, p := range curve {
-		_, err := stmt.Exec(strategyID, p.Date, p.TotalEquity, p.Cash, p.PositionsValue, p.DrawdownPct,
-			p.BuyingPower, p.MarginDebt, p.MarginInterest, p.DividendIncome)
+		_, err := stmt.Exec(append(lead, strategyID, p.Date, p.TotalEquity, p.Cash, p.PositionsValue, p.DrawdownPct,
+			p.BuyingPower, p.MarginDebt, p.MarginInterest, p.DividendIncome)...)
 		if err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // SaveTrades persists completed simulation trades to the database.
@@ -592,14 +609,21 @@ func SaveTrades(db *sqlx.DB, strategyID string, trades []models.Trade) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := insertTrades(tx, 0, strategyID, trades); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+func insertTrades(tx Execer, runID int64, strategyID string, trades []models.Trade) error {
+	cols, marks, lead := runCols(runID)
 	query := `
-		INSERT INTO trades (
+		INSERT INTO trades (` + cols + `
 			strategy_id, symbol, order_type, entry_idx, entry_date, entry_price,
 			target_price, stop_loss_price, exit_date, exit_price, exit_reason,
 			shares, invested_capital, gross_pnl, net_pnl, return_pct, hold_days,
 			commission_paid, mae_pct, mfe_pct
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (` + marks + `?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -613,18 +637,18 @@ func SaveTrades(db *sqlx.DB, strategyID string, trades []models.Trade) error {
 			stratID = t.StrategyID
 		}
 
-		_, err := stmt.Exec(
+		_, err := stmt.Exec(append(lead,
 			stratID, t.Symbol, t.OrderType, t.EntryIdx, t.EntryDate, t.EntryPrice,
 			t.TargetPrice, t.StopLossPrice, t.ExitDate, t.ExitPrice, string(t.ExitReason),
 			t.Shares, t.InvestedCapital, t.GrossPnL, t.NetPnL, t.ReturnPct, t.HoldDays,
 			t.CommissionPaid, t.MaxAdverseExcursion, t.MaxFavorableExcursion,
-		)
+		)...)
 		if err != nil {
 			return err
 		}
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 // CreateUniqueDB generates an isolated SQLite file in dir with a filename matching baseName.
@@ -737,9 +761,13 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 	if err := EnsurePerformanceReportTable(db); err != nil {
 		return err
 	}
+	return insertPerformance(db, 0, strategyID, report)
+}
 
+func insertPerformance(db Execer, runID int64, strategyID string, report models.PerformanceReport) error {
+	cols, marks, lead := runCols(runID)
 	query := `
-		INSERT OR REPLACE INTO performance_summary (
+		INSERT OR REPLACE INTO performance_summary (` + cols + `
 			strategy_id, start_date, end_date, total_trading_days, total_calendar_years,
 			initial_capital, final_equity, net_profit, total_return_pct, cagr,
 			sharpe_ratio, sortino_ratio, calmar_ratio, omega_ratio, ulcer_index,
@@ -749,7 +777,7 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 			total_trades, winning_trades, losing_trades, win_rate, profit_factor,
 			avg_trade_return_pct, avg_win_amount, avg_loss_amount, payoff_ratio,
 			avg_holding_days, avg_mae, avg_mfe, total_commission_paid, idle_days
-		) VALUES (
+		) VALUES (` + marks + `
 			?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?,
@@ -766,7 +794,7 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 	if report.IdleKnown {
 		idleDays = report.IdleDays
 	}
-	_, err := db.Exec(query,
+	_, err := db.Exec(query, append(lead,
 		strategyID, report.StartDate, report.EndDate, report.TotalTradingDays, report.TotalCalendarYears,
 		report.InitialCapital, report.FinalEquity, report.NetProfit, report.TotalReturnPct, report.CAGR,
 		report.SharpeRatio, report.SortinoRatio, report.CalmarRatio, report.OmegaRatio, report.UlcerIndex,
@@ -776,7 +804,7 @@ func SavePerformanceReport(db *sqlx.DB, strategyID string, report models.Perform
 		report.TotalTrades, report.WinningTrades, report.LosingTrades, report.WinRate, report.ProfitFactor,
 		report.AvgTradeReturnPct, report.AvgWinAmount, report.AvgLossAmount, report.PayoffRatio,
 		report.AvgHoldingDays, report.AvgMAE, report.AvgMFE, report.TotalCommissionPaid,
-		idleDays,
+		idleDays)...,
 	)
 	return err
 }
@@ -860,8 +888,14 @@ func SaveReturnBreakdown(db *sqlx.DB, strategyID, symbol, start, end string, rei
 		PRIMARY KEY (strategy_id, symbol))`); err != nil {
 		return err
 	}
-	_, err := db.Exec(`INSERT OR REPLACE INTO return_breakdown VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		strategyID, symbol, start, end, reinvested, pricePct, dividendPct, totalPct)
+	return insertReturnBreakdown(db, 0, strategyID, symbol, start, end, reinvested, pricePct, dividendPct, totalPct)
+}
+
+func insertReturnBreakdown(db Execer, runID int64, strategyID, symbol, start, end string, reinvested bool, pricePct, dividendPct, totalPct float64) error {
+	cols, marks, lead := runCols(runID)
+	_, err := db.Exec(`INSERT OR REPLACE INTO return_breakdown (`+cols+`strategy_id, symbol, start_date, end_date,
+		dividends_reinvested, price_return_pct, dividend_return_pct, total_return_pct) VALUES (`+marks+`?, ?, ?, ?, ?, ?, ?, ?)`,
+		append(lead, strategyID, symbol, start, end, reinvested, pricePct, dividendPct, totalPct)...)
 	return err
 }
 
@@ -878,8 +912,14 @@ func SaveRunMetrics(db *sqlx.DB, strategyID string, metrics []RunMetric) error {
 		strategy_id TEXT, metric TEXT, value REAL, PRIMARY KEY (strategy_id, metric))`); err != nil {
 		return err
 	}
+	return insertRunMetrics(db, 0, strategyID, metrics)
+}
+
+func insertRunMetrics(db Execer, runID int64, strategyID string, metrics []RunMetric) error {
+	cols, marks, lead := runCols(runID)
 	for _, m := range metrics {
-		if _, err := db.Exec(`INSERT OR REPLACE INTO run_metrics VALUES (?, ?, ?)`, strategyID, m.Name, m.Value); err != nil {
+		if _, err := db.Exec(`INSERT OR REPLACE INTO run_metrics (`+cols+`strategy_id, metric, value) VALUES (`+marks+`?, ?, ?)`,
+			append(append([]any{}, lead...), strategyID, m.Name, m.Value)...); err != nil {
 			return err
 		}
 	}
@@ -974,35 +1014,72 @@ func SaveSharedAccountAudit(db *sqlx.DB, audit SharedAccountAudit, priorities []
 		_, _ = db.Exec(stmt)
 	}
 
+	return insertSharedAudit(db, 0, audit, priorities)
+}
+
+func insertSharedAudit(db namedExecer, runID int64, audit SharedAccountAudit, priorities []SharedAccountPriority) error {
+	runCol, runMark := "", ""
+	if runID > 0 {
+		runCol, runMark = "run_id, ", ":run_id, "
+	}
+	type auditRow struct {
+		RunID int64 `db:"run_id"`
+		SharedAccountAudit
+	}
+	type priRow struct {
+		RunID int64 `db:"run_id"`
+		SharedAccountPriority
+	}
 	insertAudit := `
-		INSERT OR REPLACE INTO shared_account_audit (
+		INSERT OR REPLACE INTO shared_account_audit (` + runCol + `
 			combined_id, account_model, primary_strategy_id, primary_strategy_name,
 			position_size_pct, preempted_trades, avg_idle_cash_pct,
 			fully_idle_pct, avg_deployed_pct, results_database,
 			default_asset, avg_default_pct, default_dividends, days_unparked
-		) VALUES (
+		) VALUES (` + runMark + `
 			:combined_id, :account_model, :primary_strategy_id, :primary_strategy_name,
 			:position_size_pct, :preempted_trades, :avg_idle_cash_pct,
 			:fully_idle_pct, :avg_deployed_pct, :results_database,
 			:default_asset, :avg_default_pct, :default_dividends, :days_unparked
 		)
 	`
-	if _, err := db.NamedExec(insertAudit, audit); err != nil {
+	if _, err := db.NamedExec(insertAudit, auditRow{runID, audit}); err != nil {
 		return fmt.Errorf("failed to save shared_account_audit: %w", err)
 	}
 
 	insertPriority := `
-		INSERT OR REPLACE INTO shared_account_priorities (
+		INSERT OR REPLACE INTO shared_account_priorities (` + runCol + `
 			combined_id, strategy_id, strategy_name, priority, role
-		) VALUES (
+		) VALUES (` + runMark + `
 			:combined_id, :strategy_id, :strategy_name, :priority, :role
 		)
 	`
 	for _, p := range priorities {
-		if _, err := db.NamedExec(insertPriority, p); err != nil {
+		if _, err := db.NamedExec(insertPriority, priRow{runID, p}); err != nil {
 			return fmt.Errorf("failed to save shared_account_priority %s: %w", p.StrategyID, err)
 		}
 	}
 
 	return nil
+}
+
+// Execer is the part of *sqlx.DB and *sql.Tx the insert helpers need, so one
+// implementation serves a per-file database and a transaction in results.db.
+type Execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Prepare(query string) (*sql.Stmt, error)
+}
+
+// namedExecer is the named-parameter side, satisfied by *sqlx.DB and *sqlx.Tx.
+type namedExecer interface {
+	NamedExec(query string, arg interface{}) (sql.Result, error)
+}
+
+// runCols returns the leading run_id column, placeholder and argument for a
+// results.db insert. runID 0 means a legacy per-file table with no run_id.
+func runCols(runID int64) (cols, marks string, lead []any) {
+	if runID <= 0 {
+		return "", "", nil
+	}
+	return "run_id, ", "?, ", []any{runID}
 }

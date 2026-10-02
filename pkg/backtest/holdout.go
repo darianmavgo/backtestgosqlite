@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
@@ -92,6 +93,10 @@ func banner(title string) {
 // built) runs once on the held-out months, flat at the start, with results in
 // <out-dir>/oos. Pass -holdout-months 0 to simulate all history in one pass.
 func Run(conf Config) error {
+	if conf.Serial {
+		conf.Concurrency = 1
+	}
+	runner.KeepCalc = conf.KeepCalc
 	if !holdoutApplies(conf) {
 		return runOnce(conf)
 	}

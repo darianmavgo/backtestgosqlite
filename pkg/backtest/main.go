@@ -49,6 +49,8 @@ type Config struct {
 	AutoDownload        bool     // -auto-download
 	DownloadYears       int      // -download-years
 	Concurrency         int      // -concurrency
+	Serial              bool     // -serial
+	KeepCalc            bool     // -keep-calc
 	Force               bool     // -force
 	GridsearchDb        string   // -gridsearch-db
 	IncludeUniverse     bool     // -include-universe
@@ -186,6 +188,8 @@ func Main() {
 	flag.BoolVar(&conf.AutoDownload, "auto-download", d.AutoDownload, "Automatically detect missing market data and run download")
 	flag.IntVar(&conf.DownloadYears, "download-years", d.DownloadYears, "Number of years of history to fetch when downloading missing data")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
+	flag.BoolVar(&conf.Serial, "serial", d.Serial, "Run one strategy at a time instead of -concurrency workers writing to results.db in parallel")
+	flag.BoolVar(&conf.KeepCalc, "keep-calc", d.KeepCalc, "Keep each SQL strategy's calculation database (slice tables) under <out-dir>/calc/ instead of deleting it after the run")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
 	flag.BoolVar(&conf.IncludeUniverse, "include-universe", d.IncludeUniverse, "(stack-eval) also try full-universe overlays (bb-capitulation, rsi2, ...)")
@@ -206,6 +210,7 @@ func Main() {
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack-eval": "stack-eval"})
 	flag.Parse()
 	conf.Args = flag.Args()
+	defer storage.CloseSharedResults()
 	if err := Run(conf); err != nil {
 		log.Fatal(err)
 	}
@@ -666,7 +671,7 @@ func runOnce(conf Config) error {
 		runner.PrintNotes(res)
 		runner.PrintTradesTable(res.Trades, conf.Symbol)
 
-		fmt.Printf("\n💾 Dedicated Strategy SQLite Database: %s\n", res.DbPath)
+		fmt.Printf("\n💾 Results saved to %s (run %d)\n", res.DbPath, res.RunID)
 	} else {
 		fmt.Printf("\n========================================================================================\n")
 		fmt.Printf("🚀 CONCURRENT STRATEGY BACKTESTING (%d STRATEGIES TO RUN, %d TOTAL SELECTED)\n", len(toRun), len(selectedStrategies))

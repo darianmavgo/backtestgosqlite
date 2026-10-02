@@ -23,6 +23,7 @@ type RunResult struct {
 	Trades      []models.Trade
 	EquityCurve []models.DailyEquityPoint
 	DbPath      string
+	RunID       int64
 	SignalCount int
 	Err         error
 
@@ -381,19 +382,22 @@ func ExecuteStrategyWithDividends(
 	marketDBPath string,
 	reinvestDividends bool,
 ) RunResult {
-	// 1. Create unique SQLite database matching strategy name FIRST
-	outDBPath, outDB, err := storage.CreateUniqueDB(outDir, strat.ID())
+	// 1. Results go to the shared results.db; SQL pipelines get a scratch calc
+	// database of their own (deleted when the run ends unless KeepCalc).
+	results, err := storage.SharedResults(outDir)
 	if err != nil {
-		return RunResult{Strat: strat, Err: fmt.Errorf("failed to create unique SQLite DB for %s: %w", strat.ID(), err)}
+		return RunResult{Strat: strat, Err: fmt.Errorf("failed to open results database for %s: %w", strat.ID(), err)}
 	}
-	outDB.Close() // Close it so SQLPipelineStrategy can natively execute against it if needed
+	outDBPath := results.Path
+	calcPath, cleanupCalc := calcDBPath(outDir, strat.ID())
+	defer cleanupCalc()
 
 	// 2. Set DB routing for ALL strategies
-	strat.SetDatabases(marketDBPath, outDBPath)
+	strat.SetDatabases(marketDBPath, calcPath)
 
 	// 2a. Covered-call overlays have their own simulator (pkg/options).
 	if ov, ok := strat.(strategy.OptionOverlayProvider); ok {
-		return executeOverlay(strat, ov.OverlaySpec(), cfg, barsBySymbol, capital, outDBPath, marketDBPath)
+		return executeOverlay(strat, ov.OverlaySpec(), cfg, barsBySymbol, capital, results, marketDBPath)
 	}
 
 	// 2b. Dividend-inclusive strategies run on adjusted-price copies of their bars.
@@ -426,27 +430,26 @@ func ExecuteStrategyWithDividends(
 	}
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, scopedDates)
 
-	// 5. Persist signals, trades, equity curve, and performance summary
-	// Re-open outDB to write simulator output
-	outDB, err = storage.OpenSQLite(outDBPath)
-	if err != nil {
-		log.Printf("Warning: Failed to re-open %s for simulator results: %v", outDBPath, err)
-	} else {
-		defer outDB.Close()
-
-		// 4. Persist signals, trades, equity curve, and performance summary
-		if err := storage.SaveSignals(outDB, strat.ID(), signals); err != nil {
-			log.Printf("Warning: Failed to save signals to %s: %v", outDBPath, err)
+	// 5. Persist the whole run in one transaction.
+	payload := storage.RunPayload{
+		Signals: signals, Trades: trades, Equity: equityCurve,
+		Reports: []storage.NamedReport{{StrategyID: strat.ID(), Report: report}},
+	}
+	var bd *totalReturnBreakdown
+	if tr != nil && len(signals) > 0 {
+		if b, ok := tr.breakdown(signals[0].Symbol, signals[0].Date); ok {
+			bd = &totalReturnBreakdown{sym: signals[0].Symbol, b: b}
+			payload.Breakdown = &storage.Breakdown{Symbol: bd.sym, Start: b.start, End: b.end, Reinvested: tr.reinvest,
+				Price: b.price, Dividend: b.total - b.price, Total: b.total}
 		}
-		if err := storage.SaveTrades(outDB, strat.ID(), trades); err != nil {
-			log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
-		}
-		if err := storage.SaveEquityCurve(outDB, strat.ID(), equityCurve); err != nil {
-			log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
-		}
-		if err := storage.SavePerformanceReport(outDB, strat.ID(), report); err != nil {
-			log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
-		}
+	}
+	runID, werr := results.WriteRun(storage.RunMeta{
+		StrategyID: strat.ID(), Kind: "single",
+		WindowStart: report.StartDate, WindowEnd: report.EndDate,
+		Capital: capital, AllocPct: cfg.AllocationPct, MarketMaxDate: lastDate(sortedDates),
+	}, payload)
+	if werr != nil {
+		log.Printf("Warning: Failed to save results for %s to %s: %v", strat.ID(), outDBPath, werr)
 	}
 
 	rr := RunResult{
@@ -455,22 +458,15 @@ func ExecuteStrategyWithDividends(
 		Trades:              trades,
 		EquityCurve:         equityCurve,
 		DbPath:              outDBPath,
+		RunID:               runID,
 		SignalCount:         len(signals),
 		TotalMarginInterest: sim.TotalMarginInterest,
 	}
-	if tr != nil && len(signals) > 0 {
-		if b, ok := tr.breakdown(signals[0].Symbol, signals[0].Date); ok {
-			rr.DividendsReinvested, rr.DividendCash = tr.reinvest, sim.DividendCash
-			rr.TotalReturn, rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct = true, b.price, b.total-b.price, b.total
-			rr.BreakdownSymbol, rr.BreakdownStart, rr.BreakdownEnd = signals[0].Symbol, b.start, b.end
-			if db, err := storage.OpenSQLite(outDBPath); err == nil {
-				if err := storage.SaveReturnBreakdown(db, strat.ID(), rr.BreakdownSymbol, b.start, b.end, tr.reinvest,
-					rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct); err != nil {
-					log.Printf("Warning: Failed to save return breakdown to %s: %v", outDBPath, err)
-				}
-				db.Close()
-			}
-		}
+	if bd != nil {
+		b := bd.b
+		rr.DividendsReinvested, rr.DividendCash = tr.reinvest, sim.DividendCash
+		rr.TotalReturn, rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct = true, b.price, b.total-b.price, b.total
+		rr.BreakdownSymbol, rr.BreakdownStart, rr.BreakdownEnd = bd.sym, b.start, b.end
 	}
 	return rr
 }
@@ -701,4 +697,17 @@ func sign(v float64) string {
 		return "+"
 	}
 	return "-"
+}
+
+// totalReturnBreakdown pairs a breakdown with the symbol it was computed for.
+type totalReturnBreakdown struct {
+	sym string
+	b   splitReturn
+}
+
+func lastDate(dates []string) string {
+	if len(dates) == 0 {
+		return ""
+	}
+	return dates[len(dates)-1]
 }

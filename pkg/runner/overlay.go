@@ -17,8 +17,9 @@ import (
 // target OTM%, get called away and re-buy when exercised, and withdraw
 // dividends as paid. Results are persisted like any other strategy's.
 func executeOverlay(strat strategy.Strategy, spec strategy.OverlaySpec, cfg strategy.StrategyConfig,
-	barsBySymbol map[string][]models.Bar, capital float64, outDBPath, marketDBPath string) RunResult {
+	barsBySymbol map[string][]models.Bar, capital float64, results *storage.ResultsDB, marketDBPath string) RunResult {
 
+	outDBPath := results.Path
 	fail := func(err error) RunResult { return RunResult{Strat: strat, DbPath: outDBPath, Err: err} }
 
 	bars := barsBySymbol[spec.Underlying]
@@ -85,30 +86,25 @@ func executeOverlay(strat strategy.Strategy, spec strategy.OverlaySpec, cfg stra
 		"   Option prices are Polygon last-trade EOD bars (not bids); far-OTM strikes trade rarely, so a roll can start days late or be skipped.",
 	}
 
-	if db, err := storage.OpenSQLite(outDBPath); err != nil {
-		log.Printf("Warning: Failed to re-open %s for overlay results: %v", outDBPath, err)
-	} else {
-		defer db.Close()
-		if err := storage.SaveTrades(db, strat.ID(), res.Trades); err != nil {
-			log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
-		}
-		if err := storage.SaveEquityCurve(db, strat.ID(), res.Equity); err != nil {
-			log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
-		}
-		if err := storage.SavePerformanceReport(db, strat.ID(), report); err != nil {
-			log.Printf("Warning: Failed to save performance summary to %s: %v", outDBPath, err)
-		}
-		if err := storage.SaveRunMetrics(db, strat.ID(), []storage.RunMetric{
+	runID, werr := results.WriteRun(storage.RunMeta{
+		StrategyID: strat.ID(), Kind: "single",
+		WindowStart: report.StartDate, WindowEnd: report.EndDate, Capital: capital, AllocPct: cfg.AllocationPct,
+		MarketMaxDate: bars[len(bars)-1].Date,
+	}, storage.RunPayload{
+		Trades: res.Trades, Equity: res.Equity,
+		Reports: []storage.NamedReport{{StrategyID: strat.ID(), Report: report}},
+		Metrics: []storage.RunMetric{
 			{Name: "calls_sold", Value: float64(len(res.Trades))}, {Name: "calls_skipped_no_quote", Value: float64(res.Skipped)},
 			{Name: "exercised", Value: float64(res.Assigned)}, {Name: "rebuys", Value: float64(res.Rebuys)},
 			{Name: "premium_collected", Value: res.Premium}, {Name: "upside_surrendered", Value: res.Settlement},
 			{Name: "dividends_withdrawn", Value: res.WithdrawnDividends}, {Name: "account_value_end", Value: res.FinalAccountValue},
 			{Name: "avg_otm_pct_at_sale", Value: avgOTM},
 			{Name: "buyhold_total_return_pct", Value: bh.TotalReturnPct * 100}, {Name: "buyhold_max_drawdown_pct", Value: bh.MaxDrawdownPct * 100},
-		}); err != nil {
-			log.Printf("Warning: Failed to save run metrics to %s: %v", outDBPath, err)
-		}
+		},
+	})
+	if werr != nil {
+		log.Printf("Warning: Failed to save overlay results for %s to %s: %v", strat.ID(), outDBPath, werr)
 	}
 
-	return RunResult{Strat: strat, Report: report, Trades: res.Trades, EquityCurve: res.Equity, DbPath: outDBPath, Notes: notes}
+	return RunResult{Strat: strat, Report: report, Trades: res.Trades, EquityCurve: res.Equity, DbPath: outDBPath, RunID: runID, Notes: notes}
 }

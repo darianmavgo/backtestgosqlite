@@ -184,13 +184,13 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 		opts.StackDepth = 3
 	}
 
-	calcDir := filepath.Join(opts.OutDir, "stack_eval_calc")
-	_ = os.MkdirAll(calcDir, 0755)
+	calcDirPath, cleanupCalc := calcDir(opts.OutDir)
+	defer cleanupCalc()
 
 	dates := scopeDatesToStrategy(opts.Primary, opts.Primary.DefaultConfig(), opts.BarsBySymbol, opts.SortedDates)
 
 	// Generate primary signals once and reuse across every overlay.
-	opts.Primary.SetDatabases(opts.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", opts.Primary.ID())))
+	opts.Primary.SetDatabases(opts.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", opts.Primary.ID())))
 	primSignals := tagSignals(opts.Primary.GenerateSignals(opts.BarsBySymbol), opts.Primary.ID(), 0)
 
 	baseline := ExecuteStack(StackRequest{
@@ -201,7 +201,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 		MarketDBPath: opts.MarketDBPath,
 		Persist:      false,
 		Signals:      primSignals,
-		CalcDir:      calcDir,
+		CalcDir:      calcDirPath,
 		Override:     opts.Override,
 		DefaultAsset: opts.DefaultAsset,
 	})
@@ -227,7 +227,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				overlays[j.idx] = evaluateOverlay(opts, dates, calcDir, primSignals, baselineEquity, j.cand)
+				overlays[j.idx] = evaluateOverlay(opts, dates, calcDirPath, primSignals, baselineEquity, j.cand)
 			}
 		}()
 	}
@@ -260,7 +260,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 			for i, ov := range picked {
 				secs = append(secs, ov.Secondary)
 				ids = append(ids, ov.Secondary.ID())
-				ov.Secondary.SetDatabases(opts.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", ov.Secondary.ID())))
+				ov.Secondary.SetDatabases(opts.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", ov.Secondary.ID())))
 				secSigs := tagSignals(ov.Secondary.GenerateSignals(opts.BarsBySymbol), ov.Secondary.ID(), i+1)
 				merged = append(merged, secSigs...)
 			}
@@ -274,7 +274,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 				MarketDBPath: opts.MarketDBPath,
 				Persist:      opts.PersistBest,
 				Signals:      merged,
-				CalcDir:      calcDir,
+				CalcDir:      calcDirPath,
 				Override:     opts.Override,
 				DefaultAsset: opts.DefaultAsset,
 			})
@@ -290,13 +290,13 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 func evaluateOverlay(
 	opts StackEvalOptions,
 	dates []string,
-	calcDir string,
+	calcDirPath string,
 	primSignals []models.Signal,
 	baselineEquity float64,
 	cand strategy.Strategy,
 ) OverlayEval {
 	eval := OverlayEval{Secondary: cand}
-	cand.SetDatabases(opts.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", cand.ID())))
+	cand.SetDatabases(opts.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", cand.ID())))
 	secSigs := tagSignals(cand.GenerateSignals(opts.BarsBySymbol), cand.ID(), 1)
 	eval.TradedSymbols = uniqueSignalSymbols(secSigs)
 
@@ -312,7 +312,7 @@ func evaluateOverlay(
 		MarketDBPath: opts.MarketDBPath,
 		Persist:      false,
 		Signals:      merged,
-		CalcDir:      calcDir,
+		CalcDir:      calcDirPath,
 		Override:     opts.Override,
 		DefaultAsset: opts.DefaultAsset,
 	})

@@ -11,3 +11,4 @@ market_history.zip
 /market_history.db
 /market_history.zip
 # END ignore-over-50MB
+reports/.DS_Store

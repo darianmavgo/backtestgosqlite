@@ -27,6 +27,7 @@ type SharedRunResult struct {
 	EquityCurve        []models.DailyEquityPoint
 	Signals            []models.Signal
 	DbPath             string
+	RunID              int64
 	PreemptedCount     int
 	Idle               simulator.IdleStats
 	// AllocPct is the per-position equity fraction applied to every member.
@@ -102,44 +103,31 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	if outDir == "" {
 		outDir = appenv.Reports()
 	}
-	calcDir := req.CalcDir
-	if calcDir == "" {
-		calcDir = outDir
+	calcDirPath := req.CalcDir
+	if calcDirPath == "" {
+		var cleanupCalc func()
+		calcDirPath, cleanupCalc = calcDir(outDir)
+		defer cleanupCalc()
 	}
 	defaultAsset := strings.ToUpper(strings.TrimSpace(req.DefaultAsset))
 
+	var results *storage.ResultsDB
 	var outDBPath string
 	if req.Persist {
-		baseName := fmt.Sprintf("shared_%s", req.Primary.ID())
-		for _, sec := range req.Secondaries {
-			baseName += fmt.Sprintf("_%s", sec.ID())
-		}
-		if defaultAsset != "" {
-			// SQLite also creates <file>-journal. A single path component
-			// cannot pass 255 bytes, and the eleven-sleeve shared_* name is
-			// already near that limit. Fall back to a short file when the
-			// suffixed name would not open.
-			suffixed := baseName + "_default-" + strings.ToLower(defaultAsset)
-			if len(suffixed)+len(".db-journal") <= 255 {
-				baseName = suffixed
-			} else {
-				baseName = "default_asset_" + strings.ToLower(defaultAsset)
-			}
-		}
-		path, outDB, err := storage.CreateUniqueDB(outDir, baseName)
+		var err error
+		results, err = storage.SharedResults(outDir)
 		if err != nil {
-			return SharedRunResult{Err: fmt.Errorf("failed to create unique SQLite DB for shared account: %w", err)}
+			return SharedRunResult{Err: fmt.Errorf("failed to open results database for shared account: %w", err)}
 		}
-		outDB.Close()
-		outDBPath = path
+		outDBPath = results.Path
 	}
 
 	allSignals := req.Signals
 	if allSignals == nil {
-		if err := os.MkdirAll(calcDir, 0755); err != nil {
-			return SharedRunResult{Err: fmt.Errorf("failed to create calc dir %s: %w", calcDir, err)}
+		if err := os.MkdirAll(calcDirPath, 0755); err != nil {
+			return SharedRunResult{Err: fmt.Errorf("failed to create calc dir %s: %w", calcDirPath, err)}
 		}
-		req.Primary.SetDatabases(req.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", req.Primary.ID())))
+		req.Primary.SetDatabases(req.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", req.Primary.ID())))
 		primSignals := req.Primary.GenerateSignals(req.BarsBySymbol)
 		for i := range primSignals {
 			primSignals[i].StrategyID = req.Primary.ID()
@@ -148,7 +136,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		allSignals = append(allSignals, primSignals...)
 
 		for secIdx, sec := range req.Secondaries {
-			sec.SetDatabases(req.MarketDBPath, filepath.Join(calcDir, fmt.Sprintf("calc_%s.db", sec.ID())))
+			sec.SetDatabases(req.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", sec.ID())))
 			secSignals := sec.GenerateSignals(req.BarsBySymbol)
 			for i := range secSignals {
 				secSignals[i].StrategyID = sec.ID()
@@ -207,68 +195,50 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	}
 	parkContribution := combinedReport.FinalEquity - combinedReport.InitialCapital - sleeveNet
 
-	if req.Persist && outDBPath != "" {
-		db, err := storage.OpenSQLite(outDBPath)
-		if err != nil {
-			log.Printf("Warning: Failed to re-open %s for shared account results: %v", outDBPath, err)
-		} else {
-			defer db.Close()
-
-			if err := storage.SaveSignals(db, combinedID, allSignals); err != nil {
-				log.Printf("Warning: Failed to save signals to %s: %v", outDBPath, err)
-			}
-			if err := storage.SaveTrades(db, combinedID, trades); err != nil {
-				log.Printf("Warning: Failed to save trades to %s: %v", outDBPath, err)
-			}
-			if err := storage.SaveEquityCurve(db, combinedID, equityCurve); err != nil {
-				log.Printf("Warning: Failed to save equity curve to %s: %v", outDBPath, err)
-			}
-			if err := storage.SavePerformanceReport(db, combinedID, combinedReport); err != nil {
-				log.Printf("Warning: Failed to save combined performance summary to %s: %v", outDBPath, err)
-			}
-
-			for sID, rep := range perStratReports {
-				if err := storage.SavePerformanceReport(db, sID, rep); err != nil {
-					log.Printf("Warning: Failed to save performance summary for %s: %v", sID, err)
-				}
-			}
-
-			audit := storage.SharedAccountAudit{
-				CombinedID:          combinedID,
-				AccountModel:        "Shared Cash Ledger with Dynamic Priority Preemption",
-				PrimaryStrategyID:   req.Primary.ID(),
-				PrimaryStrategyName: req.Primary.Name(),
-				PositionSizePct:     req.Override.AllocPct,
-				PreemptedTrades:     sim.PreemptedTradeCount,
-				AvgIdleCashPct:      idle.AvgCashPct,
-				FullyIdlePct:        idle.FullyIdlePct,
-				AvgDeployedPct:      idle.AvgDeployedPct,
-				ResultsDatabase:     outDBPath,
-				DefaultAsset:        parked.Symbol,
-				AvgDefaultPct:       parked.AvgWeight,
-				DefaultDividends:    parked.Dividends,
-				DaysUnparked:        parked.DaysUnparked,
-			}
-			var priorities []storage.SharedAccountPriority
+	var runID int64
+	if req.Persist && results != nil {
+		reports := []storage.NamedReport{{StrategyID: combinedID, Report: combinedReport}}
+		for sID, rep := range perStratReports {
+			reports = append(reports, storage.NamedReport{StrategyID: sID, Report: rep})
+		}
+		audit := storage.SharedAccountAudit{
+			CombinedID:          combinedID,
+			AccountModel:        "Shared Cash Ledger with Dynamic Priority Preemption",
+			PrimaryStrategyID:   req.Primary.ID(),
+			PrimaryStrategyName: req.Primary.Name(),
+			PositionSizePct:     req.Override.AllocPct,
+			PreemptedTrades:     sim.PreemptedTradeCount,
+			AvgIdleCashPct:      idle.AvgCashPct,
+			FullyIdlePct:        idle.FullyIdlePct,
+			AvgDeployedPct:      idle.AvgDeployedPct,
+			ResultsDatabase:     outDBPath,
+			DefaultAsset:        parked.Symbol,
+			AvgDefaultPct:       parked.AvgWeight,
+			DefaultDividends:    parked.Dividends,
+			DaysUnparked:        parked.DaysUnparked,
+		}
+		priorities := []storage.SharedAccountPriority{{
+			CombinedID: combinedID, StrategyID: req.Primary.ID(), StrategyName: req.Primary.Name(),
+			Priority: 0, Role: "PRIMARY (P0)",
+		}}
+		for i, sec := range req.Secondaries {
 			priorities = append(priorities, storage.SharedAccountPriority{
-				CombinedID:   combinedID,
-				StrategyID:   req.Primary.ID(),
-				StrategyName: req.Primary.Name(),
-				Priority:     0,
-				Role:         "PRIMARY (P0)",
+				CombinedID: combinedID, StrategyID: sec.ID(), StrategyName: sec.Name(),
+				Priority: i + 1, Role: "SECONDARY (P1+)",
 			})
-			for i, sec := range req.Secondaries {
-				priorities = append(priorities, storage.SharedAccountPriority{
-					CombinedID:   combinedID,
-					StrategyID:   sec.ID(),
-					StrategyName: sec.Name(),
-					Priority:     i + 1,
-					Role:         "SECONDARY (P1+)",
-				})
-			}
-			if err := storage.SaveSharedAccountAudit(db, audit, priorities); err != nil {
-				log.Printf("Warning: Failed to save shared account audit metrics to %s: %v", outDBPath, err)
-			}
+		}
+		var err error
+		runID, err = results.WriteRun(storage.RunMeta{
+			StrategyID: combinedID, Kind: "stack",
+			WindowStart: combinedReport.StartDate, WindowEnd: combinedReport.EndDate,
+			Capital: req.Capital, AllocPct: req.Override.AllocPct, DefaultAsset: parked.Symbol,
+			MarketMaxDate: lastDate(req.SortedDates),
+		}, storage.RunPayload{
+			Signals: allSignals, Trades: trades, Equity: equityCurve, Reports: reports,
+			Audit: &audit, Priorities: priorities,
+		})
+		if err != nil {
+			log.Printf("Warning: Failed to save shared account results to %s: %v", outDBPath, err)
 		}
 	}
 
@@ -282,6 +252,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		EquityCurve:        equityCurve,
 		Signals:            allSignals,
 		DbPath:             outDBPath,
+		RunID:              runID,
 		PreemptedCount:     sim.PreemptedTradeCount,
 		Idle:               idle,
 		AllocPct:           req.Override.AllocPct,
