@@ -122,6 +122,17 @@ Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum
 ./bin/backtest stack-eval -primary sig-voo-buy-tecl -include-dt -dt-top 15 -stack-depth 3
 ```
 
+### Park member in a stack
+
+`park-<symbol>` (for example `park-googl`, `park-sgov`) is a stack member that holds leftover cash in that symbol. It is the same book as `-default-asset`, written as a stack member so it can be named in `-strategy`, `-secondary` and `stack-eval`. It emits no signals, resolves for any ticker without registration, cannot be the primary, and a stack holds one. Combining it with `-default-asset` for a different symbol is an error.
+
+```bash
+./bin/backtest -strategy "streak-voo-buy-tecl+streak-fslr-down3+park-googl" -alloc 0.1
+./bin/backtest stack-eval -primary streak-voo-buy-tecl -secondary "streak-fslr-down3,streak-penn-down3,park-sgov"
+```
+
+In `stack-eval` the park applies to the baseline, every pairwise run and the final stack; it is not ranked as an overlay. Compare parks by running `stack-eval` once per park symbol.
+
 ### backtest covered-call
 
 Hold one underlying (default `VOO`) and sell a monthly call. Prints the comparison on stdout. Does not write a strategy result DB.

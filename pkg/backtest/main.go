@@ -391,6 +391,18 @@ func Run(conf Config) error {
 			}
 		}
 
+		// A park-<symbol> member is the residual book, not a sleeve.
+		sleeves, parkSym, err := strategy.SplitResidual(append([]strategy.Strategy{primaryStrat}, secondaryStrats...))
+		if err != nil {
+			return err
+		}
+		secondaryStrats = sleeves[1:]
+		if parkSym != "" {
+			if defaultAsset != "" && defaultAsset != parkSym {
+				return fmt.Errorf("-default-asset %s conflicts with stack member park-%s", defaultAsset, strings.ToLower(parkSym))
+			}
+			defaultAsset = parkSym
+		}
 		allStrats := append([]strategy.Strategy{primaryStrat}, secondaryStrats...)
 
 		// Detect missing market data and download

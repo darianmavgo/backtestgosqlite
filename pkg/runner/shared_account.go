@@ -88,6 +88,16 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		return SharedRunResult{Err: fmt.Errorf("primary strategy cannot be nil")}
 	}
 
+	// A park is passed as DefaultAsset (see strategy.SplitResidual), never as a sleeve.
+	if _, _, err := strategy.SplitResidual(append([]strategy.Strategy{req.Primary}, req.Secondaries...)); err != nil {
+		return SharedRunResult{Err: err}
+	}
+	for _, sec := range req.Secondaries {
+		if _, isPark := sec.(strategy.ResidualProvider); isPark {
+			return SharedRunResult{Err: fmt.Errorf("%s is a park: pass its symbol as DefaultAsset", sec.ID())}
+		}
+	}
+
 	outDir := req.OutDir
 	if outDir == "" {
 		outDir = appenv.Reports()

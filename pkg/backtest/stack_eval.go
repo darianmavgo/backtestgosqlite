@@ -33,6 +33,27 @@ func runStackEvalCommand(
 		return fmt.Errorf("Primary strategy %q not found. Run ./bin/backtest -list", primaryID)
 	}
 
+	// park-<symbol> in the candidate list is the residual book for every run.
+	var parkSym string
+	{
+		var kept []string
+		for _, id := range explicitSecondaries {
+			if st, ok := strategy.Get(id); ok {
+				if rp, isPark := st.(strategy.ResidualProvider); isPark {
+					if parkSym != "" && parkSym != rp.ParkSymbol() {
+						return fmt.Errorf("stack-eval takes one park, got %s and %s", parkSym, rp.ParkSymbol())
+					}
+					parkSym = rp.ParkSymbol()
+					continue
+				}
+			}
+			kept = append(kept, id)
+		}
+		if len(kept) == 0 && len(explicitSecondaries) > 0 {
+			return fmt.Errorf("stack-eval needs at least one overlay besides the park")
+		}
+		explicitSecondaries = kept
+	}
 	cands := runner.OverlayCandidates(primary, runner.OverlayCandidateOptions{
 		ExplicitIDs:     explicitSecondaries,
 		IncludeUniverse: includeUniverse,
@@ -55,6 +76,9 @@ func runStackEvalCommand(
 	defer db.Close()
 
 	reqSymbols := append(runner.RequiredSymbolsFor(all, symbolFilter), "SPY")
+	if parkSym != "" {
+		reqSymbols = append(reqSymbols, parkSym)
+	}
 	// Universe overlays declare no RequiredSymbols — load the full table.
 	var fetchSymbols []string
 	if includeUniverse && len(explicitSecondaries) == 0 {
@@ -90,6 +114,7 @@ func runStackEvalCommand(
 		StackDepth:   stackDepth,
 		PersistBest:  persistBest,
 		Override:     override,
+		DefaultAsset: parkSym,
 	})
 	runner.PrintStackEvalTearSheet(result)
 

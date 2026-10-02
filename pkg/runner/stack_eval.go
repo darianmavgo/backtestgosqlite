@@ -157,6 +157,9 @@ type StackEvalOptions struct {
 	// Override is applied to the primary and every overlay. AllocPct 0.10
 	// sizes each position at 10% of equity for the ranking and the final stack.
 	Override ConfigOverride
+	// DefaultAsset parks leftover cash in this symbol in the baseline, every
+	// pairwise run and the final stack.
+	DefaultAsset string
 }
 
 // ExecuteStackEval runs the primary standalone, then each candidate as a
@@ -200,6 +203,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 		Signals:      primSignals,
 		CalcDir:      calcDir,
 		Override:     opts.Override,
+		DefaultAsset: opts.DefaultAsset,
 	})
 	res.Baseline = baseline
 	baselineEquity := baseline.CombinedReport.FinalEquity
@@ -272,6 +276,7 @@ func ExecuteStackEval(opts StackEvalOptions) StackEvalResult {
 				Signals:      merged,
 				CalcDir:      calcDir,
 				Override:     opts.Override,
+				DefaultAsset: opts.DefaultAsset,
 			})
 			res.BestStack = &best
 			res.BestStackIDs = ids
@@ -309,6 +314,7 @@ func evaluateOverlay(
 		Signals:      merged,
 		CalcDir:      calcDir,
 		Override:     opts.Override,
+		DefaultAsset: opts.DefaultAsset,
 	})
 	if run.Err != nil {
 		eval.Err = run.Err
