@@ -17,7 +17,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// DefaultPath is the universe database location (APP_REF/universe.db).
+// DefaultPath is the universe database location (refdata/universe.db).
 var DefaultPath = appenv.UniverseDB()
 
 // CutoffDate defines the history threshold: January 1, 2021 UTC.

@@ -1,4 +1,4 @@
-// Package refdb is the reference database (APP_REF/settings.db): ticker
+// Package refdb is the reference database (refdata/settings.db): ticker
 // universes and per-ETF decision-tree configs live in SQLite tables.
 package refdb
 
@@ -12,7 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// DefaultPath is the reference DB location (APP_FOLDER/APP_REF/settings.db).
+// DefaultPath is the reference DB location (APP_FOLDER/refdata/settings.db).
 var DefaultPath = appenv.RefDB()
 
 // Universe list names in the etf_universe table.

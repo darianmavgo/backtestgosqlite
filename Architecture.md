@@ -8,7 +8,7 @@ The module is `github.com/darianmavgo/backtestgosqlite`. SQLite is `modernc.org/
 
 ```
 cmd/<name>/main.go     thin main; calls pkg/<name>.Main
-pkg/appenv             APP_FOLDER / APP_DATA / APP_REF / APP_REPORTS and .env
+pkg/appenv             APP_FOLDER and .env
 pkg/datasource         Yahoo, Stooq, Polygon, Polygon options, SQLite reads
 pkg/market_history     gap-filling writer into the market DB
 pkg/storage            bar, trade, signal, equity, performance, option schemas
@@ -38,9 +38,9 @@ reports/               one SQLite file per run, plus HTML
 | Function | Path |
 |---|---|
 | `Folder()` | `APP_FOLDER` or `.` |
-| `Data()` | `Folder()/APP_DATA` or `Folder()/data` |
-| `Ref()` | `Folder()/APP_REF` or `Folder()/refdata` |
-| `Reports()` | `Folder()/APP_REPORTS` or `Folder()/reports` |
+| `Data()` | `Folder()/data` |
+| `Ref()` | `Folder()/refdata` |
+| `Reports()` | `Folder()/reports` |
 | `MarketDB()` | `Data()/market_history.db` |
 | `RefDB()` | `Ref()/settings.db` |
 | `ReportFile(p)` | absolute paths pass through; a leading `reports/` is stripped and the rest is joined to `Reports()` |

@@ -294,7 +294,7 @@ Rolling train / test folds.
 
 **Reads:** `data/market_history.db`, table `backtest_start`.
 
-**Writes:** `reports/walk_forward.db` relative to the current directory (this default does not go through `APP_REPORTS`). Tables `walk_forward_fold` and `walk_forward_summary`. Train 24 months, test 6, step 6. Capital `$100,000`.
+**Writes:** `reports/walk_forward.db` relative to the current directory. Tables `walk_forward_fold` and `walk_forward_summary`. Train 24 months, test 6, step 6. Capital `$100,000`.
 
 ```bash
 ./bin/walk_forward -strategy sig-voo-buy-tecl

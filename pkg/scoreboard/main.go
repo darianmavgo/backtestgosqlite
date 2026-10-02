@@ -34,7 +34,7 @@ const (
 // startDate is the -start flag value (default backtest window start).
 var startDate string
 
-// targetDb and outDir resolve through APP_FOLDER / APP_REPORTS (.env).
+// targetDb and outDir resolve through APP_FOLDER and reports (.env).
 var (
 	targetDb = appenv.MarketDB()
 	outDir   = appenv.Reports()
