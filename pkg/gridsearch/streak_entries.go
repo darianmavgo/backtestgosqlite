@@ -8,6 +8,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
@@ -66,7 +67,7 @@ func buildStreakEntries(marketDB, id, signalSym, direction, startDate string, sy
 	if start == "" {
 		start = "0000-00-00"
 	}
-	if err := strategy.RunStage(db, "streak_slice", map[string]string{
+	if err := storage.RunStage(db, "streak_slice", map[string]string{
 		"__SIGNAL_SYMBOL__": signalSym, "__START_DATE__": start,
 	}); err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func buildStreakEntries(marketDB, id, signalSym, direction, startDate string, sy
 				if !safeSQLWord.MatchString(regime) {
 					return nil, fmt.Errorf("unsafe regime %q", regime)
 				}
-				if err := strategy.RunStage(db, "streak_entry", map[string]string{
+				if err := storage.RunStage(db, "streak_entry", map[string]string{
 					"__TRADE_SYMBOL__": sym, "__STREAK_COL__": col, "__SIGNAL_DAYS__": fmt.Sprint(d),
 					"__REGIME_LABEL__": regime, "__REGIME_PREDICATE__": streakRegimePredicate(regime),
 				}); err != nil {

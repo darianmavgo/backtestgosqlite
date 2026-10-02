@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -183,4 +184,55 @@ func PrintFamilyCounts(w io.Writer) {
 	for _, fc := range FamilyCounts() {
 		fmt.Fprintf(w, "  %-10s %6d rows in %s_strategy (not listed; select with `stratlist` or name an id)\n", fc.Name, fc.Count, fc.Name)
 	}
+}
+
+// FamilyAxes holds the grid values gridsearch tries for each gridsearchable
+// column of a family, from strategy_family_param (sql/stages/family_params).
+type FamilyAxes struct {
+	Nums map[string][]float64 // numeric columns
+	Strs map[string][]string  // text columns
+}
+
+// LoadFamilyAxes reads the axes of family from the reference DB. A missing
+// reference DB gives empty axes, so a caller falls back to the row's own value.
+func LoadFamilyAxes(family string) FamilyAxes {
+	ax := FamilyAxes{Nums: map[string][]float64{}, Strs: map[string][]string{}}
+	if fi, err := os.Stat(refdb.DefaultPath); err != nil || fi.Size() == 0 {
+		return ax
+	}
+	db, err := refdb.Open(refdb.DefaultPath)
+	if err != nil {
+		log.Printf("family axes %s: %v", family, err)
+		return ax
+	}
+	defer db.Close()
+	rows, err := refdb.FamilyParams(db, family)
+	if err != nil {
+		log.Printf("family axes %s: %v", family, err)
+		return ax
+	}
+	for _, r := range rows {
+		if !r.Gridsearchable || r.GridValues == nil {
+			continue
+		}
+		var nums []float64
+		if err := json.Unmarshal([]byte(*r.GridValues), &nums); err == nil {
+			ax.Nums[r.Param] = nums
+			continue
+		}
+		var strs []string
+		if err := json.Unmarshal([]byte(*r.GridValues), &strs); err == nil {
+			ax.Strs[r.Param] = strs
+		}
+	}
+	return ax
+}
+
+// Ints returns a numeric axis as ints.
+func (a FamilyAxes) Ints(param string) []int {
+	var out []int
+	for _, v := range a.Nums[param] {
+		out = append(out, int(v))
+	}
+	return out
 }

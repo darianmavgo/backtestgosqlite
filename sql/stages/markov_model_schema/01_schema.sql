@@ -1,5 +1,5 @@
 -- The persisted Markov model, one row per symbol per date. Written by
--- train_markov and read (never recomputed) by markov strategies at backtest time.
+-- train markov and read (never recomputed) by markov strategies at backtest time.
 -- state is 1 bull, -1 bear, 0 sideways. prob_bull and prob_bear are the
 -- walk-forward chance that the next bar is bull or bear, from transitions
 -- known as of that date. signal is prob_bull minus prob_bear.

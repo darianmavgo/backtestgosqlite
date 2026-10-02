@@ -1,4 +1,4 @@
--- The model is trained by train_markov and persisted in the markov models
+-- The model is trained by train markov and persisted in the markov models
 -- database. Backtests only read this symbol's rows. Nothing is recomputed here.
 ATTACH DATABASE '__MARKOV_DB__' AS markov;
 

@@ -10,7 +10,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
-	"github.com/darianmavgo/backtestgosqlite/pkg/train_markov"
+	"github.com/darianmavgo/backtestgosqlite/pkg/train"
 )
 
 func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
@@ -42,7 +42,7 @@ func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
 	}
 
 	// Train as its own step, into the path backtest reads.
-	if _, err := train_markov.Train(context.Background(), train_markov.Config{MarketDB: market, ModelDB: filepath.Join(app, "data", "markov_models.db"), Symbols: []string{"GOOGL"}}); err != nil {
+	if _, err := train.TrainMarkov(context.Background(), train.MarkovConfig{MarketDB: market, ModelDB: filepath.Join(app, "data", "markov_models.db"), Symbols: []string{"GOOGL"}}); err != nil {
 		t.Fatal(err)
 	}
 	db, err := storage.OpenSQLiteReadOnly(filepath.Join(app, "data", "markov_models.db"))

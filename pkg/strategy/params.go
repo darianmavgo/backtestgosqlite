@@ -85,6 +85,16 @@ type ParameterSpace struct {
 	Allocations  []float64      `json:"allocations"`
 	CashYield    float64        `json:"cash_yield"`
 	Baseline     BaselineParams `json:"baseline"`
+	// FixedEntries means the strategy's own signal pipeline decides the entries
+	// and only the exits (hold, take-profit, stop) are searched. The strategy
+	// then runs once and its signals are repriced per grid point.
+	FixedEntries bool `json:"fixed_entries,omitempty"`
+}
+
+// EntriesFixed reports whether a search varies exits only (see FixedEntries).
+// "tree_bounce" is the older spelling of the same thing.
+func (p ParameterSpace) EntriesFixed() bool {
+	return p.FixedEntries || p.Direction == "tree_bounce"
 }
 
 // ParameterSpaceProvider is optionally implemented by strategies that declare their custom search space.
@@ -200,4 +210,38 @@ func AssessParameterSpace(s Strategy) ParameterSpace {
 			Regime:     "All Regimes",
 		},
 	}
+}
+
+// UnionFloats returns base with every value of extra added, sorted, without
+// duplicates (within 1e-9).
+func UnionFloats(base, extra []float64) []float64 {
+	out := append([]float64(nil), base...)
+	for _, e := range extra {
+		dup := false
+		for _, b := range out {
+			if math.Abs(b-e) < 1e-9 {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, e)
+		}
+	}
+	sort.Float64s(out)
+	return out
+}
+
+// UnionInts is UnionFloats for ints.
+func UnionInts(base, extra []int) []int {
+	seen := map[int]bool{}
+	var out []int
+	for _, v := range append(append([]int(nil), base...), extra...) {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	sort.Ints(out)
+	return out
 }

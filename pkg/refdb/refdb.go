@@ -93,6 +93,11 @@ func Open(path string) (*sqlx.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("refdb schema: %w", err)
 	}
+	// strategy_family_param: what gridsearch can vary per family (sql/stages/family_params).
+	if err := storage.RunStage(db, "family_params", nil); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("refdb family params: %w", err)
+	}
 	return db, nil
 }
 
@@ -531,5 +536,25 @@ func IDs(db *sqlx.DB, table string) ([]string, error) {
 	}
 	var out []string
 	err := db.Select(&out, "SELECT id FROM "+table+" ORDER BY id")
+	return out, err
+}
+
+// FamilyParam is one row of strategy_family_param: what a grid search may do
+// with one column of a family's rows.
+type FamilyParam struct {
+	Family         string  `db:"family"`
+	Param          string  `db:"param"`
+	Kind           string  `db:"kind"`
+	Role           string  `db:"role"`
+	Gridsearchable bool    `db:"gridsearchable"`
+	GridValues     *string `db:"grid_values"`
+	WhyNot         *string `db:"why_not"`
+}
+
+// FamilyParams returns every strategy_family_param row of one family, by param.
+func FamilyParams(db *sqlx.DB, family string) ([]FamilyParam, error) {
+	var out []FamilyParam
+	err := db.Select(&out, `SELECT family, param, kind, role, gridsearchable, grid_values, why_not
+		FROM strategy_family_param WHERE family = ? ORDER BY param`, family)
 	return out, err
 }

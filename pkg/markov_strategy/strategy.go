@@ -141,7 +141,7 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	if dir == pipelineDir {
 		sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
 		if !hasModel(appenv.MarkovDB(), sym) {
-			log.Printf("markov_strategy %s: no trained model for %s in %s; run `train_markov -symbols %s`", s.ID(), sym, appenv.MarkovDB(), sym)
+			log.Printf("markov_strategy %s: no trained model for %s in %s; run `train markov -symbols %s`", s.ID(), sym, appenv.MarkovDB(), sym)
 			return nil
 		}
 	}

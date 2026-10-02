@@ -4,13 +4,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	sqlfiles "github.com/darianmavgo/backtestgosqlite/sql"
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 )
@@ -1097,4 +1100,38 @@ func runCols(runID int64) (cols, marks string, lead []any) {
 		return "", "", nil
 	}
 	return "run_id, ", "?, ", []any{runID}
+}
+
+// RunStage executes every .sql file of the embedded stage sql/stages/<stage> in
+// name order against db, after replacing each key of repl with its value. A
+// stage file is split on its statement terminators, so a comment in one must not
+// contain that character.
+func RunStage(db *sqlx.DB, stage string, repl map[string]string) error {
+	dir := path.Join("stages", stage)
+	entries, err := fs.ReadDir(sqlfiles.Stages, dir)
+	if err != nil {
+		return fmt.Errorf("stage %s: %w", stage, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		text, err := fs.ReadFile(sqlfiles.Stages, path.Join(dir, e.Name()))
+		if err != nil {
+			return err
+		}
+		sqlText := string(text)
+		for k, v := range repl {
+			sqlText = strings.ReplaceAll(sqlText, k, v)
+		}
+		for _, q := range strings.Split(sqlText, ";") {
+			if q = strings.TrimSpace(q); q == "" {
+				continue
+			}
+			if _, err := db.Exec(q); err != nil {
+				return fmt.Errorf("stage %s %s: %w", stage, e.Name(), err)
+			}
+		}
+	}
+	return nil
 }

@@ -383,21 +383,28 @@ Discover US stocks and ETFs from Polygon and classify them (leverage, direction,
 
 Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-etfs-only`, `-stocks-only`.
 
-## train_markov
+## train
 
-Trains the Markov regime models and saves them in SQLite. `backtest` only reads a saved model; it never trains one, so run this first, and again when the market data has advanced.
+`train <family> [flags] [symbols]` trains a strategy family's model and saves it in SQLite. `backtest` only reads a saved model; it never trains one, so run this first, and again when the market data has advanced. Every model trains on the daily bars in `data/market_history.db`, and the command prints the last bar date it trained through.
 
-The model is per symbol: a bar is bull at +5% or more over 20 bars, bear at -5% or less, otherwise sideways. For each date it stores the walk-forward chance that the next bar is bull or bear, using only transitions known by that date. The calculation is SQL (`sql/stages/markov_train`, one slice table per stage).
+| Family | Result |
+|---|---|
+| `markov` | trains the per-symbol Markov regime model into `data/markov_models.db` (`markov_prediction`, `markov_model_meta`) |
+| `streak`, `hold`, `hold_bail`, `tree` | nothing to train: these strategies have no fitted model, their parameters are the row's columns in `refdata/strategies.db` |
+| `all` | every family above, in name order |
 
-**Reads:** `data/market_history.db`, and `refdata/strategies.db` (`markov_strategy.signal_symbol`) when no symbols are given. **Writes:** `data/markov_models.db` (`markov_prediction`, `markov_model_meta`). Symbols already in the model are replaced. A symbol with fewer than 21 bars gets no model. A markov strategy whose signal symbol has no model produces no signals and logs which `train_markov` command to run.
+`markov_hmm_*` strategies read `data/reports/hmm_regime.db`, which `study hmm_regime` writes; that is a study, not a `train` family.
+
+**markov.** A bar is bull at +5% or more over 20 bars, bear at -5% or less, otherwise sideways. For each date the model stores the walk-forward chance that the next bar is bull or bear, using only transitions known by that date. The calculation is SQL (`sql/stages/markov_train`, one slice table per stage). **Reads:** `data/market_history.db`, and `refdata/strategies.db` (`markov_strategy.signal_symbol`) when no symbols are given. Symbols already in the model are replaced. A symbol with fewer than 21 bars gets no model. A markov strategy whose signal symbol has no model produces no signals and logs which `train markov` command to run.
 
 ```bash
-./bin/train_markov                      # every signal_symbol in markov_strategy
-./bin/train_markov GOOGL AAPL           # just these
-./bin/train_markov -symbols GOOGL,AAPL -batch 100
+./bin/train markov                      # every signal_symbol in markov_strategy
+./bin/train markov GOOGL AAPL           # just these
+./bin/train markov -symbols GOOGL,AAPL -batch 100
+./bin/train streak                      # says there is nothing to train
 ```
 
-Flags: `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables). `markov_hmm_*` strategies read `data/reports/hmm_regime.db`, written by `study hmm_regime`.
+Flags for `markov`: `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables).
 
 ## stratlist
 

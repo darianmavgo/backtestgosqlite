@@ -1,4 +1,4 @@
-package train_markov
+package train
 
 import (
 	"context"
@@ -65,7 +65,7 @@ func TestTrainPersistsWalkForwardModel(t *testing.T) {
 	modelPath := filepath.Join(t.TempDir(), "markov.db")
 	exp := expected(closes)
 
-	res, err := Train(context.Background(), Config{MarketDB: market, ModelDB: modelPath, Symbols: []string{"googl", short, "GOOGL"}, Batch: 1})
+	res, err := TrainMarkov(context.Background(), MarkovConfig{MarketDB: market, ModelDB: modelPath, Symbols: []string{"googl", short, "GOOGL"}, Batch: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +105,15 @@ func TestTrainPersistsWalkForwardModel(t *testing.T) {
 		t.Fatalf("the series only exercised states %v", states)
 	}
 
+	// The model was trained on the real history: it ends on the last real bar.
+	if res.MarketThrough != dates[len(dates)-1] {
+		t.Fatalf("trained through %s, the real GOOGL history ends %s", res.MarketThrough, dates[len(dates)-1])
+	}
+	var lastDate string
+	if err := db.Get(&lastDate, "SELECT last_date FROM markov_model_meta WHERE symbol = 'GOOGL'"); err != nil || lastDate != dates[len(dates)-1] {
+		t.Fatalf("model last_date %q (err %v), want %s", lastDate, err, dates[len(dates)-1])
+	}
+
 	var meta int
 	if err := db.Get(&meta, fmt.Sprintf("SELECT COUNT(*) FROM markov_model_meta WHERE symbol = 'GOOGL' AND bars = %d", len(exp))); err != nil || meta != 1 {
 		t.Fatalf("meta rows %d err %v", meta, err)
@@ -114,7 +123,7 @@ func TestTrainPersistsWalkForwardModel(t *testing.T) {
 	}
 
 	// Retraining replaces rather than duplicates.
-	if _, err := Train(context.Background(), Config{MarketDB: market, ModelDB: modelPath, Symbols: []string{"GOOGL"}}); err != nil {
+	if _, err := TrainMarkov(context.Background(), MarkovConfig{MarketDB: market, ModelDB: modelPath, Symbols: []string{"GOOGL"}}); err != nil {
 		t.Fatal(err)
 	}
 	var n int

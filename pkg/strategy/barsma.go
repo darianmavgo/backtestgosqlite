@@ -2,15 +2,13 @@ package strategy
 
 import (
 	"fmt"
-	"io/fs"
 	"log"
-	"path"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	sqlfiles "github.com/darianmavgo/backtestgosqlite/sql"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -107,37 +105,5 @@ func BuildBarSMA(db *sqlx.DB, symbols []string) error {
 	if list == "" {
 		return nil
 	}
-	return RunStage(db, "bar_sma", map[string]string{"__SYMBOL_LIST__": list})
-}
-
-// RunStage executes every .sql file of the embedded stage sql/stages/<stage>
-// in name order against db, after replacing each key of repl with its value.
-func RunStage(db *sqlx.DB, stage string, repl map[string]string) error {
-	dir := path.Join("stages", stage)
-	entries, err := fs.ReadDir(sqlfiles.Stages, dir)
-	if err != nil {
-		return fmt.Errorf("stage %s: %w", stage, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
-			continue
-		}
-		text, err := fs.ReadFile(sqlfiles.Stages, path.Join(dir, e.Name()))
-		if err != nil {
-			return err
-		}
-		sqlText := string(text)
-		for k, v := range repl {
-			sqlText = strings.ReplaceAll(sqlText, k, v)
-		}
-		for _, q := range strings.Split(sqlText, ";") {
-			if q = strings.TrimSpace(q); q == "" {
-				continue
-			}
-			if _, err := db.Exec(q); err != nil {
-				return fmt.Errorf("stage %s %s: %w", stage, e.Name(), err)
-			}
-		}
-	}
-	return nil
+	return storage.RunStage(db, "bar_sma", map[string]string{"__SYMBOL_LIST__": list})
 }
