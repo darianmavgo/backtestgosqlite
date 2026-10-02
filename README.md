@@ -68,7 +68,7 @@ Default files:
 | Role | Path |
 |---|---|
 | Market bars | `data/market_history.db`, table `backtest_start` |
-| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`; `etf_universe` and `etf_dt_strategies` exist but are empty) |
+| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
 | Per-strategy results | `data/reports/<id>.db`, then `data/reports/<id>_2.db`, `data/reports/<id>_3.db`, … |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
@@ -159,7 +159,7 @@ Re-run strategies with the highest-resilience row in `data/reports/gridsearch.db
 
 Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `data/reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `data/reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
 
-Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`, `dt_*` trees, and any strategy that does not name its symbols. Pairs are ranked by added equity; the greedy stack is chosen the same way, not by drawdown. Rank the finalists by Calmar and max drawdown from the persisted DB. `-include-universe` adds symbol-scanning strategies. `-include-dt` and `-dt-top` add ETF `dt_*` trees, but `etf_dt_strategies` is empty, so they add nothing today. Pass `-secondary` with an explicit list when the registry holds tens of thousands of strategies; `-db`, `-auto-download=false` and `-out-dir` let a search run on a trimmed market DB without touching `data/`. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
+Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`, and any strategy that does not name its symbols. Pairs are ranked by added equity; the greedy stack is chosen the same way, not by drawdown. Rank the finalists by Calmar and max drawdown from the persisted DB. `-include-universe` adds symbol-scanning strategies. Pass `-secondary` with an explicit list when the registry holds tens of thousands of strategies; `-db`, `-auto-download=false` and `-out-dir` let a search run on a trimmed market DB without touching `data/`. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
 
 ```bash
 ./bin/backtest stack-eval -primary streak-voo-buy-tecl
@@ -218,7 +218,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `dt_*` trees are excluded from `-strategy all` unless `-include-dt`. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -262,9 +262,9 @@ The walkthrough for writing a row, backtesting it, sweeping it, and ranking it i
 
 ## park_sweep
 
-Run every row of `streak_strategy`, `markov_strategy`, and `etf_dt_strategies` with leftover cash parked in one symbol. The lists, the window, and the results stay in SQLite. The park symbol for the default config is GOOGL.
+Run every row of `streak_strategy` and `markov_strategy` with leftover cash parked in one symbol. The lists, the window, and the results stay in SQLite. The park symbol for the default config is GOOGL.
 
-**Reads:** `refdata/strategies.db` (`streak_strategy`, `markov_strategy`, `etf_dt_strategies`) and `data/market_history.db`.
+**Reads:** `refdata/strategies.db` (`streak_strategy`, `markov_strategy`) and `data/market_history.db`.
 
 **Writes:** `data/reports/park_googl.db` (`sweep_config`, `park_asset`, `sweep_strategy`, `strategy_run`). Nothing is inserted into the settings tables, and no per-strategy file is written under `data/reports/`.
 

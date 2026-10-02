@@ -52,7 +52,7 @@ func Rank(sweepPath string) error {
 	}
 	fmt.Println()
 
-	for _, kind := range []string{"streak", "markov", "decision_tree"} {
+	for _, kind := range []string{"streak", "markov"} {
 		if err := printKind(db, cfg, kind); err != nil {
 			return err
 		}

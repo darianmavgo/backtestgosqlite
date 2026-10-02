@@ -4,49 +4,44 @@ import (
 	"math"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
+	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
 )
 
+func mean(xs []float64) float64 {
+	var s float64
+	for _, x := range xs {
+		s += x
+	}
+	return s / float64(len(xs))
+}
+
+// Real GOOGL closes: the slice table's averages must equal a plain trailing
+// mean of the real closes, even when only the last bars are handed in.
 func TestLoadBarSMAFromSliceTable(t *testing.T) {
-	dir := t.TempDir()
-	market := filepath.Join(dir, "market.db")
-	calc := filepath.Join(dir, "calc.db")
+	market := realbars.Copy(t, "GOOGL")
+	closes := realbars.Closes(t, market, "GOOGL")
+	dates := realbars.Dates(t, market, "GOOGL")
+	if len(closes) < 260 {
+		t.Skipf("GOOGL has only %d bars", len(closes))
+	}
 
-	mdb, err := storage.OpenSQLite(market)
-	if err != nil {
+	const handedIn = 10
+	var in []models.Bar
+	for i := len(closes) - handedIn; i < len(closes); i++ {
+		in = append(in, models.Bar{Symbol: "GOOGL", Date: dates[i], Close: closes[i]})
+	}
+	bars := map[string][]models.Bar{"GOOGL": in}
+	if err := LoadBarSMA(market, filepath.Join(t.TempDir(), "calc.db"), bars); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mdb.Exec(`CREATE TABLE backtest_start (idx INTEGER, symbol TEXT, Date TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER)`); err != nil {
-		t.Fatal(err)
-	}
-	day := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	var bars []models.Bar
-	for i := 1; i <= 260; i++ {
-		d := day.AddDate(0, 0, i).Format("2006-01-02")
-		if _, err := mdb.Exec(`INSERT INTO backtest_start VALUES (?, 'ZZZ', ?, ?, ?, ?, ?, 1000)`, i, d, float64(i), float64(i), float64(i), float64(i)); err != nil {
-			t.Fatal(err)
+	for k, b := range bars["GOOGL"] {
+		i := len(closes) - handedIn + k
+		want50 := mean(closes[i-49 : i+1])
+		want200 := mean(closes[i-199 : i+1])
+		if math.Abs(b.SMA50-want50) > 1e-9 || math.Abs(b.SMA200-want200) > 1e-9 {
+			t.Fatalf("%s: SMA50 %v want %v, SMA200 %v want %v", b.Date, b.SMA50, want50, b.SMA200, want200)
 		}
-		bars = append(bars, models.Bar{Symbol: "ZZZ", Date: d, Close: float64(i)})
-	}
-	mdb.Close()
-
-	// Only the last 10 bars are handed in: the averages must still come from full history.
-	in := map[string][]models.Bar{"ZZZ": bars[250:]}
-	if err := LoadBarSMA(market, calc, in); err != nil {
-		t.Fatal(err)
-	}
-	last := in["ZZZ"][len(in["ZZZ"])-1]
-	if want := 235.5; math.Abs(last.SMA50-want) > 1e-9 { // mean of 211..260
-		t.Fatalf("SMA50 = %v, want %v", last.SMA50, want)
-	}
-	if want := 160.5; math.Abs(last.SMA200-want) > 1e-9 { // mean of 61..260
-		t.Fatalf("SMA200 = %v, want %v", last.SMA200, want)
-	}
-	first := in["ZZZ"][0] // i=251
-	if want := (52.0 + 251.0) / 2; math.Abs(first.SMA200-want) > 1e-9 {
-		t.Fatalf("first SMA200 = %v, want %v", first.SMA200, want)
 	}
 }

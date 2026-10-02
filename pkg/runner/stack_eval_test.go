@@ -161,9 +161,6 @@ func TestOverlayCandidates_SkipsPrimarySQLAndSiblings(t *testing.T) {
 		if len(c.ID()) >= 4 && c.ID()[len(c.ID())-4:] == "-sql" {
 			t.Errorf("SQL duplicate %s should be excluded", c.ID())
 		}
-		if len(c.ID()) >= 3 && c.ID()[:3] == "dt_" {
-			t.Errorf("dt_* %s should be excluded unless IncludeDT", c.ID())
-		}
 		seen[c.ID()] = true
 	}
 	for _, want := range []string{"gld-decline", "mara_tree", "pdd_tree", "nvdl_tree"} {

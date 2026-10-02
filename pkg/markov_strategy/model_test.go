@@ -6,58 +6,20 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/train_markov"
 )
 
-func swing(n int) []float64 {
-	out := make([]float64, n)
-	p := 100.0
-	for i := range out {
-		switch (i / 15) % 4 {
-		case 0:
-			p *= 1.012
-		case 1:
-			p *= 0.998
-		case 2:
-			p *= 0.988
-		default:
-			p *= 1.0005
-		}
-		out[i] = p
-	}
-	return out
-}
-
-func writeMarket(t *testing.T, path string, closes []float64) {
-	t.Helper()
-	db, err := storage.OpenSQLite(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if _, err := db.Exec(`CREATE TABLE backtest_start (idx INTEGER, symbol TEXT, Date TEXT, timeframe TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER)`); err != nil {
-		t.Fatal(err)
-	}
-	day := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i, c := range closes {
-		if _, err := db.Exec(`INSERT INTO backtest_start VALUES (?, 'ZZZ', ?, '1d', ?, ?, ?, ?, 1000)`, i, day.AddDate(0, 0, i).Format("2006-01-02"), c, c, c, c); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
 	app := t.TempDir()
 	t.Setenv("APP_FOLDER", app)
-	market := filepath.Join(t.TempDir(), "market.db")
-	writeMarket(t, market, swing(150))
+	market := realbars.Copy(t, "GOOGL")
 
 	row := refdb.MarkovStrategy{
-		ID: "markov_model_zzz", Name: "ZZZ markov", SignalSymbol: "ZZZ", TradeSymbol: "ZZZ",
+		ID: "markov_model_googl", Name: "GOOGL markov", SignalSymbol: "GOOGL", TradeSymbol: "GOOGL",
 		Direction: "long", TargetState: "bull", HoldDays: 5, TakeProfitPct: 0.05, StopLossPct: 0.05, AllocationPct: 0.5,
 	}
 	run := func() []string {
@@ -80,7 +42,7 @@ func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
 	}
 
 	// Train as its own step, into the path backtest reads.
-	if _, err := train_markov.Train(context.Background(), train_markov.Config{MarketDB: market, ModelDB: filepath.Join(app, "data", "markov_models.db"), Symbols: []string{"ZZZ"}}); err != nil {
+	if _, err := train_markov.Train(context.Background(), train_markov.Config{MarketDB: market, ModelDB: filepath.Join(app, "data", "markov_models.db"), Symbols: []string{"GOOGL"}}); err != nil {
 		t.Fatal(err)
 	}
 	db, err := storage.OpenSQLiteReadOnly(filepath.Join(app, "data", "markov_models.db"))
@@ -89,7 +51,7 @@ func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
 	}
 	defer db.Close()
 	var want []string
-	if err := db.Select(&want, "SELECT date FROM markov_prediction WHERE symbol = 'ZZZ' AND state = 1 AND signal > 0.10 ORDER BY date"); err != nil {
+	if err := db.Select(&want, "SELECT date FROM markov_prediction WHERE symbol = 'GOOGL' AND state = 1 AND signal > 0.10 ORDER BY date"); err != nil {
 		t.Fatal(err)
 	}
 	if len(want) == 0 {
@@ -103,7 +65,7 @@ func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
 
 	// Running the backtest leaves the model as it was.
 	var n int
-	if err := db.Get(&n, "SELECT COUNT(*) FROM markov_prediction"); err != nil || n != 130 {
+	if err := db.Get(&n, "SELECT COUNT(*) FROM markov_prediction"); err != nil || n != len(realbars.Closes(t, market, "GOOGL"))-20 {
 		t.Fatalf("model rows after backtest: %d (err %v)", n, err)
 	}
 }

@@ -1,5 +1,5 @@
 -- Generic Tree Rule (Depth 3)
-INSERT INTO tree_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
+INSERT INTO tree_strategy_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
 SELECT
     idx,
     '__SYMBOL__' AS symbol,

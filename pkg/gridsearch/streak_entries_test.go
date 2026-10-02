@@ -4,10 +4,14 @@ import (
 	"math"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 )
 
 // marketWith writes a real market database with literal VOO and TQQQ closes.
@@ -95,4 +99,48 @@ func TestStreakSignalsForPricesExitsAbsolute(t *testing.T) {
 	if s.Close != 60 || math.Abs(s.TakeProfit-66) > 1e-9 || math.Abs(s.StopLoss-48) > 1e-9 || s.HoldDaysOverride != 15 || s.Entry != 1 || s.StrategyID != "TQQQ-opt" {
 		t.Fatalf("signal %+v", s)
 	}
+}
+
+// On real VOO and TQQQ history, the grid search's entries must equal the dates
+// the streak_strategy pipeline (a separate SQL implementation) signals for the
+// same rule.
+func TestStreakEntriesMatchStreakPipelineOnRealBars(t *testing.T) {
+	market := realbars.Copy(t, "VOO", "TQQQ")
+	regimes := []string{"All Regimes", "VOO>=SMA200", "VOO<SMA200"}
+	days := []int{1, 2, 3}
+	compared := 0
+	for _, direction := range []string{"drop", "rally"} {
+		entries, err := buildStreakEntries(market, "real_"+direction, "VOO", direction, "", []string{"TQQQ"}, days, regimes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range days {
+			for _, regime := range regimes {
+				row := refdb.StreakStrategy{
+					ID: "streak-voo-x-tqqq", Name: "x", SignalSymbol: "VOO", TradeSymbol: "TQQQ",
+					Direction: direction, SignalDays: d, HoldDays: 5, TakeProfitPct: 0.05, StopLossPct: 0.08,
+					Regime: regime, AllocationPct: 0.65,
+				}
+				s := &streak_strategy.Strategy{Row: row}
+				s.SetDatabases(market, filepath.Join(t.TempDir(), "calc.db"))
+				var want []string
+				for _, sig := range s.GenerateSignals(nil) {
+					want = append(want, sig.Date)
+				}
+				var got []string
+				for _, e := range entries[streakEntryKey{"TQQQ", d, regime}] {
+					got = append(got, e.Date)
+				}
+				sort.Strings(want)
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("%s %dd %s: grid search %d entries, pipeline %d", direction, d, regime, len(got), len(want))
+				}
+				compared += len(got)
+			}
+		}
+	}
+	if compared < 50 {
+		t.Fatalf("only %d entries compared; the real history did not exercise the rule", compared)
+	}
+	t.Logf("%d entries identical across %d grid points", compared, 2*len(days)*len(regimes))
 }

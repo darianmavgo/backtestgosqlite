@@ -24,21 +24,16 @@ func TestSeedCopiesThreeKindsAndSkipsLateSymbols(t *testing.T) {
 			direction TEXT, target_state TEXT, hold_days INT, take_profit_pct REAL,
 			stop_loss_pct REAL, allocation_pct REAL, cash_yield REAL,
 			slippage_pct REAL, next_day_limit INT);
-		CREATE TABLE etf_dt_strategies (
-			symbol TEXT PRIMARY KEY, tp REAL, sl REAL, hold INT,
-			cagr REAL, max_dd REAL, max_dd_days INT, trades INT, win_rate REAL, score REAL);
 		INSERT INTO streak_strategy VALUES
 			('streak-aaa-down1-aaa','AAA','AAA','AAA','drop',1,2,0,0,'All Regimes',0.10,0,0,0),
 			('streak-late-down1-late','LATE','LATE','LATE','drop',1,2,0,0,'All Regimes',0.10,0,0,0);
 		INSERT INTO markov_strategy VALUES
 			('markov_model_mmm','MMM','MMM','MMM','long','bull',15,0.05,0,0.25,0,0,0);
-		INSERT INTO etf_dt_strategies (symbol, tp, sl, hold) VALUES ('DDD', 0.05, 0.08, 10);
 	`)
 	mustMarket(t, market)
 	insertBars(t, market, "GOOGL", []float64{100, 110, 120, 130, 140, 150})
 	insertBars(t, market, "AAA", []float64{50, 40, 45, 48, 55, 60})
 	insertBars(t, market, "MMM", []float64{10, 11, 12, 13, 14, 15})
-	insertBars(t, market, "DDD", []float64{20, 21, 22, 23, 24, 25})
 	insertBars(t, market, "LATE", []float64{9, 9, 9}) // starts after the window opens
 
 	db, err := Open(sweep)
@@ -65,68 +60,17 @@ func TestSeedCopiesThreeKindsAndSkipsLateSymbols(t *testing.T) {
 	if got["markov"].Rows != 1 || got["markov"].Pending != 1 {
 		t.Fatalf("markov counts = %+v", got["markov"])
 	}
-	if got["decision_tree"].Rows != 1 || got["decision_tree"].Pending != 1 {
-		t.Fatalf("decision_tree counts = %+v", got["decision_tree"])
-	}
-	var id, status string
+	var status string
 	db, err = Open(sweep)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if err := db.QueryRow(`SELECT strategy_id FROM sweep_strategy WHERE kind = 'decision_tree'`).Scan(&id); err != nil {
-		t.Fatal(err)
-	}
-	if id != "dt_ddd" {
-		t.Fatalf("decision tree id = %s", id)
-	}
 	if err := db.QueryRow(`SELECT status FROM strategy_run WHERE strategy_id = 'streak-late-down1-late'`).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != "skipped" {
 		t.Fatalf("late status = %s", status)
-	}
-}
-
-func TestSeedEmptyDecisionTreeTable(t *testing.T) {
-	dir := t.TempDir()
-	settings := filepath.Join(dir, "settings.db")
-	market := filepath.Join(dir, "market.db")
-	sweep := filepath.Join(dir, "park.db")
-	mustExec(t, settings, `
-		CREATE TABLE streak_strategy (
-			id TEXT PRIMARY KEY, name TEXT, signal_symbol TEXT, trade_symbol TEXT,
-			direction TEXT, signal_days INT, hold_days INT, take_profit_pct REAL,
-			stop_loss_pct REAL, regime TEXT, allocation_pct REAL, cash_yield REAL,
-			slippage_pct REAL, next_day_limit INT);
-		CREATE TABLE markov_strategy (
-			id TEXT PRIMARY KEY, name TEXT, signal_symbol TEXT, trade_symbol TEXT,
-			direction TEXT, target_state TEXT, hold_days INT, take_profit_pct REAL,
-			stop_loss_pct REAL, allocation_pct REAL, cash_yield REAL,
-			slippage_pct REAL, next_day_limit INT);
-		CREATE TABLE etf_dt_strategies (
-			symbol TEXT PRIMARY KEY, tp REAL, sl REAL, hold INT,
-			cagr REAL, max_dd REAL, max_dd_days INT, trades INT, win_rate REAL, score REAL);
-	`)
-	mustMarket(t, market)
-	insertBars(t, market, "GOOGL", []float64{100, 110, 120, 130, 140, 150})
-	db, err := Open(sweep)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO sweep_config (id, start_date, end_date, capital, park_symbol)
-		VALUES (1, '2021-10-01', '2021-10-06', 100000, 'GOOGL')`); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	counts, err := Seed(sweep, settings, market)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range counts {
-		if c.Kind == "decision_tree" && c.Rows != 0 {
-			t.Fatalf("decision_tree rows = %d", c.Rows)
-		}
 	}
 }
 

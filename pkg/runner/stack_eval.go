@@ -25,12 +25,6 @@ type OverlayCandidateOptions struct {
 	// IncludeUniverse adds strategies that scan the full bar universe
 	// (bb-capitulation, rsi2, ...). Off by default — they need every symbol.
 	IncludeUniverse bool
-	// IncludeDT adds auto-fit dt_* ETF decision trees. Off by default because
-	// 500+ trees make a sweep too slow; use DTTop to cap the strongest ones.
-	IncludeDT bool
-	// DTTop is how many highest-scored dt_* trees to include when IncludeDT.
-	// 0 defaults to 15.
-	DTTop int
 }
 
 // OverlayEval is one pairwise stack: primary + a single overlay candidate.
@@ -88,20 +82,9 @@ func OverlayCandidates(primary strategy.Strategy, opts OverlayCandidateOptions) 
 		return out
 	}
 
-	dtLimit := opts.DTTop
-	if dtLimit <= 0 {
-		dtLimit = 15
-	}
-	allowedDT := map[string]bool{}
-	if opts.IncludeDT {
-		for _, id := range strategy.RankedETFDecisionTreeIDs(dtLimit) {
-			allowedDT[id] = true
-		}
-	}
-
 	var out []strategy.Strategy
 	for _, s := range strategy.ListAll() {
-		if !isEligibleOverlay(primary, s, opts, allowedDT) {
+		if !isEligibleOverlay(primary, s, opts) {
 			continue
 		}
 		out = append(out, s)
@@ -109,7 +92,7 @@ func OverlayCandidates(primary strategy.Strategy, opts OverlayCandidateOptions) 
 	return out
 }
 
-func isEligibleOverlay(primary, cand strategy.Strategy, opts OverlayCandidateOptions, allowedDT map[string]bool) bool {
+func isEligibleOverlay(primary, cand strategy.Strategy, opts OverlayCandidateOptions) bool {
 	id := cand.ID()
 	if id == primary.ID() {
 		return false
@@ -122,9 +105,6 @@ func isEligibleOverlay(primary, cand strategy.Strategy, opts OverlayCandidateOpt
 	}
 	if isSiblingCombo(primary.ID(), id) {
 		return false
-	}
-	if strings.HasPrefix(id, "dt_") {
-		return opts.IncludeDT && allowedDT[id]
 	}
 	if _, ok := cand.(strategy.RequiredSymbolsProvider); !ok {
 		return opts.IncludeUniverse

@@ -135,48 +135,6 @@ func SaveUniverse(db *sqlx.DB, list string, symbols []string) error {
 	return tx.Commit()
 }
 
-// DTStrategy is one ETF's best-found decision-tree config.
-type DTStrategy struct {
-	Symbol    string  `db:"symbol"`
-	TP        float64 `db:"tp"`
-	SL        float64 `db:"sl"`
-	Hold      int     `db:"hold"`
-	CAGR      float64 `db:"cagr"`
-	MaxDD     float64 `db:"max_dd"`
-	MaxDDDays int     `db:"max_dd_days"`
-	Trades    int     `db:"trades"`
-	WinRate   float64 `db:"win_rate"`
-	Score     float64 `db:"score"`
-}
-
-// DTStrategies returns all configs, highest score first. Missing table = none.
-func DTStrategies(db *sqlx.DB) ([]DTStrategy, error) {
-	var out []DTStrategy
-	err := db.Select(&out, `SELECT symbol, tp, sl, hold, cagr, max_dd, max_dd_days, trades, win_rate, score
-		FROM etf_dt_strategies ORDER BY score DESC, symbol`)
-	return out, err
-}
-
-// SaveDTStrategies replaces the whole etf_dt_strategies table.
-func SaveDTStrategies(db *sqlx.DB, rows []DTStrategy) error {
-	tx, err := db.Beginx()
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM etf_dt_strategies`); err != nil {
-		tx.Rollback()
-		return err
-	}
-	for _, r := range rows {
-		if _, err := tx.NamedExec(`INSERT INTO etf_dt_strategies
-			(symbol, tp, sl, hold, cagr, max_dd, max_dd_days, trades, win_rate, score)
-			VALUES (:symbol, :tp, :sl, :hold, :cagr, :max_dd, :max_dd_days, :trades, :win_rate, :score)`, r); err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-	return tx.Commit()
-}
 
 // StreakStrategy is one row of streak_strategy: the symbol watched for the
 // streak, the symbol bought, and the grid-searched exit parameters.

@@ -53,8 +53,6 @@ type Config struct {
 	Force               bool     // -force
 	GridsearchDb        string   // -gridsearch-db
 	IncludeUniverse     bool     // -include-universe
-	IncludeDt           bool     // -include-dt
-	DtTop               int      // -dt-top
 	StackDepth          int      // -stack-depth
 	PersistBest         bool     // -persist-best
 	Start               string   // -start
@@ -98,8 +96,6 @@ func DefaultConfig() Config {
 		Force:               false,
 		GridsearchDb:        appenv.ReportFile("gridsearch.db"),
 		IncludeUniverse:     false,
-		IncludeDt:           false,
-		DtTop:               15,
 		StackDepth:          3,
 		PersistBest:         true,
 		Start:               storage.DefaultStartDate,
@@ -192,8 +188,6 @@ func Main() {
 	flag.BoolVar(&conf.Force, "force", d.Force, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
 	flag.BoolVar(&conf.IncludeUniverse, "include-universe", d.IncludeUniverse, "(stack-eval) also try full-universe overlays (bb-capitulation, rsi2, ...)")
-	flag.BoolVar(&conf.IncludeDt, "include-dt", d.IncludeDt, "(stack-eval) also try auto-fit dt_* ETF decision trees")
-	flag.IntVar(&conf.DtTop, "dt-top", d.DtTop, "(stack-eval) how many highest-scored dt_* trees to include with -include-dt")
 	flag.IntVar(&conf.StackDepth, "stack-depth", d.StackDepth, "(stack-eval) greedy complementary overlays to combine after pairwise ranking")
 	flag.BoolVar(&conf.PersistBest, "persist-best", d.PersistBest, "(stack-eval) write a shared_*.db for the greedy N-way stack")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to simulate; earlier bars are only used for SMA warmup. Empty = full history")
@@ -272,8 +266,8 @@ func runOnce(conf Config) error {
 		out, err := runStackEvalCommand(
 			primaryID,
 			parseSecondaryList(conf.Secondary),
-			conf.IncludeUniverse, conf.IncludeDt,
-			conf.DtTop, conf.StackDepth, conf.Concurrency,
+			conf.IncludeUniverse,
+			conf.StackDepth, conf.Concurrency,
 			conf.Db, conf.Table, conf.OutDir,
 			conf.Capital, conf.Symbol,
 			conf.AutoDownload, conf.DownloadYears,

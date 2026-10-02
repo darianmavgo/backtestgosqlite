@@ -102,7 +102,7 @@ func claimNext(db *sqlx.DB) (string, error) {
 		FROM strategy_run r
 		JOIN sweep_strategy s ON s.strategy_id = r.strategy_id
 		WHERE r.status = 'pending'
-		ORDER BY CASE s.kind WHEN 'streak' THEN 0 WHEN 'decision_tree' THEN 1 ELSE 2 END,
+		ORDER BY CASE s.kind WHEN 'streak' THEN 0 ELSE 1 END,
 		         r.strategy_id
 		LIMIT 1`)
 	if err == sql.ErrNoRows {
@@ -216,15 +216,6 @@ func signalsFor(row Strategy, bars map[string][]models.Bar, marketPath string) (
 			NextDayLimit: row.NextDayLimit,
 		}}
 		return s.GenerateSignals(bars), s, nil
-	case "decision_tree":
-		s := &strategy.ETFDecisionTreeStrategy{
-			Symbol: row.TradeSymbol, TP: row.TakeProfitPct, SL: row.StopLossPct, Hold: row.HoldDays,
-		}
-		sigs, err := strategy.DecisionTreeSignals(row.TradeSymbol, bars[row.TradeSymbol], row.TakeProfitPct, row.StopLossPct, row.HoldDays)
-		if err != nil {
-			return nil, nil, err
-		}
-		return sigs, s, nil
 	case "markov":
 		s := &markov_strategy.Strategy{Row: refdb.MarkovStrategy{
 			ID: row.StrategyID, Name: row.Name,

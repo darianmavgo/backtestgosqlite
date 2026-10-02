@@ -19,7 +19,7 @@ type SeedCounts struct {
 	Skipped int
 }
 
-// Seed copies streak_strategy, markov_strategy, and etf_dt_strategies into the
+// Seed copies streak_strategy and markov_strategy into the
 // sweep database. A symbol whose daily bars do not cover the config window is
 // stored as skipped. Rows already done are left done.
 func Seed(sweepPath, settingsPath, marketPath string) ([]SeedCounts, error) {
@@ -153,18 +153,7 @@ func loadSourceRows(settings *sqlx.DB) ([]Strategy, error) {
 		FROM markov_strategy ORDER BY id`); err != nil {
 		return nil, fmt.Errorf("markov_strategy: %w", err)
 	}
-	var trees []struct {
-		Symbol string  `db:"symbol"`
-		TP     float64 `db:"tp"`
-		SL     float64 `db:"sl"`
-		Hold   int     `db:"hold"`
-	}
-	if err := settings.Select(&trees, `SELECT symbol, tp, sl, hold FROM etf_dt_strategies ORDER BY symbol`); err != nil {
-		// etf_dt_strategies is optional / dropped in strategies.db
-		trees = nil
-	}
-
-	out := make([]Strategy, 0, len(streaks)+len(markovs)+len(trees))
+	out := make([]Strategy, 0, len(streaks)+len(markovs))
 	for _, r := range streaks {
 		out = append(out, Strategy{
 			StrategyID: r.ID, Kind: "streak", Name: r.Name,
@@ -184,16 +173,6 @@ func loadSourceRows(settings *sqlx.DB) ([]Strategy, error) {
 			Regime: r.TargetState, TargetState: r.TargetState,
 			AllocationPct: r.AllocationPct, CashYield: r.CashYield, SlippagePct: r.SlippagePct,
 			NextDayLimit: r.NextDayLimit,
-		})
-	}
-	for _, r := range trees {
-		sym := strings.ToUpper(strings.TrimSpace(r.Symbol))
-		out = append(out, Strategy{
-			StrategyID: "dt_" + strings.ToLower(sym), Kind: "decision_tree",
-			Name: sym + " Decision Tree", SignalSymbol: sym, TradeSymbol: sym,
-			Direction: "long", HoldDays: r.Hold, TakeProfitPct: r.TP, StopLossPct: r.SL,
-			Regime: "All Regimes", AllocationPct: 0.65, CashYield: 0.045,
-			SlippagePct: 0.0005, CommissionPerShare: 0.0001,
 		})
 	}
 	return out, nil
@@ -329,7 +308,7 @@ func countSeed(sweep *sqlx.DB) ([]SeedCounts, error) {
 	}
 	byKind := map[string]*SeedCounts{}
 	var order []string
-	for _, kind := range []string{"streak", "markov", "decision_tree"} {
+	for _, kind := range []string{"streak", "markov"} {
 		byKind[kind] = &SeedCounts{Kind: kind}
 		order = append(order, kind)
 	}

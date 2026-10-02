@@ -22,9 +22,6 @@ func TestRunParksLeftoverCashInGOOGL(t *testing.T) {
 			direction TEXT, target_state TEXT, hold_days INT, take_profit_pct REAL,
 			stop_loss_pct REAL, allocation_pct REAL, cash_yield REAL,
 			slippage_pct REAL, next_day_limit INT);
-		CREATE TABLE etf_dt_strategies (
-			symbol TEXT PRIMARY KEY, tp REAL, sl REAL, hold INT,
-			cagr REAL, max_dd REAL, max_dd_days INT, trades INT, win_rate REAL, score REAL);
 		INSERT INTO streak_strategy VALUES
 			('streak-aaa-down1-aaa','AAA','AAA','AAA','drop',1,2,0,0,'All Regimes',0.10,0,0,0);
 	`)

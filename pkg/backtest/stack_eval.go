@@ -15,8 +15,8 @@ import (
 func runStackEvalCommand(
 	primaryID string,
 	explicitSecondaries []string,
-	includeUniverse, includeDT bool,
-	dtTop, stackDepth, concurrency int,
+	includeUniverse bool,
+	stackDepth, concurrency int,
 	targetDb, tableName, outDir string,
 	capital float64,
 	symbolFilter string,
@@ -57,11 +57,9 @@ func runStackEvalCommand(
 	cands := runner.OverlayCandidates(primary, runner.OverlayCandidateOptions{
 		ExplicitIDs:     explicitSecondaries,
 		IncludeUniverse: includeUniverse,
-		IncludeDT:       includeDT,
-		DTTop:           dtTop,
 	})
 	if len(cands) == 0 {
-		return stackEvalOutcome{}, fmt.Errorf("No overlay candidates for %s. Pass -secondary id1,id2 or -include-dt / -include-universe.", primary.ID())
+		return stackEvalOutcome{}, fmt.Errorf("No overlay candidates for %s. Pass -secondary id1,id2 or -include-universe.", primary.ID())
 	}
 
 	all := append([]strategy.Strategy{primary}, cands...)

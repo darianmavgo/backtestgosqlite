@@ -32,7 +32,7 @@ const (
 	shortStopLossMultPlaceholder   = "__SHORT_STOP_LOSS_MULT__"
 	shortHoldDaysPlaceholder       = "__SHORT_HOLD_DAYS__"
 	// symbolPlaceholder is substituted from StrategyConfig.Benchmark, letting one
-	// pipeline directory (e.g. sql/strategies/decision_tree_features) serve many
+	// pipeline directory (e.g. sql/strategies/streak_strategy) serve many
 	// per-symbol strategy instances instead of needing one directory per ticker.
 	symbolPlaceholder = "__SYMBOL__"
 	// streak_strategy pipeline: watch symbol, bought symbol, streak column,
@@ -585,33 +585,6 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				cfg.PositionCap = 1
 				cfg.CashYieldAnnual = 0.045
 				cfg.DeclineDays = 3
-			case "mara_tree":
-				// Matches MARATreeStrategy's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.05
-				cfg.TakeProfitPct = 0.05
-				cfg.StopLossPct = 0.92
-				cfg.HoldingWindow = 1
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
-			case "nvdl_tree":
-				// Matches NVDLTreeStrategy's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.15
-				cfg.TakeProfitPct = 0.15
-				cfg.StopLossPct = 0.93
-				cfg.HoldingWindow = 5
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
-			case "pdd_tree":
-				// Matches PDDTreeStrategy's own defaults.
-				cfg.AllocationPct = 0.65
-				cfg.TargetPct = 1.05
-				cfg.TakeProfitPct = 0.05
-				cfg.StopLossPct = 0.94
-				cfg.HoldingWindow = 3
-				cfg.PositionCap = 1
-				cfg.CashYieldAnnual = 0.045
 			case "sig_voo_up1_buy_tqqq":
 				// Matches SigVooUp1BuyTqqq's own defaults.
 				cfg.AllocationPct = 0.65

@@ -79,11 +79,9 @@ Option tables in the same market DB (`storage.EnsureOptionTables`):
 | Table | Contents |
 |---|---|
 | `etf_universe` | `(list, symbol)`. Lists: `all` (Polygon active US ETFs), `6yr`, `sweep` |
-| `etf_dt_strategies` | one row per symbol the registry turns into `dt_<symbol>`. `SaveDTStrategies` replaces the whole table |
-| `etf_dt_strategies_all` | created with the schema; no current command writes it |
 | `streak_strategy` | one runnable streak per row: watch symbol, bought symbol, direction (`drop` or `rally`), signal days, hold, take-profit and stop as fractional offsets, regime, allocation, cash yield, slippage, next-day limit. `pkg/streak_strategy.Register` loads it. `gridsearch promote` upserts winning rows |
 
-Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` and `etf_dt_strategies` are empty: the commands that filled them were removed, so no `dt_*` strategies register. Stock and ETF discovery now goes to `refdata/universe.db` through `universe`. Registration reads the settings tables through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
+Older symbol tables (`leveraged_etf`, `momentum_candidates`, `backtested_win_20_10d`) are also in this file. `market_history -table` and the UI category lookup read them. `etf_universe` is empty: the command that filled it was removed. The per-ETF CloudForest `dt_*` strategies and the `etf_dt_strategies` table were deleted; the tree family (`tree_strategy` rows) is the one decision-tree family. Stock and ETF discovery now goes to `refdata/universe.db` through `universe`. Registration reads the settings tables through `APP_FOLDER` / `refdb`. A `go test` whose working directory is not the module root does not see that file unless `APP_FOLDER` is set.
 
 ## Strategies
 
@@ -130,9 +128,9 @@ A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrat
 
 Each strategy gets its own calc DB (`calc_<id>.db`) so pipeline tables do not collide. `SetDatabases(market, calc)` is called before `GenerateSignals`.
 
-Registered from this tree today: `voo-up3`, `mara_tree`, `nvdl_tree`, `pdd_tree`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their SQL folders are orphaned. Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
+Registered from this tree today: `voo-up3`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their SQL folders are orphaned. `mara_tree`, `nvdl_tree` and `pdd_tree` are rows of `tree_strategy`; their own SQL folders were deleted because the generic `tree_strategy` pipeline gives identical signals (109, 65 and 150 on the real market DB). Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
 
-`voo-up3`, `mara_tree`, `pdd_tree` and `nvdl_tree` calculate in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
+`voo-up3` calculates in SQL when both database paths are set, which is every live backtest. An empty path falls back to the Go loop used by in-memory tests.
 
 These are defined in Go and do not calculate their signals in SQL:
 
@@ -143,7 +141,6 @@ These are defined in Go and do not calculate their signals in SQL:
 | `tsll-daily-one-share` | one market signal per TSLL bar, in Go |
 | `biggest-winner` | annual-return ranking in Go |
 | `schd-covered-call`, `vym-covered-call`, `dvy-covered-call`, and the three `-5pct` ids | `GenerateSignals` returns nil; the covered-call overlay is Go in `pkg/options` |
-| `dt_<symbol>` | feature rows can come from `sql/strategies/decision_tree_features`; the CloudForest tree is grown in Go |
 | `<dir>-sql` | duplicate registry id for a pipeline that already has a Go strategy. `stack-eval` drops these ids |
 
 ## Simulation
@@ -196,7 +193,6 @@ Stack-eval candidate filter (`runner.OverlayCandidates`), when `-secondary` is e
 
 - drop the primary, duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`
 - drop the sibling pair `sig-voo-buy-tecl` / `voo-tecl-spxu-combo`
-- `dt_*` only with `-include-dt`, and only the top `-dt-top` by score
 - strategies that do not implement `RequiredSymbolsProvider` only with `-include-universe`
 
 Explicit `-secondary` ids skip that filter. After pairwise ranking, a greedy pass stacks up to `-stack-depth` overlays whose traded symbols do not overlap. `-persist-best` writes one shared DB for that stack. Calc databases for the sweep sit in `reports/stack_eval_calc/`.
@@ -255,8 +251,9 @@ It records the gates in `check_overfit_gate`.
 - Shared-account priority is list order. Overlays do not preempt each other.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
 - Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
-- `dt_*` registration depends on `refdata/strategies.db` and `APP_FOLDER`. Grid search and stack-eval omit those trees unless `-include-dt`.
 - `streak-*` registration also depends on `refdata/strategies.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
 - `AutoRegisterSQLStrategies` will not revive `sql/strategies/failed_training`.
 
 Markov strategies do not train at backtest time. `train_markov` (`pkg/train_markov`) runs `sql/stages/markov_train` and publishes `markov_prediction` and `markov_model_meta` into `data/markov_models.db` (`appenv.MarkovDB()`). The `markov_model` pipeline attaches that file (`__MARKOV_DB__`) and reads one symbol's rows; `markov_strategy.GenerateSignals` refuses to run without a trained model for the symbol. `markov_hmm` attaches `hmm_regime.db` (`__HMM_DB__`), produced by `study hmm_regime`.
+
+Training is not part of `backtest`. `train_markov` is the one training job. Decision trees (`tree_strategy`) carry their thresholds in the row, so nothing trains at backtest time. The CloudForest studies live in `pkg/study` (MARA, MU, HMM), and `gridsearch` searches parameters and writes its own DB.

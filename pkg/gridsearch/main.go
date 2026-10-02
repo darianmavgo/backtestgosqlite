@@ -125,7 +125,6 @@ type Config struct {
 	NoHtml        bool            // -no-html
 	Concurrency   int             // -concurrency
 	Force         bool            // -force
-	IncludeDt     bool            // -include-dt
 	IncludeStreak bool            // -include-streak
 	MinWinRate    float64         // -min-win-rate (promote)
 	GridsearchDb  string          // -gridsearch-db
@@ -155,7 +154,6 @@ func DefaultConfig() Config {
 		NoHtml:        false,
 		Concurrency:   runtime.NumCPU(),
 		Force:         false,
-		IncludeDt:     false,
 		IncludeStreak: false,
 		MinWinRate:    0.6,
 		GridsearchDb:  appenv.ReportFile("gridsearch.db"),
@@ -195,7 +193,6 @@ func Main() {
 	flag.BoolVar(&conf.NoHtml, "no-html", d.NoHtml, "Skip per-strategy HTML export (batch mode; speeds up large sweeps)")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Worker goroutines. Single-strategy mode: workers within that one sweep. Multi-strategy mode: total workers shared across every strategy's tasks combined (not per-strategy — a few expensive strategies get proportionally more of the pool once cheap ones finish). Defaults to all CPU cores.")
 	flag.BoolVar(&conf.Force, "force", d.Force, "Redo strategies that already have a completed sweep in data/reports/gridsearch.db")
-	flag.BoolVar(&conf.IncludeDt, "include-dt", d.IncludeDt, "Include dt_* (auto-generated per-ETF decision tree) strategies in -strategy all — excluded by default (etf_dt_strategies is empty and its generator command was removed)")
 	flag.BoolVar(&conf.IncludeStreak, "include-streak", d.IncludeStreak, "Include streak-* strategies (rows of refdata streak_strategy) in -strategy all. They are already a promoted config, so excluded by default")
 	flag.Float64Var(&conf.MinWinRate, "min-win-rate", d.MinWinRate, "gridsearch promote: minimum win rate (0-1)")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
@@ -267,9 +264,6 @@ func Run(conf Config) error {
 	var targets []strategy.Strategy
 	if strings.EqualFold(stratArg, "all") {
 		for _, s := range strategy.ListAll() {
-			if !conf.IncludeDt && strings.HasPrefix(s.ID(), "dt_") {
-				continue
-			}
 			if !conf.IncludeStreak && strings.HasPrefix(s.ID(), "streak-") {
 				continue
 			}
