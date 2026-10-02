@@ -3,8 +3,8 @@ package backtest
 import (
 	"fmt"
 	"log"
-	"sync"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -115,70 +115,51 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 	}
 	defer db.Close()
 
-	fmt.Printf("⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", tableName, capital)
-	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, nil, backtestStart, "")
-	if err != nil {
-		return fmt.Errorf("Error loading historical bars for simulation: %v", err)
-	}
-
 	workers := concurrency
 	if workers < 1 {
 		workers = 1
 	}
-	if workers > len(targets) {
-		workers = len(targets)
-	}
-	fmt.Printf("⚙️  Concurrency: %d workers\n\n", workers)
+	fmt.Printf("⚙️  Concurrency: %d workers, bars loaded per batch of up to %d strategies (Starting Capital: $%.2f)\n\n", workers, runner.DefaultBatchSize, capital)
 
-	results := make([]runner.RunResult, len(targets))
-	jobs := make(chan int, len(targets))
-	for i := range targets {
-		jobs <- i
-	}
-	close(jobs)
-
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				s := targets[idx]
-				var cfg strategy.StrategyConfig
-				if p, ok := paramsByID[s.ID()]; ok {
-					targetMult := 0.0
-					if p.TakeProfit > 0 {
-						targetMult = 1.0 + p.TakeProfit
-					}
-					stopMult := 0.0
-					if p.StopLoss > 0 {
-						stopMult = 1.0 - p.StopLoss
-					}
-					if dc, ok := s.(strategy.DeclineDaysConfigurable); ok && p.SignalDays > 0 {
-						dc.SetDeclineDays(p.SignalDays)
-					}
-					cfg = runner.BuildConfig(s, stopMult, targetMult, p.HoldDays, 0)
-				} else {
-					cfg = s.DefaultConfig()
-				}
-				cfg = runner.ConfigOverride{AllocPct: allocPct}.Apply(cfg)
-
-				res := runner.ExecuteStrategyWithDividends(s, cfg, barsBySymbol, sortedDates, capital, symbolFilter, outDir, targetDb, reinvestDividends)
-				results[idx] = res
-				if res.Err != nil {
-					log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
-				} else {
-					tag := "baseline"
-					if _, ok := paramsByID[s.ID()]; ok {
-						tag = "optimized"
-					}
-					fmt.Printf("✅ [%s/%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
-						s.ID(), tag, res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
-				}
+	results, err := runner.RunBatched(runner.BatchOptions{
+		DB: db, Table: tableName, Start: backtestStart,
+		SymbolFilter: symbolFilter, Workers: workers,
+	}, targets, func(s strategy.Strategy, barsBySymbol map[string][]models.Bar, sortedDates []string) runner.RunResult {
+		var cfg strategy.StrategyConfig
+		if p, ok := paramsByID[s.ID()]; ok {
+			targetMult := 0.0
+			if p.TakeProfit > 0 {
+				targetMult = 1.0 + p.TakeProfit
 			}
-		}()
+			stopMult := 0.0
+			if p.StopLoss > 0 {
+				stopMult = 1.0 - p.StopLoss
+			}
+			if dc, ok := s.(strategy.DeclineDaysConfigurable); ok && p.SignalDays > 0 {
+				dc.SetDeclineDays(p.SignalDays)
+			}
+			cfg = runner.BuildConfig(s, stopMult, targetMult, p.HoldDays, 0)
+		} else {
+			cfg = s.DefaultConfig()
+		}
+		cfg = runner.ConfigOverride{AllocPct: allocPct}.Apply(cfg)
+
+		res := runner.ExecuteStrategyWithDividends(s, cfg, barsBySymbol, sortedDates, capital, symbolFilter, outDir, targetDb, reinvestDividends)
+		if res.Err != nil {
+			log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
+		} else {
+			tag := "baseline"
+			if _, ok := paramsByID[s.ID()]; ok {
+				tag = "optimized"
+			}
+			fmt.Printf("✅ [%s/%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
+				s.ID(), tag, res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
+		}
+		return res
+	})
+	if err != nil {
+		return fmt.Errorf("Error loading historical bars for simulation: %v", err)
 	}
-	wg.Wait()
 
 	runner.PrintComparisonTable(results)
 

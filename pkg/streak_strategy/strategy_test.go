@@ -81,7 +81,7 @@ func TestRegisterFrom(t *testing.T) {
 	}
 }
 
-func TestSQLSignalsMatchStreakSignals(t *testing.T) {
+func TestSQLPipelineSignalDates(t *testing.T) {
 	market := filepath.Join(t.TempDir(), "market.db")
 	calc := filepath.Join(t.TempDir(), "calc.db")
 	voo, tqqq := upSeries()
@@ -90,62 +90,44 @@ func TestSQLSignalsMatchStreakSignals(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rally := sampleRow()
-	compareSQL(t, market, calc, rally, voo, tqqq)
+	// VOO closes 10,11,12,13,14,13,14,15 on 2024-01-02..09: a rally of 2+ days ends on 04, 05, 06 and 09.
+	dates, _ := runSQL(t, market, calc, sampleRow())
+	if want := []string{"2024-01-04", "2024-01-05", "2024-01-06", "2024-01-09"}; !equalStrings(dates, want) {
+		t.Fatalf("rally dates %v want %v", dates, want)
+	}
 
+	// GLD closes 10,11,12,9,8,11,10.5,10.3: a 2-day drop ends on 06 and 09.
 	dropAll := refdb.StreakStrategy{
 		ID: "streak-gld-down2-gld", Name: "GLD down2 → GLD",
 		SignalSymbol: "GLD", TradeSymbol: "GLD", Direction: "drop",
 		SignalDays: 2, HoldDays: 8, TakeProfitPct: 0.02, StopLossPct: 0.05,
 		Regime: "All Regimes", AllocationPct: 0.65, CashYield: 0.045,
 	}
-	compareSQL(t, market, calc, dropAll, gld, gld)
+	all, _ := runSQL(t, market, calc, dropAll)
+	if want := []string{"2024-01-06", "2024-01-09"}; !equalStrings(all, want) {
+		t.Fatalf("drop dates %v want %v", all, want)
+	}
 
+	// Close >= its running 200-bar mean: 8 < 10 on 06 is dropped, 10.3 >= 10.2 on 09 stays.
 	dropReg := dropAll
 	dropReg.ID = "streak-gld-down2-gld-sma"
 	dropReg.Regime = "GLD>=SMA200"
-	compareSQL(t, market, calc, dropReg, gld, gld)
-
-	// The regime filter must drop at least one down-streak bar that All Regimes kept.
-	all := signalDates(t, market, calc, dropAll, gld, gld)
-	reg := signalDates(t, market, calc, dropReg, gld, gld)
-	if len(all) == 0 {
-		t.Fatal("All Regimes produced no GLD signals")
-	}
-	if len(reg) >= len(all) {
-		t.Fatalf("regime filter did not reject a bar: all %v regime %v", all, reg)
+	reg, _ := runSQL(t, market, calc, dropReg)
+	if want := []string{"2024-01-09"}; !equalStrings(reg, want) {
+		t.Fatalf("regime dates %v want %v", reg, want)
 	}
 }
 
-func compareSQL(t *testing.T, market, calc string, row refdb.StreakStrategy, signal, trade []models.Bar) {
-	t.Helper()
-	sqlDates, sqlByDate := runSQL(t, market, calc, row)
-	goSigs := StreakSignals(signal, trade, row.SignalDays, row.Direction, row.Regime, row.TakeProfitPct, row.StopLossPct, row.HoldDays, row.TradeSymbol, row.ID)
-	if len(sqlDates) != len(goSigs) {
-		t.Fatalf("%s sql dates %v (%d) go %d", row.ID, sqlDates, len(sqlDates), len(goSigs))
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-	for _, g := range goSigs {
-		s, ok := sqlByDate[g.Date]
-		if !ok {
-			t.Fatalf("%s missing sql signal on %s", row.ID, g.Date)
-		}
-		if s.Symbol != g.Symbol || s.HoldDaysOverride != g.HoldDaysOverride {
-			t.Fatalf("%s %s sql %+v go %+v", row.ID, g.Date, s, g)
-		}
-		if math.Abs(s.TakeProfit-g.TakeProfit) > 1e-6 || math.Abs(s.StopLoss-g.StopLoss) > 1e-6 {
-			t.Fatalf("%s %s tp/sl sql %v/%v go %v/%v", row.ID, g.Date, s.TakeProfit, s.StopLoss, g.TakeProfit, g.StopLoss)
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
 	}
-}
-
-func signalDates(t *testing.T, market, calc string, row refdb.StreakStrategy, signal, trade []models.Bar) []string {
-	t.Helper()
-	dates, _ := runSQL(t, market, calc, row)
-	goSigs := StreakSignals(signal, trade, row.SignalDays, row.Direction, row.Regime, row.TakeProfitPct, row.StopLossPct, row.HoldDays, row.TradeSymbol, row.ID)
-	if len(dates) != len(goSigs) {
-		t.Fatalf("dates diverged before regime check")
-	}
-	return dates
+	return true
 }
 
 func runSQL(t *testing.T, market, calc string, row refdb.StreakStrategy) ([]string, map[string]models.Signal) {
@@ -180,7 +162,6 @@ func upSeries() (voo, tqqq []models.Bar) {
 		voo = append(voo, models.Bar{Idx: i, Symbol: "VOO", Date: d, Open: c, High: c, Low: c, Close: c, Volume: 1000})
 		tqqq = append(tqqq, models.Bar{Idx: i, Symbol: "TQQQ", Date: d, Open: trade[i], High: trade[i], Low: trade[i], Close: trade[i], Volume: 1000})
 	}
-	applySMA200(voo)
 	return voo, tqqq
 }
 
@@ -190,26 +171,11 @@ func downSeries() []models.Bar {
 	for i, c := range closes {
 		gld = append(gld, models.Bar{Idx: i, Symbol: "GLD", Date: dateAt(i), Open: c, High: c, Low: c, Close: c, Volume: 1000})
 	}
-	applySMA200(gld)
 	return gld
 }
 
 func dateAt(i int) string {
 	return fmt.Sprintf("2024-01-%02d", i+2)
-}
-
-func applySMA200(bars []models.Bar) {
-	for i := range bars {
-		start := i - 199
-		if start < 0 {
-			start = 0
-		}
-		var sum float64
-		for j := start; j <= i; j++ {
-			sum += bars[j].Close
-		}
-		bars[i].SMA200 = sum / float64(i-start+1)
-	}
 }
 
 func writeMarket(path string, series ...[]models.Bar) error {

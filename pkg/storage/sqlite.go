@@ -207,9 +207,7 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 
 	query := fmt.Sprintf(`
 		SELECT coalesce(idx, rowid, 0) as idx, symbol, substr(Date, 1, 10) as Date, open, high, low, close, volume,
-		coalesce("Adj Close", 0) AS "Adj Close",
-		AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
-		AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 49 PRECEDING AND CURRENT ROW)  AS sma50
+		coalesce("Adj Close", 0) AS "Adj Close"
 		FROM %s
 		WHERE length(Date) = 10
 	`, tableName)
@@ -223,8 +221,9 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 		}
 		query += fmt.Sprintf(" AND symbol IN (%s)", strings.Join(placeholders, ","))
 	}
-	// startDate is applied after the query (see below) so the SMA windows
-	// above still get their pre-start warmup bars.
+	// startDate is applied after the query (see below) so strategies still get
+	// their pre-start warmup bars. Bar.SMA50/SMA200 are not filled here; see
+	// strategy.LoadBarSMA.
 	if endDate != "" {
 		query += " AND substr(Date, 1, 10) <= ?"
 		args = append(args, endDate)
@@ -257,7 +256,8 @@ func FetchBars(db *sqlx.DB, tableName string, symbols []string, startDate, endDa
 }
 
 // FetchRecentBars retrieves only the most recent N bars per symbol for fast live scanning,
-// while computing accurate SMA200/SMA50 across the historical series.
+// Bar.SMA50/SMA200 are not filled here; see strategy.LoadBarSMA, which averages
+// the full history in SQL.
 func FetchRecentBars(db *sqlx.DB, tableName string, symbols []string, limitPerSymbol int) (map[string][]models.Bar, []string, error) {
 	if tableName == "" {
 		tableName = "backtest_start"
@@ -281,15 +281,13 @@ func FetchRecentBars(db *sqlx.DB, tableName string, symbols []string, limitPerSy
 	}
 
 	query := fmt.Sprintf(`
-		SELECT idx, symbol, Date, open, high, low, close, volume, sma200, sma50
+		SELECT idx, symbol, Date, open, high, low, close, volume
 		FROM (
 			SELECT 
 				coalesce(idx, rowid, 0) as idx, 
 				symbol, 
 				substr(Date, 1, 10) as Date, 
 				open, high, low, close, volume,
-				AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS sma200,
-				AVG(close) OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) ROWS BETWEEN 49 PRECEDING AND CURRENT ROW)  AS sma50,
 				ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY substr(Date, 1, 10) DESC) as rn
 			FROM %s
 			%s

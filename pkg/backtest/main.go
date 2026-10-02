@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
@@ -623,20 +622,6 @@ func runOnce(conf Config) error {
 		if fetchErr != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", fetchErr)
 		}
-	} else {
-		// Load only the symbols the batch declares it needs. A batch that
-		// includes any universe-wide strategy loads every symbol.
-		reqSymbols, scoped := runner.ScopedSymbols(toRun, conf.Symbol)
-		if scoped {
-			fmt.Printf("\n⚙️ Loading bars for %d symbols from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", len(reqSymbols), conf.Table, conf.Capital)
-		} else {
-			fmt.Printf("\n⚙️ Loading chronological bars from table '%s' for Portfolio Simulation (Starting Capital: $%.2f)...\n", conf.Table, conf.Capital)
-		}
-		var fetchErr error
-		barsBySymbol, sortedDates, fetchErr = storage.FetchBars(db, conf.Table, reqSymbols, backtestStart, backtestEnd)
-		if fetchErr != nil {
-			return fmt.Errorf("Error loading historical bars for simulation: %v", fetchErr)
-		}
 	}
 
 	if len(selectedStrategies) == 1 {
@@ -682,56 +667,40 @@ func runOnce(conf Config) error {
 	} else {
 		fmt.Printf("\n========================================================================================\n")
 		fmt.Printf("🚀 CONCURRENT STRATEGY BACKTESTING (%d STRATEGIES TO RUN, %d TOTAL SELECTED)\n", len(toRun), len(selectedStrategies))
-		fmt.Printf("   Market Data:  %d symbols across %d dates loaded from %s\n", len(barsBySymbol), len(sortedDates), conf.Db)
+		fmt.Printf("   Market Data:  %s, loaded per batch of up to %d strategies (only the symbols each batch needs)\n", conf.Db, runner.DefaultBatchSize)
 		fmt.Printf("   Output Dir:   %s/ (each strategy writes to an isolated, uniquely suffixed SQLite DB)\n", conf.OutDir)
 		if conf.Alloc > 0 {
 			fmt.Printf("   Allocation:   %.0f%% of equity per position\n", conf.Alloc*100)
 		}
 		fmt.Printf("========================================================================================\n\n")
 
-		freshResults := make([]runner.RunResult, len(toRun))
-
-		// Bounded worker pool — each worker holds a full copy of the shared bar map's
-		// working set in-flight (PortfolioSimulator + signals + equity curve), and some
-		// strategies (e.g. genetic-momentum) shell out to Python. Unbounded goroutines
-		// here (one per strategy) can OOM-kill the process when there are hundreds of
-		// strategies, so cap concurrency instead.
+		// Bounded worker pool, one bar load per batch (see runner.RunBatched):
+		// each worker holds the batch's working set in flight (simulator,
+		// signals, equity curve), and some strategies shell out to Python, so
+		// neither goroutines nor loaded symbols are unbounded.
 		workers := conf.Concurrency
 		if workers < 1 {
 			workers = 1
 		}
-		if workers > len(toRun) {
-			workers = len(toRun)
-		}
 		fmt.Printf("   Concurrency:  %d workers\n\n", workers)
 
-		jobs := make(chan int, len(toRun))
-		for i := range toRun {
-			jobs <- i
+		freshResults, err := runner.RunBatched(runner.BatchOptions{
+			DB: db, Table: conf.Table, Start: backtestStart, End: backtestEnd,
+			SymbolFilter: conf.Symbol, Workers: workers,
+		}, toRun, func(s strategy.Strategy, bars map[string][]models.Bar, dates []string) runner.RunResult {
+			cfg := runOverride(conf).Apply(s.DefaultConfig())
+			res := runner.ExecuteStrategyWithDividends(s, cfg, bars, dates, conf.Capital, conf.Symbol, conf.OutDir, conf.Db, reinvestDividends)
+			if res.Err != nil {
+				log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
+			} else {
+				fmt.Printf("✅ [%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
+					s.ID(), res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
+			}
+			return res
+		})
+		if err != nil {
+			return fmt.Errorf("Error loading historical bars for simulation: %v", err)
 		}
-		close(jobs)
-
-		var wg sync.WaitGroup
-		for w := 0; w < workers; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for idx := range jobs {
-					s := toRun[idx]
-					cfg := runOverride(conf).Apply(s.DefaultConfig())
-					res := runner.ExecuteStrategyWithDividends(s, cfg, barsBySymbol, sortedDates, conf.Capital, conf.Symbol, conf.OutDir, conf.Db, reinvestDividends)
-					freshResults[idx] = res
-					if res.Err != nil {
-						log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
-					} else {
-						fmt.Printf("✅ [%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
-							s.ID(), res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
-					}
-				}
-			}()
-		}
-
-		wg.Wait()
 
 		// Merge freshly-run results with whatever already had a usable result so
 		// the printed table/HTML export covers every selected strategy, not just

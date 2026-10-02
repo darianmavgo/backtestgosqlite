@@ -54,6 +54,8 @@ func (s *PriceActionReclaimStrategy) SetDatabases(marketDBPath, calcDBPath strin
 func (s *PriceActionReclaimStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	var signals []models.Signal
 
+	// SMA200 comes from the bar_sma slice table in the calc database.
+	loadBarSMAOrWarn(s.ID(), s.marketDBPath, s.calcDBPath, barsBySymbol)
 
 	for symbol, bars := range barsBySymbol {
 		if len(bars) < 250 {

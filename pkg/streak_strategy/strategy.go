@@ -3,6 +3,7 @@ package streak_strategy
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"log"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -144,41 +145,28 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.calcDBPath = calcDBPath
 }
 
-// GenerateSignals runs the shared SQL pipeline when both databases are set,
-// and StreakSignals otherwise.
+// GenerateSignals runs the shared SQL pipeline (sql/strategies/streak_strategy)
+// in the calc database. Both database paths must be set: without them there is
+// no market data to calculate from, so no signals are produced.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	if s.marketDBPath != "" && s.calcDBPath != "" {
-		dir := s.PipelineDir
-		if dir == "" {
-			dir = pipelineDir
-		}
-		pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
-		pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
-		sigs := pipe.GenerateSignals(barsBySymbol)
-		for i := range sigs {
-			sigs[i].StrategyID = s.ID()
-			if sigs[i].OrderType == "" {
-				sigs[i].OrderType = "limit"
-			}
-		}
-		return sigs
+	if s.marketDBPath == "" || s.calcDBPath == "" {
+		log.Printf("streak_strategy %s: market and calc database paths are not set, no signals", s.ID())
+		return nil
 	}
-	return StreakSignals(
-		barsFor(barsBySymbol, s.Row.SignalSymbol),
-		barsFor(barsBySymbol, s.Row.TradeSymbol),
-		s.Row.SignalDays, s.Row.Direction, s.Row.Regime,
-		s.Row.TakeProfitPct, s.Row.StopLossPct, s.Row.HoldDays,
-		strings.ToUpper(strings.TrimSpace(s.Row.TradeSymbol)), s.ID(),
-	)
-}
-
-func barsFor(barsBySymbol map[string][]models.Bar, want string) []models.Bar {
-	for sym, b := range barsBySymbol {
-		if strings.EqualFold(sym, want) {
-			return b
+	dir := s.PipelineDir
+	if dir == "" {
+		dir = pipelineDir
+	}
+	pipe := strategy.NewSQLPipeline(s.ID()+"-run", s.Name(), s.Description(), dir, s.DefaultConfig())
+	pipe.SetDatabases(s.marketDBPath, s.calcDBPath)
+	sigs := pipe.GenerateSignals(barsBySymbol)
+	for i := range sigs {
+		sigs[i].StrategyID = s.ID()
+		if sigs[i].OrderType == "" {
+			sigs[i].OrderType = "limit"
 		}
 	}
-	return nil
+	return sigs
 }
 
 // ValidateRow reports why a streak_strategy row cannot be registered or promoted.

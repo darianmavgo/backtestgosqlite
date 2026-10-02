@@ -71,7 +71,7 @@ func StreakColumn(direction string) (string, bool) {
 
 // RegimePredicate maps a regime label to the watch-bar filter used by
 // sql/strategies/streak_strategy (the slice is aliased as v). SMA200 == 0
-// does not filter, matching StreakSignals / grid search. SMA50 is not
+// does not filter, matching the gridsearch streak entries stage. SMA50 is not
 // supported here.
 func RegimePredicate(signalSymbol, regime string) (string, bool) {
 	sym, ok := StreakSymbol(signalSymbol)

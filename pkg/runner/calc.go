@@ -37,3 +37,7 @@ func calcDir(outDir string) (string, func()) {
 	}
 	return dir, func() { _ = os.RemoveAll(dir) }
 }
+
+// CalcDBPath is calcDBPath for packages outside runner (gridsearch builds its
+// own slice tables). Call the returned cleanup when the run is done.
+func CalcDBPath(outDir, id string) (string, func()) { return calcDBPath(outDir, id) }

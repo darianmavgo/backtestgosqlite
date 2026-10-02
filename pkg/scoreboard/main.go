@@ -14,6 +14,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -156,49 +157,31 @@ func runAll(concurrency int, force bool) error {
 		}
 		defer db.Close()
 
-		fmt.Printf("\n⚙️ Loading chronological bars from '%s'...\n", tableName)
-		barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, nil, startDate, "")
+		// One bar load per batch, only for the symbols that batch declares (see
+		// runner.RunBatched). Loading every symbol once here and sharing the map
+		// across all workers is what ran this out of memory with hundreds of
+		// registered strategies.
+		fmt.Printf("\n⚙️ Backtesting %d strategies: bars loaded per batch of up to %d, %d workers\n\n", len(toRun), runner.DefaultBatchSize, concurrency)
+
+		var mu sync.Mutex
+		_, err = runner.RunBatched(runner.BatchOptions{
+			DB: db, Table: tableName, Start: startDate, Workers: concurrency,
+		}, toRun, func(s strategy.Strategy, barsBySymbol map[string][]models.Bar, sortedDates []string) runner.RunResult {
+			cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
+			res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
+			if res.Err != nil {
+				log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
+			} else {
+				log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
+			}
+			mu.Lock()
+			freshResults[s.ID()] = res
+			mu.Unlock()
+			return res
+		})
 		if err != nil {
 			return fmt.Errorf("Error loading bars: %v", err)
 		}
-
-		// 3. Execute only the missing strategies with a bounded worker pool.
-		// Unbounded one-goroutine-per-strategy here OOM-kills the process once
-		// there are hundreds of registered strategies (the full shared bar map
-		// plus every in-flight simulator/equity curve at once) — see the same
-		// fix in cmd/backtest.
-		fmt.Printf("   Concurrency: %d workers across %d strategies to run\n\n", concurrency, len(toRun))
-
-		resultsSlice := make([]runner.RunResult, len(toRun))
-		jobs := make(chan int, len(toRun))
-		for i := range toRun {
-			jobs <- i
-		}
-		close(jobs)
-
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		for w := 0; w < concurrency; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for idx := range jobs {
-					s := toRun[idx]
-					cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
-					res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
-					resultsSlice[idx] = res
-					if res.Err != nil {
-						log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
-					} else {
-						log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
-					}
-					mu.Lock()
-					freshResults[s.ID()] = res
-					mu.Unlock()
-				}
-			}()
-		}
-		wg.Wait()
 	} else {
 		fmt.Println("✅ Nothing to backtest — every registered strategy already has a usable result. (Use -force to redo everything.)")
 	}

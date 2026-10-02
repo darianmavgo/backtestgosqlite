@@ -17,3 +17,9 @@ var Strategies embed.FS
 //
 //go:embed validation
 var Validation embed.FS
+
+// Stages holds shared calculation stages written into a run's calc database
+// (for example bar_sma), addressed as "stages/<stage>/<file>.sql".
+//
+//go:embed stages
+var Stages embed.FS

@@ -11,7 +11,6 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
-	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -27,6 +26,7 @@ type sweepOptions struct {
 	TopN              int
 	StartDate         string // earliest bar date to sweep ("" = full history)
 	InnerWorkers      int    // single-strategy mode only: workers within this one sweep
+	MarketDB          string // market database path; streak sweeps calculate entries in SQL from it
 }
 
 // sweepTask is one (signal-days, hold, TP, SL, regime, allocation, symbol)
@@ -50,7 +50,8 @@ type sweepContext struct {
 	Strat       strategy.Strategy
 	ParamSpace  strategy.ParameterSpace
 	SignalBars  []models.Bar
-	BaseSignals []models.Signal // precomputed once for tree_bounce strategies
+	BaseSignals []models.Signal                    // precomputed once for tree_bounce strategies
+	Entries     map[streakEntryKey][]models.Signal // streak entries calculated once in SQL, exits applied per grid point
 	SortedDates []string
 	TotalPerms  int
 	StartedAt   time.Time
@@ -140,7 +141,24 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 		baseSignals = strat.GenerateSignals(baseInput)
 	}
 
+	var entries map[streakEntryKey][]models.Signal
+	if paramSpace.Direction != "tree_bounce" {
+		var tradeSyms []string
+		for _, sym := range paramSpace.Symbols {
+			if _, ok := tradeBarsMap[sym]; ok {
+				tradeSyms = append(tradeSyms, sym)
+			}
+		}
+		var err error
+		entries, err = buildStreakEntries(opts.MarketDB, strat.ID(), paramSpace.SignalSymbol, paramSpace.Direction,
+			opts.StartDate, tradeSyms, paramSpace.SignalDays, paramSpace.Regimes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("streak entries for %s: %w", strat.ID(), err)
+		}
+	}
+
 	ctx := &sweepContext{
+		Entries:     entries,
 		Strat:       strat,
 		ParamSpace:  paramSpace,
 		SignalBars:  signalBars,
@@ -234,7 +252,7 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 			sigs[idx] = sCopy
 		}
 	} else {
-		sigs = streak_strategy.StreakSignals(ctx.SignalBars, t.tradeBars, t.sigDays, ctx.ParamSpace.Direction, t.regime, t.tp, t.sl, t.hold, t.sym, t.sym+"-opt")
+		sigs = streakSignalsFor(ctx.Entries[streakEntryKey{t.sym, t.sigDays, t.regime}], t.tp, t.sl, t.hold, t.sym+"-opt")
 	}
 
 	if len(sigs) < opts.MinTrades {

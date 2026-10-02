@@ -321,6 +321,7 @@ func Run(conf Config) error {
 		MinTrades: conf.MinTrades,
 		TopN:      conf.Top,
 		StartDate: conf.Start,
+		MarketDB:  conf.Db,
 	}
 	if conf.Passed["alloc"] {
 		v := conf.Alloc
