@@ -102,11 +102,15 @@ func TreeDB() string { return filepath.Join(Data(), "tree_models.db") }
 func DataFile(name string) string { return filepath.Join(Data(), name) }
 
 // ReportFile returns a path inside the reports directory. Absolute paths pass
-// through; a leading "reports/" is treated as the reports directory itself.
+// through; a leading "data/reports/" or "reports/" is treated as the reports
+// directory itself, so it is never doubled (reports/data/reports/...).
 func ReportFile(p string) string {
 	if p == "" || filepath.IsAbs(p) {
 		return p
 	}
-	p = strings.TrimPrefix(filepath.Clean(p), "reports"+string(filepath.Separator))
+	sep := string(filepath.Separator)
+	p = filepath.Clean(p)
+	p = strings.TrimPrefix(p, "data"+sep)
+	p = strings.TrimPrefix(p, "reports"+sep)
 	return filepath.Join(Reports(), p)
 }
