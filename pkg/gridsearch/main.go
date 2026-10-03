@@ -107,6 +107,7 @@ func formatPercents(vals []float64) []string {
 // Config holds the settings of a run.
 type Config struct {
 	Start         string          // -start
+	End           string          // -end
 	Db            string          // -db
 	Strategy      string          // -strategy
 	Strat         string          // -strat
@@ -176,6 +177,7 @@ func Main() {
 	//                                    the sweep ran) and exit — no sweeps run
 	conf := DefaultConfig()
 	d := conf
+	flag.StringVar(&conf.End, "end", d.End, "Latest bar date (YYYY-MM-DD) to sweep. Set it to the end of the in-sample window so the held-out months do not tune the parameters. Empty = latest bar")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to sweep; earlier bars only warm up SMAs. Empty = full history")
 	flag.StringVar(&conf.Db, "db", d.Db, "Path to SQLite database")
 	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "Strategy ID (comma-separated list, or 'all') to assess and optimize")
@@ -315,6 +317,7 @@ func Run(conf Config) error {
 		MinTrades: conf.MinTrades,
 		TopN:      conf.Top,
 		StartDate: conf.Start,
+		EndDate:   conf.End,
 		MarketDB:  conf.Db,
 	}
 	if conf.Passed["alloc"] {

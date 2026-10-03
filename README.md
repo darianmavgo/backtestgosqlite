@@ -221,7 +221,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold and hold_bail: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. `-end <date>` stops the sweep at that date, so the held-out months do not tune the parameters. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold and hold_bail: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -411,7 +411,7 @@ Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-e
 ./bin/train streak                      # says there is nothing to train
 ```
 
-Flags for `markov` and `tree` (`tree` has no `-batch`): `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables).
+Flags for `markov` and `tree` (`tree` has no `-batch`, and only `tree` has `-through <date>`, which trains on bars up to that date so the later months stay out of sample): `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables).
 
 ## stratlist
 
@@ -449,3 +449,7 @@ Print the empirical bear / sideways / bull transition matrix and tomorrow's prob
 ```bash
 ./bin/markov_test
 ```
+
+## Stack candidates skill
+
+`.claude/skills/stack-candidates/` is a Claude Code skill that runs `train`, `backtest`, `gridsearch` and `strateval` as needed and reports the 20 best strategies across all families to try in a stack. `top_strategies.sh <run_dir> [n]` does the ranking on its own: the lower of in-sample and held-out Calmar, with gates on trades, profit and held-out drawdown, one strategy per trade symbol and at most 8 per family.

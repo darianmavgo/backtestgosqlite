@@ -44,7 +44,7 @@ func streakRegimePredicate(regime string) string {
 // needs. The slice tables (bar_sma, streak_slice, streak_entries) live in a
 // calc database that is removed afterwards unless runner.KeepCalc is set.
 // Go only reads the entry rows back as signals without exits.
-func buildStreakEntries(marketDB, id, signalSym, direction, startDate string, syms []string, days []int, regimes []string) (map[streakEntryKey][]models.Signal, error) {
+func buildStreakEntries(marketDB, id, signalSym, direction, startDate, endDate string, syms []string, days []int, regimes []string) (map[streakEntryKey][]models.Signal, error) {
 	if marketDB == "" {
 		return nil, fmt.Errorf("streak grid search needs the market database path")
 	}
@@ -63,12 +63,15 @@ func buildStreakEntries(marketDB, id, signalSym, direction, startDate string, sy
 	if !safeSQLWord.MatchString(signalSym) {
 		return nil, fmt.Errorf("unsafe signal symbol %q", signalSym)
 	}
-	start := startDate
+	start, end := startDate, endDate
 	if start == "" {
 		start = "0000-00-00"
 	}
+	if end == "" {
+		end = "9999-12-31"
+	}
 	if err := storage.RunStage(db, "streak_slice", map[string]string{
-		"__SIGNAL_SYMBOL__": signalSym, "__START_DATE__": start,
+		"__SIGNAL_SYMBOL__": signalSym, "__START_DATE__": start, "__END_DATE__": end,
 	}); err != nil {
 		return nil, err
 	}

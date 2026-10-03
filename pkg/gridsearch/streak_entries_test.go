@@ -40,7 +40,7 @@ func marketWith(t *testing.T, voo, tqqq []float64) string {
 
 func entryDates(t *testing.T, market, direction, start string, days int, regime string) []string {
 	t.Helper()
-	entries, err := buildStreakEntries(market, "t", "VOO", direction, start, []string{"TQQQ"}, []int{days}, []string{regime})
+	entries, err := buildStreakEntries(market, "t", "VOO", direction, start, "", []string{"TQQQ"}, []int{days}, []string{regime})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +78,19 @@ func TestBuildStreakEntries(t *testing.T) {
 		t.Fatalf("<SMA50: got %v want 3", got)
 	}
 
+	// Bars after the end date are left out: a held-out window cannot tune the search.
+	endEntries, err := buildStreakEntries(m, "t", "VOO", "drop", "", "2024-01-06", []string{"TQQQ"}, []int{2}, []string{"All Regimes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var endDates []string
+	for _, e := range endEntries[streakEntryKey{"TQQQ", 2, "All Regimes"}] {
+		endDates = append(endDates, e.Date)
+	}
+	if want := []string{"2024-01-03", "2024-01-06"}; !reflect.DeepEqual(endDates, want) {
+		t.Fatalf("end 01-06, drop 2d: got %v want %v", endDates, want)
+	}
+
 	// Bars before the start date do not count toward a streak: the run 2024-01-05..07 restarts at 05.
 	if got, want := entryDates(t, m, "drop", "2024-01-05", 2, "All Regimes"), []string{"2024-01-07"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("start 01-05, drop 2d: got %v want %v", got, want)
@@ -86,7 +99,7 @@ func TestBuildStreakEntries(t *testing.T) {
 
 func TestStreakSignalsForPricesExitsAbsolute(t *testing.T) {
 	m := marketWith(t, []float64{10, 9, 8, 9, 8, 7, 6, 7}, []float64{100, 90, 80, 90, 80, 70, 60, 70})
-	entries, err := buildStreakEntries(m, "t", "VOO", "drop", "", []string{"TQQQ"}, []int{3}, []string{"All Regimes"})
+	entries, err := buildStreakEntries(m, "t", "VOO", "drop", "", "", []string{"TQQQ"}, []int{3}, []string{"All Regimes"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +122,7 @@ func TestStreakEntriesMatchStreakPipelineOnRealBars(t *testing.T) {
 	days := []int{1, 2, 3}
 	compared := 0
 	for _, direction := range []string{"drop", "rally"} {
-		entries, err := buildStreakEntries(market, "real_"+direction, "VOO", direction, "", []string{"TQQQ"}, days, regimes)
+		entries, err := buildStreakEntries(market, "real_"+direction, "VOO", direction, "", "", []string{"TQQQ"}, days, regimes)
 		if err != nil {
 			t.Fatal(err)
 		}

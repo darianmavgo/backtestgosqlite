@@ -55,6 +55,7 @@ type TreeConfig struct {
 	ModelDB  string   // persisted trees, created if missing; empty = appenv.TreeDB()
 	RefDB    string   // strategies DB naming the symbols when Symbols is empty; empty = appenv.RefDB()
 	Symbols  []string // symbols to train; empty = every signal_symbol in tree_strategy
+	Through  string   // train only on bars up to and including this date (YYYY-MM-DD); empty = all history
 	CalcDir  string   // keep the feature slice tables of the last symbol here; empty = scratch, removed
 	Out      io.Writer
 }
@@ -344,6 +345,17 @@ func TrainTree(ctx context.Context, cfg TreeConfig) (TreeResult, error) {
 			res.Skipped[sym] = err.Error()
 			continue
 		}
+		if cfg.Through != "" {
+			// Fit on the window up to -through only: a backtest of the later months is then
+			// out of sample for the tree. Bars after it are still scored by the saved tree.
+			kept := samples[:0:0]
+			for _, s := range samples {
+				if s.Date <= cfg.Through {
+					kept = append(kept, s)
+				}
+			}
+			samples = kept
+		}
 		tree, err := fitTree(samples)
 		if err != nil {
 			res.Skipped[sym] = err.Error()
@@ -422,6 +434,7 @@ func runTree(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&cfg.ModelDB, "model-db", cfg.ModelDB, "persisted tree database (created if missing)")
 	fs.StringVar(&cfg.RefDB, "ref-db", cfg.RefDB, "strategies database naming the symbols when -symbols is not given")
 	fs.StringVar(&symbols, "symbols", "", "comma-separated symbols to train (default: every signal_symbol in tree_strategy)")
+	fs.StringVar(&cfg.Through, "through", "", "train only on bars up to this date (YYYY-MM-DD) so the later months are out of sample. Default: all history")
 	fs.StringVar(&cfg.CalcDir, "calc-dir", "", "keep the feature slice tables here for inspection (default: scratch, removed)")
 	if err := fs.Parse(args); err != nil {
 		return 2

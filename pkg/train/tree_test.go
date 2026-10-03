@@ -263,3 +263,34 @@ func head(s []string) []string {
 	}
 	return s
 }
+
+// With -through, the tree is fit only on bars up to that date.
+func TestTrainTreeThrough(t *testing.T) {
+	market := realbars.Copy(t, "MARA")
+	modelPath := filepath.Join(t.TempDir(), "tree.db")
+	if _, err := TrainTree(context.Background(), TreeConfig{MarketDB: market, ModelDB: modelPath, Symbols: []string{"MARA"}, Through: "2024-06-28"}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := storage.OpenSQLiteReadOnly(modelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var meta struct {
+		Samples int    `db:"samples"`
+		Last    string `db:"last_date"`
+	}
+	if err := db.Get(&meta, "SELECT samples, last_date FROM tree_model_meta WHERE symbol = 'MARA'"); err != nil {
+		t.Fatal(err)
+	}
+	dates := realbars.Dates(t, market, "MARA")
+	want := 0
+	for i, d := range dates {
+		if i >= 200 && d <= "2024-06-28" && i < len(dates)-1 {
+			want++
+		}
+	}
+	if meta.Last > "2024-06-28" || meta.Samples != want {
+		t.Fatalf("trained through %s on %d bars, want through 2024-06-28 on %d", meta.Last, meta.Samples, want)
+	}
+}
