@@ -10,7 +10,15 @@
 # must hold up in both. One strategy per trade symbol and at most PER_FAMILY per
 # family are kept, so the list is not twenty copies of one idea.
 #
+# A strategy on a thin stock is not tradeable at size, so the symbol must also trade
+# at least MIN_DOLLAR_VOL dollars a day on average over the held-out window.
+#
 # Environment (defaults): MIN_IS_TRADES=30 MIN_OOS_TRADES=8 MAX_OOS_DD=0.30 PER_FAMILY=8
+#   MIN_DOLLAR_VOL=5000000 (average close x volume per day, last 12 months)
+# RANK_ON=is picks and scores on the in-sample window only (score = in-sample Calmar,
+# gates on in-sample trades, profit and drawdown), so a backtest of the result in the
+# held-out year is a clean test. The default also uses the held-out year, which makes
+# the list better but its held-out numbers optimistic.
 # IDS_ONLY=1 prints just the ranked strategy ids, comma separated, for -strategy.
 # When data/reports/gridsearch.db has a sweep for a strategy, its best config
 # (by resilience score) is shown as gridsearch_best.
@@ -22,6 +30,8 @@ MIN_IS=${MIN_IS_TRADES:-30}
 MIN_OOS=${MIN_OOS_TRADES:-8}
 MAX_DD=${MAX_OOS_DD:-0.30}
 PER_FAMILY=${PER_FAMILY:-8}
+RANK_ON=${RANK_ON:-both}
+MIN_DV=${MIN_DOLLAR_VOL:-5000000}
 ROOT=${APP_FOLDER:-.}
 STRATS=$ROOT/refdata/strategies.db
 LEDGER=$ROOT/data/reports/strategies.db
@@ -67,6 +77,29 @@ JOIN (SELECT strategy_id, MAX(run_id) AS run_id FROM o.performance_summary GROUP
 SQL
 done
 
+if [[ $RANK_ON == is ]]; then
+  GATE="is_trades >= $MIN_IS AND is_cagr > 0 AND is_dd <= $MAX_DD"
+  GATE_C="c.is_trades >= $MIN_IS AND c.is_cagr > 0 AND c.is_dd <= $MAX_DD"
+  SCORE="c.is_calmar"
+else
+  GATE="is_trades >= $MIN_IS AND oos_trades >= $MIN_OOS AND is_cagr > 0 AND oos_cagr > 0 AND oos_dd <= $MAX_DD"
+  GATE_C="c.is_trades >= $MIN_IS AND c.oos_trades >= $MIN_OOS AND c.is_cagr > 0 AND c.oos_cagr > 0 AND c.oos_dd <= $MAX_DD"
+  SCORE="MIN(c.is_calmar, c.oos_calmar)"
+fi
+MARKET=$ROOT/data/market_history.db
+LIQ_SINCE=$(sqlite3 $MARKET "select date(max(Date), '-12 months') from backtest_start where symbol = 'SPY'")
+# average dollar volume of every symbol that clears the trade and profit gates
+sqlite3 $DB <<SQL
+ATTACH '$MARKET' AS m;
+CREATE TABLE liq AS
+SELECT symbol, AVG(close * volume) AS dv, AVG(close) AS px
+FROM m.backtest_start
+WHERE Date >= '$LIQ_SINCE' AND symbol IN (
+  SELECT DISTINCT symbol FROM cand
+  WHERE $GATE)
+GROUP BY symbol;
+SQL
+
 TIER_JOIN=""
 TIER_COL="'-'"
 if [[ -f $LEDGER ]]; then
@@ -89,7 +122,8 @@ SELECT 'candidates' AS step, COUNT(*) AS strategies FROM cand
 UNION ALL SELECT 'in-sample trades >= $MIN_IS', COUNT(*) FROM cand WHERE is_trades >= $MIN_IS
 UNION ALL SELECT 'and out-of-sample trades >= $MIN_OOS', COUNT(*) FROM cand WHERE is_trades >= $MIN_IS AND oos_trades >= $MIN_OOS
 UNION ALL SELECT 'and profitable in both windows', COUNT(*) FROM cand WHERE is_trades >= $MIN_IS AND oos_trades >= $MIN_OOS AND is_cagr > 0 AND oos_cagr > 0
-UNION ALL SELECT 'and out-of-sample drawdown <= $MAX_DD', COUNT(*) FROM cand WHERE is_trades >= $MIN_IS AND oos_trades >= $MIN_OOS AND is_cagr > 0 AND oos_cagr > 0 AND oos_dd <= $MAX_DD;
+UNION ALL SELECT 'and out-of-sample drawdown <= $MAX_DD', COUNT(*) FROM cand WHERE is_trades >= $MIN_IS AND oos_trades >= $MIN_OOS AND is_cagr > 0 AND oos_cagr > 0 AND oos_dd <= $MAX_DD
+UNION ALL SELECT 'and trades >= $MIN_DV dollars a day', COUNT(*) FROM cand c LEFT JOIN liq l ON l.symbol = c.symbol WHERE $GATE_C AND (c.family = 'builtin' OR l.dv >= $MIN_DV);
 SQL
 echo
 fi
@@ -101,8 +135,9 @@ OUT=$(
 sqlite3 $DB <<SQL
 $ATTACH_LEDGER
 CREATE TABLE gated AS
-SELECT *, MIN(is_calmar, oos_calmar) AS score FROM cand
-WHERE is_trades >= $MIN_IS AND oos_trades >= $MIN_OOS AND is_cagr > 0 AND oos_cagr > 0 AND oos_dd <= $MAX_DD;
+SELECT c.*, $SCORE AS score, l.dv AS dv, l.px AS px FROM cand c LEFT JOIN liq l ON l.symbol = c.symbol
+WHERE $GATE_C
+  AND (c.family = 'builtin' OR l.dv >= $MIN_DV);
 CREATE TABLE ranked AS
 SELECT *, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY score DESC) AS sym_rank,
           ROW_NUMBER() OVER (PARTITION BY family ORDER BY score DESC) AS fam_rank
@@ -113,6 +148,7 @@ SELECT ROW_NUMBER() OVER (ORDER BY s.score DESC) AS rank, s.strategy_id AS strat
        printf('%.2f', s.score) AS score,
        printf('%.1f%%', s.is_cagr*100) AS is_cagr, printf('%.1f%%', s.is_dd*100) AS is_dd, s.is_trades,
        printf('%.1f%%', s.oos_cagr*100) AS oos_cagr, printf('%.1f%%', s.oos_dd*100) AS oos_dd, s.oos_trades,
+       COALESCE(printf('$%.1fM', s.dv/1000000.0), '-') AS dollar_vol_day, COALESCE(printf('$%.2f', s.px), '-') AS price,
        $TIER_COL AS strateval_tier,
        $GRID_COL AS gridsearch_best
 FROM ranked s $TIER_JOIN

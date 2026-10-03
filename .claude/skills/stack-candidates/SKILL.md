@@ -110,8 +110,11 @@ each strategy.
 
 The script ranks by the lower of the in-sample and held-out Calmar ratio. A strategy must
 have at least 30 in-sample trades and 8 held-out trades, be profitable in both windows and
-have held-out drawdown of at most 30%. It keeps one strategy per trade symbol and at most
-8 per family. Override with `MIN_IS_TRADES`, `MIN_OOS_TRADES`, `MAX_OOS_DD`, `PER_FAMILY`.
+have held-out drawdown of at most 30%, and trade at least $5M a day on average over the
+held-out year (the simulator has no volume limit, so without this gate the list fills with
+penny stocks that cannot take real size). It keeps one strategy per trade symbol and at most
+8 per family. Override with `MIN_IS_TRADES`, `MIN_OOS_TRADES`, `MAX_OOS_DD`, `PER_FAMILY`,
+`MIN_DOLLAR_VOL`.
 
 Give the user:
 
@@ -125,6 +128,7 @@ Give the user:
      luck. The held-out window is only 12 months.
    - The row parameters of the markov and tree families are identical templates
      (only the symbol differs), so the list ranks symbols more than ideas.
+   - The held-out year helped choose the list, so its held-out numbers are optimistic.
    - The score picks strategies one at a time. It does not check that they are
      complementary.
 

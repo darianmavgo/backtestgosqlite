@@ -192,6 +192,11 @@ func prepareRun(conf Config) (Config, error) {
 	if err != nil {
 		return conf, err
 	}
+	// An absolute path, so later steps that resolve relative paths against the
+	// reports folder (the HTML report) do not nest it twice.
+	if abs, aerr := filepath.Abs(dir); aerr == nil {
+		dir = abs
+	}
 	fmt.Printf("\n📁 Run %d: %s\n", id, dir)
 	conf.OutDir = dir
 	if conf.Html == DefaultConfig().Html {
