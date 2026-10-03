@@ -53,11 +53,45 @@ func RunBatched(opts BatchOptions, strats []strategy.Strategy, run BatchRunFunc)
 		return strings.ToLower(strats[scoped[a]].ID()) < strings.ToLower(strats[scoped[b]].ID())
 	})
 
-	runBatch := func(idx []int, symbols []string) error {
-		bars, dates, err := storage.FetchBars(opts.DB, opts.Table, symbols, opts.Start, opts.End)
-		if err != nil {
-			return err
+	// One bar load per batch. The next scoped batch loads while the current one
+	// runs, so the workers are not idle during a load. The universe batch loads
+	// only when its turn comes: it holds every symbol.
+	type batch struct {
+		idx      []int
+		symbols  []string
+		prefetch bool
+	}
+	var batches []batch
+	for from := 0; from < len(scoped); from += size {
+		to := from + size
+		if to > len(scoped) {
+			to = len(scoped)
 		}
+		idx := scoped[from:to]
+		group := make([]strategy.Strategy, len(idx))
+		for k, i := range idx {
+			group[k] = strats[i]
+		}
+		batches = append(batches, batch{idx: idx, symbols: RequiredSymbolsFor(group, opts.SymbolFilter), prefetch: true})
+	}
+	if len(universe) > 0 {
+		batches = append(batches, batch{idx: universe})
+	}
+
+	type loaded struct {
+		bars  map[string][]models.Bar
+		dates []string
+		err   error
+	}
+	load := func(b batch) <-chan loaded {
+		ch := make(chan loaded, 1)
+		go func() {
+			bars, dates, err := storage.FetchBars(opts.DB, opts.Table, b.symbols, opts.Start, opts.End)
+			ch <- loaded{bars, dates, err}
+		}()
+		return ch
+	}
+	runBatch := func(idx []int, l loaded) {
 		workers := opts.Workers
 		if workers < 1 {
 			workers = 1
@@ -76,31 +110,31 @@ func RunBatched(opts BatchOptions, strats []strategy.Strategy, run BatchRunFunc)
 			go func() {
 				defer wg.Done()
 				for i := range jobs {
-					results[i] = run(strats[i], bars, dates)
+					results[i] = run(strats[i], l.bars, l.dates)
 				}
 			}()
 		}
 		wg.Wait()
-		return nil
 	}
 
-	for from := 0; from < len(scoped); from += size {
-		to := from + size
-		if to > len(scoped) {
-			to = len(scoped)
-		}
-		batch := scoped[from:to]
-		group := make([]strategy.Strategy, len(batch))
-		for k, i := range batch {
-			group[k] = strats[i]
-		}
-		if err := runBatch(batch, RequiredSymbolsFor(group, opts.SymbolFilter)); err != nil {
-			return results, err
-		}
+	var next <-chan loaded
+	if len(batches) > 0 {
+		next = load(batches[0])
 	}
-	if len(universe) > 0 {
-		if err := runBatch(universe, nil); err != nil {
-			return results, err
+	for i, b := range batches {
+		cur := <-next
+		if cur.err != nil {
+			return results, cur.err
+		}
+		if i+1 < len(batches) && batches[i+1].prefetch {
+			next = load(batches[i+1])
+		} else if i+1 < len(batches) {
+			next = nil // loaded when its turn comes
+		}
+		runBatch(b.idx, cur)
+		cur = loaded{} // let the batch's bars go before the next one is held
+		if i+1 < len(batches) && next == nil {
+			next = load(batches[i+1])
 		}
 	}
 	return results, nil

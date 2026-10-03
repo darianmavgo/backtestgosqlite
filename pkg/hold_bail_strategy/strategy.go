@@ -21,6 +21,9 @@ type Strategy struct {
 
 func (s *Strategy) ID() string { return s.Row.ID }
 
+// Family is the strategy family, which names its result database.
+func (s *Strategy) Family() string { return "hold_bail" }
+
 func (s *Strategy) Name() string { return s.Row.Name }
 
 func (s *Strategy) Description() string {

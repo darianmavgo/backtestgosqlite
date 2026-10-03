@@ -27,6 +27,9 @@ type Strategy struct {
 // ID is the table's id column.
 func (s *Strategy) ID() string { return s.Row.ID }
 
+// Family is the strategy family, which names its result database.
+func (s *Strategy) Family() string { return "markov" }
+
 // Name is the table's name column.
 func (s *Strategy) Name() string { return s.Row.Name }
 

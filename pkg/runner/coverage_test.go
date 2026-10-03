@@ -11,7 +11,7 @@ import (
 // rows must not stand in for the sleeve's standalone result.
 func TestScanKeepsStandaloneResultWhenAStackRunRepeatsTheID(t *testing.T) {
 	dir := t.TempDir()
-	results, err := storage.OpenResults(dir)
+	results, err := storage.OpenResults(dir, "builtin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestScanKeepsStandaloneResultWhenAStackRunRepeatsTheID(t *testing.T) {
 
 func TestScanReturnsNewestRunPerStrategy(t *testing.T) {
 	dir := t.TempDir()
-	results, err := storage.OpenResults(dir)
+	results, err := storage.OpenResults(dir, "builtin")
 	if err != nil {
 		t.Fatal(err)
 	}

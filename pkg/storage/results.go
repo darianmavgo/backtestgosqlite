@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,11 +15,11 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// ResultsFile is the single result database in a reports directory. Every
-// backtest run is one row in runs, and the trades, signals, equity curve and
-// summaries of that run carry its run_id. One file replaces a database per
-// strategy per run.
-const ResultsFile = "results.db"
+// A backtest invocation is a run: data/reports/<run_id>/ (see NewRun). Inside it
+// each strategy family has its own result database, <family>.db, and a held-out
+// pass writes the same files under <run_id>/oos/. In a family file every strategy
+// run is one row in runs, and the trades, signals, equity curve and summaries of
+// that strategy run carry its (per file) run_id.
 
 // ResultsDB is the shared result database. It is safe for concurrent writers:
 // WAL lets readers run beside a writer, writers queue on busy_timeout, and each
@@ -27,12 +30,15 @@ type ResultsDB struct {
 	Path string
 }
 
-// OpenResults opens (creating if needed) dir/results.db.
-func OpenResults(dir string) (*ResultsDB, error) {
+// resultsPath is where a family's results live inside a run directory.
+func resultsPath(dir, family string) string { return filepath.Join(dir, family+".db") }
+
+// OpenResults opens (creating if needed) dir/<family>.db.
+func OpenResults(dir, family string) (*ResultsDB, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create results dir %s: %w", dir, err)
 	}
-	path := filepath.Join(dir, ResultsFile)
+	path := resultsPath(dir, family)
 	dsn := path + "?_txlock=immediate&_pragma=busy_timeout(120000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-64000)"
 	db, err := sqlx.Open("sqlite", dsn)
 	if err != nil {
@@ -356,27 +362,29 @@ var (
 	shared   = map[string]*ResultsDB{}
 )
 
-// SharedResults returns the process-wide handle for dir/results.db, opening it
-// on first use, so concurrent workers share one connection pool.
-func SharedResults(dir string) (*ResultsDB, error) {
+// ResultsFor returns the process-wide handle for the family's result database
+// in a run directory, opening it on first use, so concurrent workers share one
+// connection pool per family.
+func ResultsFor(dir, family string) (*ResultsDB, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		abs = dir
 	}
+	key := resultsPath(abs, family)
 	sharedMu.Lock()
 	defer sharedMu.Unlock()
-	if r, ok := shared[abs]; ok {
+	if r, ok := shared[key]; ok {
 		return r, nil
 	}
-	r, err := OpenResults(abs)
+	r, err := OpenResults(abs, family)
 	if err != nil {
 		return nil, err
 	}
-	shared[abs] = r
+	shared[key] = r
 	return r, nil
 }
 
-// CloseSharedResults closes every handle SharedResults opened.
+// CloseSharedResults closes every handle ResultsFor opened.
 func CloseSharedResults() {
 	sharedMu.Lock()
 	defer sharedMu.Unlock()
@@ -384,4 +392,80 @@ func CloseSharedResults() {
 		_ = r.Close()
 		delete(shared, k)
 	}
+}
+
+// ResultFiles lists the family result databases in a run directory (the *.db
+// files directly in it, not in oos/), by file name.
+func ResultFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// runNumber parses a run directory name: a positive integer with no sign or spaces.
+func runNumber(name string) (int, bool) {
+	n, err := strconv.Atoi(name)
+	if err != nil || n < 1 || strconv.Itoa(n) != name {
+		return 0, false
+	}
+	return n, true
+}
+
+// LatestRunDir returns the highest numbered run directory under root, and its
+// number. It reports 0 and "" when there is none.
+func LatestRunDir(root string) (int, string) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0, ""
+	}
+	best := 0
+	for _, e := range entries {
+		if n, ok := runNumber(e.Name()); ok && e.IsDir() && n > best {
+			best = n
+		}
+	}
+	if best == 0 {
+		return 0, ""
+	}
+	return best, filepath.Join(root, strconv.Itoa(best))
+}
+
+// NewRun creates the next run directory under root, numbered one above the
+// highest existing run, and returns the number and path. The directory is made
+// with a plain mkdir, so two processes starting at once get different numbers.
+func NewRun(root string) (int, string, error) {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return 0, "", err
+	}
+	next, _ := LatestRunDir(root)
+	for {
+		next++
+		dir := filepath.Join(root, strconv.Itoa(next))
+		err := os.Mkdir(dir, 0o755)
+		if err == nil {
+			return next, dir, nil
+		}
+		if !os.IsExist(err) {
+			return 0, "", err
+		}
+	}
+}
+
+// RunDir returns the directory of an existing run, or an error naming the runs there are.
+func RunDir(root string, runID int) (string, error) {
+	dir := filepath.Join(root, strconv.Itoa(runID))
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		latest, _ := LatestRunDir(root)
+		return "", fmt.Errorf("no run %d in %s (latest is %d)", runID, root, latest)
+	}
+	return dir, nil
 }

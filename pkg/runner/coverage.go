@@ -3,9 +3,10 @@ package runner
 import (
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -28,41 +29,73 @@ type CompiledResult struct {
 	ComputedAt time.Time
 }
 
-// ScanAndValidate reads the newest finished run of every strategy from
-// results.db in outDir. This is the one shared "what's already been
-// backtested, and can I trust it?" pass every bulk-strategy command runs before
-// doing any work. A run is written in one transaction, so a crashed run leaves
-// nothing behind to validate; the file itself is integrity-checked once. The
-// remaining return values keep the old signature: files seen (0 or 1),
-// strategies found, always 0 fallbacks, and 1 when the file failed its check.
-func ScanAndValidate(outDir string, concurrency int) (byStrategy map[string]CompiledResult, totalFiles, totalGroups, usedFallback, allCompromised int) {
+// ScanAndValidate reads the newest finished run of every strategy from the
+// family result databases (*.db) of one run directory. This is the one shared
+// "what's already been backtested, and can I trust it?" pass every
+// bulk-strategy command runs before doing any work. A strategy run is written
+// in one transaction, so a crashed run leaves nothing behind to validate; each
+// file is integrity-checked once. The remaining return values: files read,
+// strategies found, always 0 fallbacks, and how many files failed their check.
+// The files are read in parallel, one goroutine per file, up to concurrency.
+func ScanAndValidate(runDir string, concurrency int) (byStrategy map[string]CompiledResult, totalFiles, totalGroups, usedFallback, allCompromised int) {
 	byStrategy = make(map[string]CompiledResult)
-	path := filepath.Join(outDir, storage.ResultsFile)
-	if _, err := os.Stat(path); err != nil {
+	files, err := storage.ResultFiles(runDir)
+	if err != nil || len(files) == 0 {
 		return byStrategy, 0, 0, 0, 0
 	}
-	results, err := storage.SharedResults(outDir)
-	if err != nil {
-		log.Printf("⚠️  cannot open %s: %v", path, err)
-		return byStrategy, 1, 0, 0, 1
+	if concurrency < 1 {
+		concurrency = 1
 	}
-	if err := results.IntegrityOK(); err != nil {
-		log.Printf("⚠️  %s is compromised (%v)", path, err)
-		return byStrategy, 1, 0, 0, 1
+	type scanned struct {
+		path string
+		runs []storage.LatestRun
+		bad  bool
 	}
-	runs, err := results.LatestRuns()
-	if err != nil {
-		log.Printf("⚠️  cannot read runs from %s: %v", path, err)
-		return byStrategy, 1, 0, 0, 1
+	out := make([]scanned, len(files))
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for i, path := range files {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, path string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			family := strings.TrimSuffix(filepath.Base(path), ".db")
+			results, err := storage.ResultsFor(runDir, family)
+			if err != nil {
+				log.Printf("⚠️  cannot open %s: %v", path, err)
+				out[i] = scanned{path: path, bad: true}
+				return
+			}
+			if err := results.IntegrityOK(); err != nil {
+				log.Printf("⚠️  %s is compromised (%v)", path, err)
+				out[i] = scanned{path: path, bad: true}
+				return
+			}
+			runs, err := results.LatestRuns()
+			if err != nil {
+				log.Printf("⚠️  cannot read runs from %s: %v", path, err)
+				out[i] = scanned{path: path, bad: true}
+				return
+			}
+			out[i] = scanned{path: path, runs: runs}
+		}(i, path)
 	}
-	for _, r := range runs {
-		byStrategy[r.StrategyID] = CompiledResult{
-			StrategyID: r.StrategyID, Report: r.Report, DbPath: path,
-			Increment: int(r.RunID), ComputedAt: r.CreatedAt,
+	wg.Wait()
+	for _, sc := range out {
+		if sc.bad {
+			allCompromised++
+			continue
+		}
+		for _, r := range sc.runs {
+			byStrategy[r.StrategyID] = CompiledResult{
+				StrategyID: r.StrategyID, Report: r.Report, DbPath: sc.path,
+				Increment: int(r.RunID), ComputedAt: r.CreatedAt,
+			}
 		}
 	}
-	fmt.Printf("   Found %d strategies with a finished run in %s.\n\n", len(byStrategy), path)
-	return byStrategy, 1, len(byStrategy), 0, 0
+	fmt.Printf("   Found %d strategies with a finished run in %d result databases in %s.\n\n", len(byStrategy), len(files), runDir)
+	return byStrategy, len(files), len(byStrategy), 0, allCompromised
 }
 
 // MissingStrategies returns the IDs of every currently-registered strategy that

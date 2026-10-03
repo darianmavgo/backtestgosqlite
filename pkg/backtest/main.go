@@ -35,7 +35,9 @@ type Config struct {
 	SharedAccount       bool     // -shared-account
 	Primary             string   // -primary
 	Secondary           string   // -secondary
-	OutDir              string   // -out-dir
+	OutDir              string   // -out-dir (the reports root: each run gets a numbered folder in it)
+	RunID               int      // -run-id
+	CPUProfile          string   // -cpuprofile
 	List                bool     // -list
 	Symbol              string   // -symbol
 	Capital             float64  // -capital
@@ -170,7 +172,9 @@ func Main() {
 	flag.BoolVar(&conf.SharedAccount, "shared-account", d.SharedAccount, "Run strategies in a single shared cash account with priority preemption")
 	flag.StringVar(&conf.Primary, "primary", d.Primary, "Primary strategy ID for shared-account execution (has capital priority)")
 	flag.StringVar(&conf.Secondary, "secondary", d.Secondary, "Secondary strategy ID(s) for shared-account execution (comma-separated)")
-	flag.StringVar(&conf.OutDir, "out-dir", d.OutDir, "Directory to write strategy SQLite database results and reports")
+	flag.StringVar(&conf.OutDir, "out-dir", d.OutDir, "Reports root. Each backtest run writes to a new numbered folder here, <out-dir>/<run_id>/<family>.db, and held-out results to <run_id>/oos/")
+	flag.StringVar(&conf.CPUProfile, "cpuprofile", d.CPUProfile, "Write a CPU profile of the run to this file (read it with go tool pprof)")
+	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Use this existing run folder instead of starting a new one: finish an interrupted run (strategies already done in it are skipped unless -force) or read it (stale)")
 	flag.BoolVar(&conf.List, "list", d.List, "List all registered Go and SQL strategies")
 	flag.StringVar(&conf.Symbol, "symbol", d.Symbol, "Optional: Filter backtest to a specific symbol (e.g. DFEN, SOXL)")
 	flag.Float64Var(&conf.Capital, "capital", d.Capital, "Starting portfolio capital for simulation")
@@ -183,9 +187,9 @@ func Main() {
 	flag.BoolVar(&conf.AutoDownload, "auto-download", d.AutoDownload, "Automatically detect missing market data and run download")
 	flag.IntVar(&conf.DownloadYears, "download-years", d.DownloadYears, "Number of years of history to fetch when downloading missing data")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
-	flag.BoolVar(&conf.Serial, "serial", d.Serial, "Run one strategy at a time instead of -concurrency workers writing to results.db in parallel")
+	flag.BoolVar(&conf.Serial, "serial", d.Serial, "Run one strategy at a time instead of -concurrency workers writing their family result databases in parallel")
 	flag.BoolVar(&conf.KeepCalc, "keep-calc", d.KeepCalc, "Keep each SQL strategy's calculation database (slice tables) under <out-dir>/calc/ instead of deleting it after the run")
-	flag.BoolVar(&conf.Force, "force", d.Force, "(multi-strategy runs only) redo every strategy even if it already has a usable result in -out-dir")
+	flag.BoolVar(&conf.Force, "force", d.Force, "(multi-strategy runs only) with -run-id, redo every strategy even if it already has a usable result in that run")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
 	flag.BoolVar(&conf.IncludeUniverse, "include-universe", d.IncludeUniverse, "(stack-eval) also try full-universe overlays (bb-capitulation, rsi2, ...)")
 	flag.IntVar(&conf.StackDepth, "stack-depth", d.StackDepth, "(stack-eval) greedy complementary overlays to combine after pairwise ranking")

@@ -115,7 +115,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	var outDBPath string
 	if req.Persist {
 		var err error
-		results, err = storage.SharedResults(outDir)
+		results, err = storage.ResultsFor(outDir, "stack")
 		if err != nil {
 			return SharedRunResult{Err: fmt.Errorf("failed to open results database for shared account: %w", err)}
 		}

@@ -43,6 +43,7 @@ type Config struct {
 	Serial      bool     // -serial
 	Start       string   // -start
 	Force       bool     // -force
+	RunID       int      // -run-id
 	Mode        string   // subcommand (empty = default)
 	Args        []string // positional arguments
 }
@@ -68,6 +69,7 @@ func Main() {
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent workers (defaults to all CPU cores; bounds memory/IO use with hundreds of strategies)")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to backtest; earlier bars only warm up SMAs. Empty = full history")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(default mode only) redo every strategy's backtest even if a usable result already exists")
+	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Run folder under the reports root to read (compile, status) or to continue (default mode). Without it compile and status read the latest run and the default mode starts a new one")
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"compile": "compile", "status": "status"})
 	flag.Parse()
 	conf.Args = flag.Args()
@@ -84,9 +86,25 @@ func Run(conf Config) error {
 	}
 	startDate = conf.Start
 
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return fmt.Errorf("Failed to create out dir: %v", err)
+	// outDir is the reports root until here, then the folder of this run.
+	root := outDir
+	var id int
+	var err error
+	switch {
+	case conf.RunID > 0:
+		outDir, err = storage.RunDir(root, conf.RunID)
+		id = conf.RunID
+	case conf.Mode == "compile" || conf.Mode == "status":
+		if id, outDir = storage.LatestRunDir(root); outDir == "" {
+			err = fmt.Errorf("no runs in %s yet. Run backtests first (e.g. cmd/backtest -strategy all)", root)
+		}
+	default:
+		id, outDir, err = storage.NewRun(root)
 	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("📁 Run %d: %s\n", id, outDir)
 
 	switch conf.Mode {
 	case "compile":

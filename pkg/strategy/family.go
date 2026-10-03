@@ -259,3 +259,17 @@ func FamilyMembers(name string) ([]Strategy, bool) {
 	}
 	return nil, false
 }
+
+// Familied is implemented by the strategies of a row-backed family.
+type Familied interface {
+	Family() string
+}
+
+// FamilyOf names the family a strategy belongs to: streak, hold, hold_bail, tree
+// or markov for a row, and "builtin" for a strategy defined in Go.
+func FamilyOf(s Strategy) string {
+	if f, ok := s.(Familied); ok {
+		return f.Family()
+	}
+	return "builtin"
+}

@@ -204,7 +204,6 @@ func substituteStreakPlaceholders(sqlText, id, fileName string, cfg StrategyConf
 	return sqlText
 }
 
-var sqlPipelineMu sync.Mutex
 
 // SQLPipelineStrategy adapts any directory of sequential SQL scripts into a runnable Strategy.
 type SQLPipelineStrategy struct {
@@ -362,9 +361,6 @@ func openAttachedCalcDB(marketDBPath, calcDBPath string) (*sqlx.DB, error) {
 
 // GenerateSignals executes the SQL pipeline scripts in order and extracts entry signals.
 func (s *SQLPipelineStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	sqlPipelineMu.Lock()
-	defer sqlPipelineMu.Unlock()
-
 	if s.marketDBPath == "" || s.calcDBPath == "" {
 		log.Printf("Warning: SQL strategy %s requires both marketDBPath and calcDBPath", s.id)
 		return nil

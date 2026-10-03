@@ -384,9 +384,9 @@ func ExecuteStrategyWithDividends(
 	marketDBPath string,
 	reinvestDividends bool,
 ) RunResult {
-	// 1. Results go to the shared results.db; SQL pipelines get a scratch calc
+	// 1. Results go to the strategy family's database in the run directory; SQL pipelines get a scratch calc
 	// database of their own (deleted when the run ends unless KeepCalc).
-	results, err := storage.SharedResults(outDir)
+	results, err := storage.ResultsFor(outDir, strategy.FamilyOf(strat))
 	if err != nil {
 		return RunResult{Strat: strat, Err: fmt.Errorf("failed to open results database for %s: %w", strat.ID(), err)}
 	}

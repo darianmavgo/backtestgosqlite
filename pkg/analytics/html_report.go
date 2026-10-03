@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
@@ -49,19 +48,11 @@ type StrategyReportData struct {
 
 // GenerateComparisonHTML creates a rich, modern, interactive HTML report with Chart.js charts.
 func GenerateComparisonHTML(outputPath string, data MultiStrategyHTMLData) error {
-	// Inject date-partitioned subdirectory based on today's date
-	dir := filepath.Dir(outputPath)
-	base := filepath.Base(outputPath)
-	today := time.Now().Format("2006-01-02")
-
-	// Create partitioned directory path
-	partitionedDir := filepath.Join(dir, today)
-	if partitionedDir != "" {
-		_ = os.MkdirAll(partitionedDir, 0755)
+	// The report goes where it is asked: a run's report sits in its run folder.
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create report directory: %w", err)
 	}
-
-	// Reconstruct the full output path
-	partitionedOutputPath := filepath.Join(partitionedDir, base)
+	partitionedOutputPath := outputPath
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {

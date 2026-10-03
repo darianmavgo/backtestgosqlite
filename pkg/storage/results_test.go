@@ -2,6 +2,8 @@ package storage
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -11,7 +13,7 @@ import (
 // Many workers writing runs into one results.db at the same time must all
 // land, each run whole, with distinct run ids.
 func TestWriteRunConcurrentWriters(t *testing.T) {
-	r, err := OpenResults(t.TempDir())
+	r, err := OpenResults(t.TempDir(), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +29,8 @@ func TestWriteRunConcurrentWriters(t *testing.T) {
 			for i := 0; i < perWorker; i++ {
 				id := fmt.Sprintf("s%d_%d", w, i)
 				_, err := r.WriteRun(RunMeta{StrategyID: id, Kind: "single"}, RunPayload{
-					Trades: []models.Trade{{Symbol: "VOO", EntryDate: "2024-01-02", ExitDate: "2024-01-05", NetPnL: 5}, {Symbol: "VOO", EntryDate: "2024-02-02", ExitDate: "2024-02-05", NetPnL: -1}},
-					Equity: []models.DailyEquityPoint{{Date: "2024-01-02", TotalEquity: 100}, {Date: "2024-01-03", TotalEquity: 101}, {Date: "2024-01-04", TotalEquity: 102}},
+					Trades:  []models.Trade{{Symbol: "VOO", EntryDate: "2024-01-02", ExitDate: "2024-01-05", NetPnL: 5}, {Symbol: "VOO", EntryDate: "2024-02-02", ExitDate: "2024-02-05", NetPnL: -1}},
+					Equity:  []models.DailyEquityPoint{{Date: "2024-01-02", TotalEquity: 100}, {Date: "2024-01-03", TotalEquity: 101}, {Date: "2024-01-04", TotalEquity: 102}},
 					Reports: []NamedReport{{StrategyID: id, Report: models.PerformanceReport{CAGR: float64(i), TotalTrades: 2}}},
 				})
 				if err != nil {
@@ -61,7 +63,7 @@ func TestWriteRunConcurrentWriters(t *testing.T) {
 
 // A run that fails midway leaves nothing behind.
 func TestWriteRunIsAtomic(t *testing.T) {
-	r, err := OpenResults(t.TempDir())
+	r, err := OpenResults(t.TempDir(), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,5 +84,69 @@ func TestWriteRunIsAtomic(t *testing.T) {
 	_ = r.DB.Get(&trades, "SELECT COUNT(*) FROM trades")
 	if runs != 0 || trades != 0 {
 		t.Fatalf("partial run left behind: runs=%d trades=%d", runs, trades)
+	}
+}
+
+// Run directories are numbered one above the highest there is, even when two
+// processes ask at once, and a family's result file lives inside its run.
+func TestNewRunNumbersAndFamilyFiles(t *testing.T) {
+	root := t.TempDir()
+	if n, dir := LatestRunDir(root); n != 0 || dir != "" {
+		t.Fatalf("empty root: %d %q", n, dir)
+	}
+	var wg sync.WaitGroup
+	got := make(chan int, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n, dir, err := NewRun(root)
+			if err != nil || filepath.Base(dir) != fmt.Sprint(n) {
+				t.Errorf("NewRun: %d %s %v", n, dir, err)
+			}
+			got <- n
+		}()
+	}
+	wg.Wait()
+	close(got)
+	seen := map[int]bool{}
+	for n := range got {
+		if seen[n] {
+			t.Fatalf("run %d handed out twice", n)
+		}
+		seen[n] = true
+	}
+	if n, _ := LatestRunDir(root); n != 8 {
+		t.Fatalf("latest run %d, want 8", n)
+	}
+	// directories that are not run numbers are ignored
+	for _, name := range []string{"2026-10-01", "007", "notes"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, _ := LatestRunDir(root); n != 8 {
+		t.Fatalf("latest run %d with stray directories, want 8", n)
+	}
+	if _, err := RunDir(root, 99); err == nil {
+		t.Fatal("expected an error for a run that does not exist")
+	}
+	dir, err := RunDir(root, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fam := range []string{"markov", "tree"} {
+		r, err := ResultsFor(dir, fam)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Path != filepath.Join(dir, fam+".db") {
+			t.Fatalf("path %s", r.Path)
+		}
+	}
+	CloseSharedResults()
+	files, err := ResultFiles(dir)
+	if err != nil || len(files) != 2 || filepath.Base(files[0]) != "markov.db" || filepath.Base(files[1]) != "tree.db" {
+		t.Fatalf("result files %v (err %v)", files, err)
 	}
 }

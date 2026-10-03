@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -97,6 +98,21 @@ func Run(conf Config) error {
 		conf.Concurrency = 1
 	}
 	runner.KeepCalc = conf.KeepCalc
+	if conf.CPUProfile != "" {
+		pf, err := os.Create(conf.CPUProfile)
+		if err != nil {
+			return err
+		}
+		defer pf.Close()
+		if err := pprof.StartCPUProfile(pf); err != nil {
+			return err
+		}
+		defer pprof.StopCPUProfile()
+	}
+	conf, err := prepareRun(conf)
+	if err != nil {
+		return err
+	}
 	if !holdoutApplies(conf) {
 		return runOnce(conf)
 	}
@@ -145,4 +161,41 @@ func lastOrLatest(end string) string {
 		return "latest bar"
 	}
 	return end
+}
+
+// prepareRun turns the reports root in conf.OutDir into the folder of this run.
+// A command that writes results starts the next numbered folder (or, with
+// -run-id, goes back into an existing one), and OutDir becomes that folder: the
+// family databases are written there and the held-out pass writes to its oos
+// folder. stale only reads, so it takes the named run or the latest. The HTML
+// report, unless -html names a path, goes in the run folder as report.html.
+func prepareRun(conf Config) (Config, error) {
+	if conf.Mode == "covered-call" {
+		return conf, nil
+	}
+	root := conf.OutDir
+	var dir string
+	var id int
+	var err error
+	switch {
+	case conf.RunID > 0:
+		id = conf.RunID
+		dir, err = storage.RunDir(root, id)
+	case conf.Mode == "stale":
+		id, dir = storage.LatestRunDir(root)
+		if dir == "" {
+			err = fmt.Errorf("no runs in %s yet", root)
+		}
+	default:
+		id, dir, err = storage.NewRun(root)
+	}
+	if err != nil {
+		return conf, err
+	}
+	fmt.Printf("\n📁 Run %d: %s\n", id, dir)
+	conf.OutDir = dir
+	if conf.Html == DefaultConfig().Html {
+		conf.Html = filepath.Join(dir, "report.html")
+	}
+	return conf, nil
 }
