@@ -10,7 +10,7 @@
 //	streak     nothing to train (rule parameters are row columns)
 //	hold       nothing to train
 //	hold_bail  nothing to train
-//	tree       nothing to train (coil and bounce thresholds are row columns)
+//	tree       trained: per-symbol 5 bucket CloudForest tree -> data/tree_models.db
 //
 // markov_hmm strategies read hmm_regime.db, which `study hmm_regime` writes.
 package train
@@ -43,7 +43,7 @@ var families = map[string]family{
 	"streak":    noModel("streak", "a streak strategy has no fitted model; its parameters are the columns of its streak_strategy row."),
 	"hold":      noModel("hold", "a hold strategy has no fitted model; its parameters are the columns of its hold_strategy row."),
 	"hold_bail": noModel("hold_bail", "a hold_bail strategy has no fitted model; its parameters are the columns of its hold_bail_strategy row."),
-	"tree":      noModel("tree", "a tree strategy has no fitted model; its coil and bounce thresholds are the columns of its tree_strategy row."),
+	"tree":      {run: runTree, note: "trains the per-symbol 5 bucket decision tree on the market database"},
 }
 
 // Main is the CLI entry point.

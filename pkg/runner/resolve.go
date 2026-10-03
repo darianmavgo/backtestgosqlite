@@ -33,6 +33,11 @@ func ResolveStrategies(arg, defaultID string) ([]strategy.Strategy, error) {
 		}
 		s, ok := strategy.Get(token)
 		if !ok {
+			// A family name stands for every row of that family: -strategy markov
+			if members, isFamily := strategy.FamilyMembers(token); isFamily {
+				out = append(out, members...)
+				continue
+			}
 			return nil, fmt.Errorf("strategy %q not found in registry (use -list)", token)
 		}
 		out = append(out, s)

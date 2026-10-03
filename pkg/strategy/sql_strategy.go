@@ -147,6 +147,7 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 	sqlText = substituteStreakPlaceholders(sqlText, id, fileName, cfg)
 	// Trained-model databases the markov pipelines attach (read only).
 	sqlText = strings.ReplaceAll(sqlText, "__MARKOV_DB__", appenv.MarkovDB())
+	sqlText = strings.ReplaceAll(sqlText, "__TREE_DB__", appenv.TreeDB())
 	sqlText = strings.ReplaceAll(sqlText, "__HMM_DB__", appenv.ReportFile("hmm_regime.db"))
 	
 	for k, v := range cfg.SQLParams {

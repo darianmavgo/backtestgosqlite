@@ -94,6 +94,9 @@ func MarketDB() string { return filepath.Join(Data(), "market_history.db") }
 // MarkovDB is the trained Markov models (written by train markov, read by backtest).
 func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
 
+// TreeDB is the trained decision trees (written by train tree, read by backtest).
+func TreeDB() string { return filepath.Join(Data(), "tree_models.db") }
+
 
 // DataFile returns a path to name inside the data directory.
 func DataFile(name string) string { return filepath.Join(Data(), name) }

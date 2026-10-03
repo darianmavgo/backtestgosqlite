@@ -1,10 +1,13 @@
 package markov_strategy
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
@@ -67,5 +70,39 @@ func TestBacktestReadsTrainedModelAndNeverTrains(t *testing.T) {
 	var n int
 	if err := db.Get(&n, "SELECT COUNT(*) FROM markov_prediction"); err != nil || n != len(realbars.Closes(t, market, "GOOGL"))-20 {
 		t.Fatalf("model rows after backtest: %d (err %v)", n, err)
+	}
+}
+
+// A model trained on older data than the market database says so, and still runs.
+func TestStaleModelWarns(t *testing.T) {
+	app := t.TempDir()
+	t.Setenv("APP_FOLDER", app)
+	older := realbars.Copy(t, "GOOGL")
+	db, err := storage.OpenSQLite(older)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DELETE FROM backtest_start WHERE substr(Date, 1, 10) > '2025-06-30'"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if _, err := train.TrainMarkov(context.Background(), train.MarkovConfig{MarketDB: older, ModelDB: filepath.Join(app, "data", "markov_models.db"), Symbols: []string{"GOOGL"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	current := realbars.Copy(t, "GOOGL")
+	s := &Strategy{Row: refdb.MarkovStrategy{
+		ID: "markov_model_googl", Name: "GOOGL markov", SignalSymbol: "GOOGL", TradeSymbol: "GOOGL",
+		Direction: "long", TargetState: "bull", HoldDays: 5, TakeProfitPct: 0.05, StopLossPct: 0.05, AllocationPct: 0.5,
+	}}
+	s.SetDatabases(current, filepath.Join(t.TempDir(), "calc.db"))
+	if sigs := s.GenerateSignals(nil); len(sigs) == 0 {
+		t.Fatal("a stale model must still produce signals")
+	}
+	if got := buf.String(); !strings.Contains(got, "trained through 2025-06-30") || !strings.Contains(got, "run `train markov -symbols GOOGL`") {
+		t.Fatalf("no staleness warning in log: %q", got)
 	}
 }

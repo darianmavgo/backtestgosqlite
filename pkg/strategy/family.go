@@ -236,3 +236,26 @@ func (a FamilyAxes) Ints(param string) []int {
 	}
 	return out
 }
+
+// FamilyMembers returns every member of the family named name (streak, hold,
+// hold_bail, tree or markov), built on demand, and whether such a family exists.
+func FamilyMembers(name string) ([]Strategy, bool) {
+	for _, f := range Families() {
+		if f.Name() != name {
+			continue
+		}
+		ids, err := f.IDs()
+		if err != nil {
+			log.Printf("%s: %v", name, err)
+			return nil, true
+		}
+		var out []Strategy
+		for _, id := range ids {
+			if s, ok := f.Lookup(id); ok {
+				out = append(out, s)
+			}
+		}
+		return out, true
+	}
+	return nil, false
+}

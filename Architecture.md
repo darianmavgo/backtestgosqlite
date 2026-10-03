@@ -136,7 +136,7 @@ Every strategy calculates its signals in SQL. `strategy.RunPipeline` runs a pipe
 
 | Pipeline | Strategies |
 |---|---|
-| `streak_strategy`, `tree_strategy`, `markov_model` | the streak, tree and markov rows (`markov_model` reads the saved model, see `train`) |
+| `streak_strategy`, `tree_strategy`, `markov_model` | the streak, tree and markov rows (`tree_strategy` and `markov_model` read the saved model, see `train`) |
 | `markov_hmm` | `markov_hmm_*`, reading `hmm_regime.db` from `study hmm_regime` |
 | `first_bar` | buy on the first bar and hold: the `hold` family and the `*-margin-buy-hold` ids. `__TOTAL_RETURN__` prices the signal on dividend-adjusted prices when the runner simulates on them (`strategy.DividendModeSetter`) |
 | `every_bar` | `tsll-daily-one-share`: one entry per bar with its own take-profit, stop and hold |
@@ -261,4 +261,4 @@ It records the gates in `check_overfit_gate`.
 
 Markov strategies do not train at backtest time. `train markov` (`pkg/train`) runs `sql/stages/markov_train` and publishes `markov_prediction` and `markov_model_meta` into `data/markov_models.db` (`appenv.MarkovDB()`). The `markov_model` pipeline attaches that file (`__MARKOV_DB__`) and reads one symbol's rows; `markov_strategy.GenerateSignals` refuses to run without a trained model for the symbol. `markov_hmm` attaches `hmm_regime.db` (`__HMM_DB__`), produced by `study hmm_regime`.
 
-Training is not part of `backtest`. `train <family>` is the one training command; only `markov` has a model to fit. Decision trees (`tree_strategy`) carry their thresholds in the row, so nothing trains at backtest time. The CloudForest studies live in `pkg/study` (MARA, MU, HMM), and `gridsearch` searches parameters and writes its own DB.
+Training is not part of `backtest`. `train <family>` is the one training command; `markov` and `tree` have a model to fit. Decision trees are trained by `train tree` into `data/tree_models.db`: `sql/stages/tree_features` builds the features and the 5 bucket label, CloudForest grows the tree, and a `tree_strategy` row walks the saved tree in SQL (`sql/strategies/tree_strategy`), buying on class 2. Nothing trains at backtest time. The CloudForest studies live in `pkg/study` (MARA, MU, HMM), and `gridsearch` searches parameters and writes its own DB.

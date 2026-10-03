@@ -142,27 +142,31 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	}
 	if dir == pipelineDir {
 		sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
-		if !hasModel(appenv.MarkovDB(), sym) {
+		trained, ok := modelLastDate(appenv.MarkovDB(), sym)
+		if !ok {
 			log.Printf("markov_strategy %s: no trained model for %s in %s; run `train markov -symbols %s`", s.ID(), sym, appenv.MarkovDB(), sym)
 			return nil
+		}
+		if market, err := storage.SymbolLastDate(s.marketDBPath, sym); err == nil && market > trained {
+			log.Printf("markov_strategy %s: the model for %s was trained through %s but the market data runs to %s; run `train markov -symbols %s`", s.ID(), sym, trained, market, sym)
 		}
 	}
 	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
 }
 
-// hasModel reports whether the model database at path holds a trained model
-// for symbol. The file is opened read-only and never created.
-func hasModel(path, symbol string) bool {
+// modelLastDate returns the last bar date the model for symbol was trained
+// through, and whether a model exists. The file is opened read-only and never created.
+func modelLastDate(path, symbol string) (string, bool) {
 	db, err := storage.OpenSQLiteReadOnly(path)
 	if err != nil {
-		return false
+		return "", false
 	}
 	defer db.Close()
-	var n int
-	if err := db.Get(&n, "SELECT COUNT(*) FROM markov_model_meta WHERE symbol = ?", symbol); err != nil {
-		return false
+	var last string
+	if err := db.Get(&last, "SELECT last_date FROM markov_model_meta WHERE symbol = ?", symbol); err != nil {
+		return "", false
 	}
-	return n > 0
+	return last, true
 }
 
 // ValidateRow reports why a markov_strategy row cannot be registered.

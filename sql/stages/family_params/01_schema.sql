@@ -3,7 +3,7 @@
 -- grid_values is the JSON list it tries (the row's own value is always added so
 -- the baseline is in the grid). gridsearchable = 0 means gridsearch leaves it
 -- as the row has it, and why_not says why. kind is int, real or text. role is
--- identity, label, symbol, entry, exit, sizing, cost or stat.
+-- identity, label, symbol, entry, exit, sizing, cost, stat or legacy (a column no code reads any more).
 CREATE TABLE IF NOT EXISTS strategy_family_param (
     family TEXT NOT NULL,
     param TEXT NOT NULL,

@@ -128,6 +128,8 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -strategy streak-voo-buy-tecl -capital 100000
 ./bin/backtest -strategy streak-voo-buy-tecl,mara_tree
 ./bin/backtest -strategy all
+./bin/backtest -strategy markov                 # every row of one family: streak, hold, hold_bail, tree or markov
+./bin/backtest -strategy "$(./bin/stratlist -comma sql/lists/sample_100_per_table.sql)"
 ./bin/backtest -primary streak-voo-buy-tecl -secondary mara_tree,pdd_tree -capital 100000
 ./bin/backtest streak-voo-buy-tecl+mara_tree
 ./bin/backtest -alloc 0.10 streak-voo-buy-tecl+mara_tree+pdd_tree
@@ -390,21 +392,25 @@ Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-e
 | Family | Result |
 |---|---|
 | `markov` | trains the per-symbol Markov regime model into `data/markov_models.db` (`markov_prediction`, `markov_model_meta`) |
-| `streak`, `hold`, `hold_bail`, `tree` | nothing to train: these strategies have no fitted model, their parameters are the row's columns in `refdata/strategies.db` |
+| `tree` | trains a depth-3 CloudForest decision tree per signal symbol into `data/tree_models.db` (`tree_node`, `tree_model_meta`) |
+| `streak`, `hold`, `hold_bail` | nothing to train: these strategies have no fitted model, their parameters are the row's columns in `refdata/strategies.db` |
 | `all` | every family above, in name order |
 
 `markov_hmm_*` strategies read `data/reports/hmm_regime.db`, which `study hmm_regime` writes; that is a study, not a `train` family.
 
 **markov.** A bar is bull at +5% or more over 20 bars, bear at -5% or less, otherwise sideways. For each date the model stores the walk-forward chance that the next bar is bull or bear, using only transitions known by that date. The calculation is SQL (`sql/stages/markov_train`, one slice table per stage). **Reads:** `data/market_history.db`, and `refdata/strategies.db` (`markov_strategy.signal_symbol`) when no symbols are given. Symbols already in the model are replaced. A symbol with fewer than 21 bars gets no model. A markov strategy whose signal symbol has no model produces no signals and logs which `train markov` command to run.
 
+**tree.** Each bar is labelled with the next bar's return in 5 buckets: class -2 at or below -5%, -1 above -5% and below -1%, 0 from -1% to 1% inclusive, 1 above 1% and below 5%, 2 at or above 5%. The features are 13 values per bar (returns over 1, 3, 5 and 10 bars, RSI, distance from the 20, 50 and 200 bar averages, volume ratio, range against ATR, close within the day's range, consecutive down closes), calculated in SQL by `sql/stages/tree_features`. The neutral class usually dominates, so the tree is grown on every bar of the four other classes plus an evenly spaced sample of neutral bars no larger than the biggest of those four, with the classes weighted to balance the grown set. A symbol needs 250 labelled bars (the first 200 bars of history are warm-up) and at least 10 bars of class 2, otherwise it is skipped and the reason is printed. The tree is stored one row per node, addressed by CloudForest's L/R path from the root. A `tree_strategy` row buys its trade symbol on every bar the saved tree of its signal symbol predicts class 2; a row whose signal symbol has no saved tree produces no signals and logs which `train tree` command to run. Its `coil_range_max`, `sma_bounce_min` and `sma_bounce_max` columns are no longer read (role `legacy` in `strategy_family_param`). **Reads:** `data/market_history.db`, and `refdata/strategies.db` (`tree_strategy.signal_symbol`) when no symbols are given. The last bar of a symbol has no next return, so it is scored but not trained on: the "through" date printed is the last labelled bar.
+
 ```bash
 ./bin/train markov                      # every signal_symbol in markov_strategy
 ./bin/train markov GOOGL AAPL           # just these
 ./bin/train markov -symbols GOOGL,AAPL -batch 100
+./bin/train tree MARA NVDL             # just these
 ./bin/train streak                      # says there is nothing to train
 ```
 
-Flags for `markov`: `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables).
+Flags for `markov` and `tree` (`tree` has no `-batch`): `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables).
 
 ## stratlist
 

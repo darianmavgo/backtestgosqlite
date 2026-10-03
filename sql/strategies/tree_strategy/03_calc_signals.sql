@@ -1,17 +1,20 @@
--- Generic Tree Rule (Depth 3)
-INSERT INTO tree_strategy_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss)
+-- Buy the trade symbol on every bar the tree predicts class 2 (the next bar up 5
+-- percent or more).
+INSERT INTO tree_strategy_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss, allocation_pct_override)
 SELECT
-    idx,
-    '__SYMBOL__' AS symbol,
-    date,
-    open, high, low, close, volume,
-    close AS buylimit,
-    1 AS entry,
-    'LONG' AS direction,
-    'All Regimes' AS regime,
-    __HOLD_DAYS__ AS hold_days_override,
-    close * __TAKE_PROFIT_MULT__ AS take_profit,
-    close * __STOP_LOSS_MULT__ AS stop_loss
-FROM tree_features_slice
-WHERE range_vs_atr14 <= __COIL_MAX__
-   OR (price_vs_sma200 <= __SMA_MAX__ AND price_vs_sma200 > __SMA_MIN__);
+    coalesce(t.idx, t.rowid, 0),
+    '__TRADE_SYMBOL__',
+    l.date,
+    t.open, t.high, t.low, t.close, t.volume,
+    t.close,
+    1,
+    'LONG',
+    'Tree class 2',
+    __HOLD_DAYS__,
+    t.close * __TAKE_PROFIT_MULT__,
+    t.close * __STOP_LOSS_MULT__,
+    0.0
+FROM tree_leaf l
+JOIN backtest_start t ON substr(t.Date, 1, 10) = l.date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
+WHERE l.pred = '2' AND t.close > 0
+ORDER BY l.date;

@@ -3,10 +3,13 @@ package tree_strategy
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"log"
 	"strings"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
@@ -75,7 +78,7 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 
 // ParameterSpace is the exit grid gridsearch tries: hold, take-profit and stop,
 // from strategy_family_param, with the row's values included. The entries are
-// the row's own coil and bounce rule, run once, so only exits are searched.
+// the saved tree's, run once, so only exits are searched.
 func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 	cfg := s.DefaultConfig()
 	ax := strategy.LoadFamilyAxes("tree")
@@ -108,13 +111,53 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.calcDBPath = calcDBPath
 }
 
-// GenerateSignals runs the shared SQL pipeline (sql/strategies/tree_strategy).
+// GenerateSignals walks the decision tree that `train tree` saved for the row's
+// signal symbol and buys on the bars it predicts class 2 (the next bar up 5
+// percent or more). The features are built by the tree_features stage and the
+// tree is walked by the sql/strategies/tree_strategy pipeline, both in SQL. It
+// never fits a tree: with no saved tree for the symbol it logs the `train tree`
+// command to run and produces no signals.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
+	if s.marketDBPath == "" || s.calcDBPath == "" {
+		log.Printf("[%s] market and calc database paths are not set, no signals", s.ID())
+		return nil
+	}
+	sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
+	if !hasTreeModel(appenv.TreeDB(), sym) {
+		log.Printf("tree_strategy %s: no trained tree for %s in %s; run `train tree -symbols %s`", s.ID(), sym, appenv.TreeDB(), sym)
+		return nil
+	}
+	db, err := strategy.OpenCalcDB(s.marketDBPath, s.calcDBPath)
+	if err != nil {
+		log.Printf("tree_strategy %s: %v", s.ID(), err)
+		return nil
+	}
+	err = storage.RunStage(db, "tree_features", map[string]string{"__SYMBOL__": sym})
+	db.Close()
+	if err != nil {
+		log.Printf("tree_strategy %s: %v", s.ID(), err)
+		return nil
+	}
 	dir := s.PipelineDir
 	if dir == "" {
 		dir = pipelineDir
 	}
 	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
+}
+
+// hasTreeModel reports whether the tree database at path holds a tree for
+// symbol. The file is opened read-only and never created.
+func hasTreeModel(path, symbol string) bool {
+	db, err := storage.OpenSQLiteReadOnly(path)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	var n int
+	if err := db.Get(&n, "SELECT COUNT(*) FROM tree_model_meta WHERE symbol = ?", symbol); err != nil {
+		return false
+	}
+	return n > 0
 }
 
 func ValidateRow(row refdb.TreeStrategy) error {

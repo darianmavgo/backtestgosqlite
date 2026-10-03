@@ -1132,3 +1132,19 @@ func RunStage(db *sqlx.DB, stage string, repl map[string]string) error {
 	}
 	return nil
 }
+
+// SymbolLastDate returns the date (YYYY-MM-DD) of the latest daily bar of symbol
+// in the market database at path, or "" when it has none. The file is opened
+// read-only.
+func SymbolLastDate(path, symbol string) (string, error) {
+	db, err := OpenSQLiteReadOnly(path)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	var last sql.NullString
+	if err := db.Get(&last, "SELECT MAX(substr(Date, 1, 10)) FROM backtest_start WHERE symbol = ? AND timeframe = '1d'", symbol); err != nil {
+		return "", err
+	}
+	return last.String, nil
+}
