@@ -139,3 +139,59 @@ func RunBatched(opts BatchOptions, strats []strategy.Strategy, run BatchRunFunc)
 	}
 	return results, nil
 }
+
+// DetailKept is how many strategies of a bulk run keep their trades and equity
+// curve in memory (for the HTML report). Every other result keeps only its
+// report and where it was saved: the detail is in the family result database.
+const DetailKept = 100
+
+// Slim returns r without the trades, equity curve and notes, which are the part
+// of a result that grows with the length of the backtest. A bulk run of tens of
+// thousands of strategies would otherwise hold every curve until it finished.
+func (r RunResult) Slim() RunResult {
+	r.Trades, r.EquityCurve, r.Notes = nil, nil, nil
+	return r
+}
+
+// TopDetail remembers the full result of the k best strategies by CAGR as a run
+// goes, and hands every result back slim. It is safe for concurrent workers.
+type TopDetail struct {
+	mu   sync.Mutex
+	k    int
+	kept map[string]RunResult
+}
+
+// NewTopDetail keeps the detail of the k best results; k <= 0 keeps none.
+func NewTopDetail(k int) *TopDetail { return &TopDetail{k: k, kept: map[string]RunResult{}} }
+
+// Offer stores r when it is among the best k so far (dropping the weakest it
+// displaces) and returns the slim result to keep in the run's result list.
+func (t *TopDetail) Offer(r RunResult) RunResult {
+	if t.k > 0 && r.Err == nil && r.Strat != nil {
+		t.mu.Lock()
+		if len(t.kept) < t.k {
+			t.kept[r.Strat.ID()] = r
+		} else {
+			worstID, worst := "", 0.0
+			for id, kr := range t.kept {
+				if worstID == "" || kr.Report.CAGR < worst {
+					worstID, worst = id, kr.Report.CAGR
+				}
+			}
+			if r.Report.CAGR > worst {
+				delete(t.kept, worstID)
+				t.kept[r.Strat.ID()] = r
+			}
+		}
+		t.mu.Unlock()
+	}
+	return r.Slim()
+}
+
+// Detail returns the full result kept for a strategy id, if it is among the best.
+func (t *TopDetail) Detail(id string) (RunResult, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	r, ok := t.kept[id]
+	return r, ok
+}

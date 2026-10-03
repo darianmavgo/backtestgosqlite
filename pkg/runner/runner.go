@@ -215,6 +215,9 @@ func PrintTradesTable(trades []models.Trade, symbolFilter string) {
 	tTable.Render()
 }
 
+// ComparisonTableRows is the most rows PrintComparisonTable prints.
+const ComparisonTableRows = 100
+
 func PrintComparisonTable(results []RunResult) {
 	// Sort by CAGR descending
 	sort.Slice(results, func(i, j int) bool {
@@ -230,6 +233,12 @@ func PrintComparisonTable(results []RunResult) {
 	fmt.Printf("📊 MULTI-STRATEGY CONCURRENT BENCHMARK COMPARISON\n")
 	fmt.Printf("========================================================================================================================\n")
 
+	// A table of tens of thousands of rows is not readable. Print the best
+	// ComparisonTableRows by CAGR, the rest are in the result databases.
+	if len(results) > ComparisonTableRows {
+		fmt.Printf("Showing the best %d of %d strategies by CAGR. All of them are in the run's result databases.\n", ComparisonTableRows, len(results))
+		results = results[:ComparisonTableRows]
+	}
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Strategy ID", "Name", "Total Return", "CAGR", "Sharpe", "Max DD %", "🔴 DD Duration", "Win Rate", "Trades", "Idle Days", "SQLite Results File"})
 	table.SetBorder(true)

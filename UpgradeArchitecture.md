@@ -33,3 +33,14 @@ How do I make $20k this month with a $109k base?
 
 We now have 30,000+ strategies so creating a file per strategy per backtest run is annoying.  What you do recommend?
 Going to use WAL and concurrency to make big db.
+
+Clear out old runs and backtest fresh. 
+Change results.db to data/reports/backtestrunid.db.  
+Instead of db per strategy per run; make a table per strategy inside the same runid.db. 
+
+Rename settings.db to strategies.db
+
+
+
+IS sql/strategies/nvdl_tree  really custom for nvdl_tree? 
+Where is the distinct set of sql for training trees and for executing trees?

@@ -682,6 +682,7 @@ func runOnce(conf Config) error {
 		}
 		fmt.Printf("   Concurrency:  %d workers\n\n", workers)
 
+		detail := runner.NewTopDetail(runner.DetailKept)
 		freshResults, err := runner.RunBatched(runner.BatchOptions{
 			DB: db, Table: conf.Table, Start: backtestStart, End: backtestEnd,
 			SymbolFilter: conf.Symbol, Workers: workers,
@@ -694,7 +695,7 @@ func runOnce(conf Config) error {
 				fmt.Printf("✅ [%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
 					s.ID(), res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
 			}
-			return res
+			return detail.Offer(res)
 		})
 		if err != nil {
 			return fmt.Errorf("Error loading historical bars for simulation: %v", err)
@@ -709,6 +710,9 @@ func runOnce(conf Config) error {
 		}
 		for _, s := range selectedStrategies {
 			if res, ok := freshByID[s.ID()]; ok {
+				if full, kept := detail.Detail(s.ID()); kept {
+					res = full // the best few keep their trades and curve for the HTML report
+				}
 				results = append(results, res)
 				continue
 			}
@@ -743,6 +747,9 @@ func runOnce(conf Config) error {
 		for _, r := range results {
 			if r.Err != nil {
 				continue
+			}
+			if len(results) > runner.DetailKept && r.EquityCurve == nil {
+				continue // only the best strategies of a bulk run are charted
 			}
 			sType := "Go"
 			if strings.HasSuffix(r.Strat.ID(), "-sql") {

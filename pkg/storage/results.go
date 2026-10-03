@@ -345,14 +345,16 @@ func (r *ResultsDB) LatestRuns() ([]LatestRun, error) {
 	return out, rows.Err()
 }
 
-// IntegrityOK runs PRAGMA integrity_check on the results file.
+// IntegrityOK runs PRAGMA quick_check on the results file. A family file can be
+// gigabytes, and the full integrity_check takes three times as long. Every run is
+// one transaction, so a torn run cannot be there; this catches a damaged file.
 func (r *ResultsDB) IntegrityOK() error {
 	var res string
-	if err := r.DB.QueryRow(`PRAGMA integrity_check`).Scan(&res); err != nil {
+	if err := r.DB.QueryRow(`PRAGMA quick_check(1)`).Scan(&res); err != nil {
 		return err
 	}
 	if res != "ok" {
-		return fmt.Errorf("integrity_check failed: %s", res)
+		return fmt.Errorf("quick_check failed: %s", res)
 	}
 	return nil
 }

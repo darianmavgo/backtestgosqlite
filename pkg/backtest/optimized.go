@@ -155,7 +155,7 @@ func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath strin
 			fmt.Printf("✅ [%s/%s] Completed: %d signals, %d trades, Return: %+.2f%%, Sharpe: %.2f ➔ %s\n",
 				s.ID(), tag, res.SignalCount, len(res.Trades), res.Report.TotalReturnPct*100, res.Report.SharpeRatio, res.DbPath)
 		}
-		return res
+		return res.Slim()
 	})
 	if err != nil {
 		return fmt.Errorf("Error loading historical bars for simulation: %v", err)

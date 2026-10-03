@@ -192,10 +192,11 @@ func runAll(concurrency int, force bool) error {
 			} else {
 				log.Printf("✅ [%s] Completed (CAGR: %.2f%%)", s.ID(), res.Report.CAGR*100)
 			}
+			slim := res.Slim()
 			mu.Lock()
-			freshResults[s.ID()] = res
+			freshResults[s.ID()] = slim
 			mu.Unlock()
-			return res
+			return slim
 		})
 		if err != nil {
 			return fmt.Errorf("Error loading bars: %v", err)
