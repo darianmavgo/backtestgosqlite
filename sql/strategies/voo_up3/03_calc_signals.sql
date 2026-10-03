@@ -19,5 +19,5 @@ SELECT
     t.close * __TAKE_PROFIT_MULT__ AS take_profit,
     t.close * __STOP_LOSS_MULT__ AS stop_loss
 FROM voo_up3_streaks_slice v
-JOIN backtest_start t ON v.date = substr(t.Date, 1, 10) AND t.symbol = 'TQQQ' AND length(t.Date) = 10
+JOIN backtest_start t ON t.Date = v.date AND t.symbol = 'TQQQ' AND length(t.Date) = 10
 WHERE v.up_streak >= __DECLINE_DAYS__ AND t.close > 0;

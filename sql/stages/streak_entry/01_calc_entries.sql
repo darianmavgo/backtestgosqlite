@@ -10,7 +10,7 @@ SELECT
     t.open, t.high, t.low, t.close, t.volume
 FROM streak_slice v
 JOIN backtest_start t
-  ON substr(t.Date, 1, 10) = v.date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
+  ON t.Date = v.date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
 WHERE v.__STREAK_COL__ >= __SIGNAL_DAYS__
   AND (__REGIME_PREDICATE__)
   AND t.close > 0;

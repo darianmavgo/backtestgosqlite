@@ -70,7 +70,7 @@ Default files:
 | Market bars | `data/market_history.db`, table `backtest_start` |
 | Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
-| Per-strategy results | `data/reports/<id>.db`, then `data/reports/<id>_2.db`, `data/reports/<id>_3.db`, … |
+| Backtest results | one folder per run, `data/reports/<run_id>/`, numbered 1, 2, 3, … Inside it one database per strategy family (`markov.db`, `tree.db`, `streak.db`, `hold.db`, `hold_bail.db`, `builtin.db` for Go-defined strategies, `stack.db` for stacks), the HTML report as `report.html`, and the held-out pass in `oos/` with the same file names |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
 | HTML tear sheet | `data/reports/backtest_report.html` |
 
@@ -129,6 +129,7 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -strategy streak-voo-buy-tecl,mara_tree
 ./bin/backtest -strategy all
 ./bin/backtest -strategy markov                 # every row of one family: streak, hold, hold_bail, tree or markov
+./bin/backtest -strategy markov -run-id 7       # continue run 7: strategies already done in it are skipped
 ./bin/backtest -strategy "$(./bin/stratlist -comma sql/lists/sample_100_per_table.sql)"
 ./bin/backtest -primary streak-voo-buy-tecl -secondary mara_tree,pdd_tree -capital 100000
 ./bin/backtest streak-voo-buy-tecl+mara_tree

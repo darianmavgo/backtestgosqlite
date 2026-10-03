@@ -509,21 +509,33 @@ var strategyTables = map[string]bool{
 	"tree_strategy": true, "markov_strategy": true,
 }
 
-// CanonicalID returns the stored id that matches id in table: exact first,
-// then ignoring case, "-", "_" and spaces (the same looseness strategy.Get
-// has always had). The loose match scans the table, so exact ids are cheap.
-func CanonicalID(db *sqlx.DB, table, id string) (string, bool) {
+// ExactID returns the stored id equal to id in table. It is an indexed lookup.
+func ExactID(db *sqlx.DB, table, id string) (string, bool) {
 	if !strategyTables[table] {
 		return "", false
 	}
 	var got string
-	if err := db.Get(&got, "SELECT id FROM "+table+" WHERE id = ?", id); err == nil {
+	if err := db.Get(&got, "SELECT id FROM "+table+" WHERE id = ?", id); err != nil {
+		return "", false
+	}
+	return got, true
+}
+
+// CanonicalID returns the stored id that matches id in table: exact first,
+// then ignoring case, "-", "_" and spaces (the same looseness strategy.Get
+// has always had). The loose match scans the table, so exact ids are cheap.
+func CanonicalID(db *sqlx.DB, table, id string) (string, bool) {
+	if got, ok := ExactID(db, table, id); ok {
 		return got, true
+	}
+	if !strategyTables[table] {
+		return "", false
 	}
 	norm := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(id))
 	if norm == "" {
 		return "", false
 	}
+	var got string
 	err := db.Get(&got, "SELECT id FROM "+table+
 		" WHERE replace(replace(replace(lower(id),'-',''),'_',''),' ','') = ? ORDER BY id LIMIT 1", norm)
 	return got, err == nil

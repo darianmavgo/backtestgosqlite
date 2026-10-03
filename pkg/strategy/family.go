@@ -51,8 +51,25 @@ func Families() []Family {
 	return append([]Family(nil), families...)
 }
 
+// exactLooker is implemented by a family that can answer an exact id cheaply.
+type exactLooker interface {
+	LookupExact(id string) (Strategy, bool)
+}
+
+// lookupFamilies tries every family for an exact id first (an indexed lookup in
+// each), and only then lets a family match loosely (ignoring case and "-" "_"
+// and spaces), which scans its table. Without the first pass an exact id would
+// pay a table scan in every family that does not hold it.
 func lookupFamilies(id string) (Strategy, bool) {
-	for _, f := range Families() {
+	fams := Families()
+	for _, f := range fams {
+		if e, ok := f.(exactLooker); ok {
+			if s, ok := e.LookupExact(id); ok {
+				return s, true
+			}
+		}
+	}
+	for _, f := range fams {
 		if s, ok := f.Lookup(id); ok {
 			return s, true
 		}
@@ -98,7 +115,12 @@ func (f *RowFamily) open() *sqlx.DB {
 	return db
 }
 
-func (f *RowFamily) Lookup(id string) (Strategy, bool) {
+func (f *RowFamily) Lookup(id string) (Strategy, bool) { return f.lookup(id, true) }
+
+// LookupExact is Lookup for an id that matches a stored id exactly.
+func (f *RowFamily) LookupExact(id string) (Strategy, bool) { return f.lookup(id, false) }
+
+func (f *RowFamily) lookup(id string, loose bool) (Strategy, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	db := f.open()
@@ -108,7 +130,13 @@ func (f *RowFamily) Lookup(id string) (Strategy, bool) {
 	if s, ok := f.cache[id]; ok {
 		return s, true
 	}
-	canon, ok := refdb.CanonicalID(db, f.Table, id)
+	var canon string
+	var ok bool
+	if loose {
+		canon, ok = refdb.CanonicalID(db, f.Table, id)
+	} else {
+		canon, ok = refdb.ExactID(db, f.Table, id)
+	}
 	if !ok {
 		return nil, false
 	}

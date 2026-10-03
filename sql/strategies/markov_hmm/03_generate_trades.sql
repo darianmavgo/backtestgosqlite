@@ -26,7 +26,7 @@ SELECT
         ELSE 0.05
     END AS allocation_pct_override
 FROM markov_model_predictions p
-JOIN market.backtest_start t ON p.Date = substr(t.Date, 1, 10) AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
+JOIN market.backtest_start t ON t.Date = p.Date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
 WHERE p.symbol = '__SYMBOL__' 
   AND CASE 
         WHEN p.current_state = 1 THEN 'bull'

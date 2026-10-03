@@ -23,7 +23,7 @@ SELECT
     t.close * __STOP_LOSS_MULT__ AS stop_loss
 FROM streak_strategy_slice v
 JOIN backtest_start t
-  ON v.date = substr(t.Date, 1, 10)
+  ON t.Date = v.date
  AND t.symbol = '__TRADE_SYMBOL__'
  AND length(t.Date) = 10
 WHERE v.__STREAK_COL__ >= __DECLINE_DAYS__

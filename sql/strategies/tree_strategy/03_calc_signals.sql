@@ -15,6 +15,6 @@ SELECT
     t.close * __STOP_LOSS_MULT__,
     0.0
 FROM tree_leaf l
-JOIN backtest_start t ON substr(t.Date, 1, 10) = l.date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
+JOIN backtest_start t ON t.Date = l.date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
 WHERE l.pred = '2' AND t.close > 0
 ORDER BY l.date;

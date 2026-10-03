@@ -15,7 +15,7 @@ SELECT
 FROM market.backtest_start b
 JOIN hmm.hmm_regime_history h 
     ON b.symbol = h.symbol 
-    AND substr(b.Date, 1, 10) = substr(h.date, 1, 10)
+    AND b.Date = substr(h.date, 1, 10)
 WHERE b.timeframe = '1d';
 
 -- Phase 2: Expanding Window Transition Matrix (Walk-Forward)

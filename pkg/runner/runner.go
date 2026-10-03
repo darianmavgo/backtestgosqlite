@@ -670,20 +670,23 @@ func DetectAndDownloadMissingData(
 		return fmt.Errorf("failed to ensure bar table %s: %w", tableName, err)
 	}
 
-	var totalBars int
-	_ = db.Get(&totalBars, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName))
-
-	// If no specific symbols required and table is completely empty, populate baseline universe
-	if len(requiredSet) == 0 && totalBars == 0 {
-		for _, sym := range []string{"SPY", "QQQ", "VOO", "TECL", "SOXL", "TQQQ"} {
-			requiredSet[sym] = struct{}{}
+	// If no specific symbols required and table is completely empty, populate baseline universe.
+	// The table is only counted then: a count scans every bar of the market database.
+	if len(requiredSet) == 0 {
+		var totalBars int
+		_ = db.Get(&totalBars, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName))
+		if totalBars == 0 {
+			for _, sym := range []string{"SPY", "QQQ", "VOO", "TECL", "SOXL", "TQQQ"} {
+				requiredSet[sym] = struct{}{}
+			}
 		}
 	}
 
+	// A symbol is missing when it has no bar at all: an indexed existence check.
 	var missingSymbols []string
 	for sym := range requiredSet {
-		cov, err := storage.GetSymbolDateCoverage(db, tableName, sym)
-		if err != nil || cov.BarCount == 0 {
+		var have int
+		if err := db.Get(&have, fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE symbol = ?)", tableName), sym); err != nil || have == 0 {
 			missingSymbols = append(missingSymbols, sym)
 		}
 	}
