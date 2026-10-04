@@ -4,3 +4,15 @@ https://jules.google.com/session/11226722539625398021
 Improving my understanding of existing commands in Claude.
 DONE
 Improving claude with tool swaps like sed to sd. Done in CLAUDE.md
+
+
+Clearing out false dichotomy of Go and SQL strategies.
+
+Making markdown server the default for .md
+Done.
+
+Cleaning out duplicate hold strategy family and hold bail strategy family. We can just set the bail signal to never.
+
+
+Make a util local that only reads D1.
+Creates the db r2_change.db which make a table that captures every change in D1.

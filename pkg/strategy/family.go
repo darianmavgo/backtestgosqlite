@@ -266,7 +266,7 @@ func (a FamilyAxes) Ints(param string) []int {
 }
 
 // FamilyMembers returns every member of the family named name (streak, hold,
-// hold_bail, tree or markov), built on demand, and whether such a family exists.
+// tree or markov), built on demand, and whether such a family exists.
 func FamilyMembers(name string) ([]Strategy, bool) {
 	for _, f := range Families() {
 		if f.Name() != name {
@@ -293,7 +293,7 @@ type Familied interface {
 	Family() string
 }
 
-// FamilyOf names the family a strategy belongs to: streak, hold, hold_bail, tree
+// FamilyOf names the family a strategy belongs to: streak, hold, tree
 // or markov for a row, and "builtin" for a strategy defined in Go.
 func FamilyOf(s Strategy) string {
 	if f, ok := s.(Familied); ok {

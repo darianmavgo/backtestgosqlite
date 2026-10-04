@@ -3,7 +3,6 @@
 package stratreg
 
 import (
-	"github.com/darianmavgo/backtestgosqlite/pkg/hold_bail_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -19,12 +18,11 @@ func RegisterAll(root, db string) {
 	RegisterFamilies()
 }
 
-// RegisterFamilies registers the row-backed families (streak, tree, hold_bail,
+// RegisterFamilies registers the row-backed families (streak, tree, hold,
 // hold, markov). It reads no rows: a member is built when strategy.Get asks.
 func RegisterFamilies() {
 	streak_strategy.Register()
 	tree_strategy.Register()
-	hold_bail_strategy.Register()
 	hold_strategy.Register()
 	markov_strategy.Register()
 }

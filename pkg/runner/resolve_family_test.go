@@ -18,8 +18,9 @@ func TestResolveStrategiesExpandsAFamilyName(t *testing.T) {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS hold_strategy (
 		id TEXT PRIMARY KEY, name TEXT NOT NULL, symbol TEXT NOT NULL,
 		total_return INTEGER NOT NULL DEFAULT 0, allocation_pct REAL NOT NULL,
-		cash_yield REAL NOT NULL, slippage_pct REAL NOT NULL);
-		INSERT INTO hold_strategy VALUES ('hold-zzres-a','A','VOO',0,1,0,0), ('hold-zzres-b','B','QQQ',0,1,0,0)`)
+		cash_yield REAL NOT NULL, slippage_pct REAL NOT NULL,
+		trailing_stop_pct REAL NOT NULL DEFAULT 0, sma_reentry_period INTEGER NOT NULL DEFAULT 0);
+		INSERT INTO hold_strategy (id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct) VALUES ('hold-zzres-a','A','VOO',0,1,0,0), ('hold-zzres-b','B','QQQ',0,1,0,0)`)
 	db.Close()
 	if err != nil {
 		t.Fatal(err)

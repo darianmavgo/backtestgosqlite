@@ -58,14 +58,8 @@ INSERT OR REPLACE INTO strategy_family_param (family, param, kind, role, gridsea
 ('hold', 'name', 'text', 'label', 0, NULL, 'a label'),
 ('hold', 'symbol', 'symbol', 'symbol', 0, NULL, 'the held symbol defines the strategy'),
 ('hold', 'total_return', 'int', 'entry', 0, NULL, 'a switch between price and dividend-adjusted prices, not searched'),
-('hold', 'allocation_pct', 'real', 'sizing', 0, NULL, 'buy and hold has no entry or exit parameter to search'),
+('hold', 'allocation_pct', 'real', 'sizing', 0, NULL, 'sizing, set by the -alloc flag for the whole run'),
 ('hold', 'cash_yield', 'real', 'cost', 0, NULL, 'an account setting, not a strategy parameter'),
 ('hold', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter'),
-('hold_bail', 'id', 'text', 'identity', 0, NULL, 'the row key'),
-('hold_bail', 'name', 'text', 'label', 0, NULL, 'a label'),
-('hold_bail', 'symbol', 'symbol', 'symbol', 0, NULL, 'the held symbol defines the strategy'),
-('hold_bail', 'trailing_stop_pct', 'real', 'exit', 0, NULL, 'gridsearch has no hold_bail signal stage, so it cannot evaluate a changed trailing stop yet'),
-('hold_bail', 'sma_reentry_period', 'int', 'entry', 0, NULL, 'gridsearch has no hold_bail signal stage, so it cannot evaluate a changed re-entry period yet'),
-('hold_bail', 'allocation_pct', 'real', 'sizing', 0, NULL, 'sizing, set by the -alloc flag for the whole run'),
-('hold_bail', 'cash_yield', 'real', 'cost', 0, NULL, 'an account setting, not a strategy parameter'),
-('hold_bail', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter');
+('hold', 'trailing_stop_pct', 'real', 'exit', 0, NULL, 'gridsearch has no hold signal stage for a changed trailing stop yet. 0 never bails'),
+('hold', 'sma_reentry_period', 'int', 'entry', 0, NULL, 'gridsearch has no hold signal stage for a changed re-entry period yet. 0 never re-enters');

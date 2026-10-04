@@ -8,7 +8,7 @@ Severity: **High** = a signal, feature or model input is computed in Go. **Mediu
 
 ## Strategies
 
-All 65,600 strategies get their signals from SQL: the five row families run one shared pipeline each (`sql/strategies/streak_strategy`, `tree_strategy`, `markov_model`, `markov_hmm`, `hold_bail_strategy`; `hold_strategy` uses `first_bar`) and the handful in `pkg/strategy` run `every_bar`, `first_bar`, `annual_winner`, `price_action_reclaim` and `voo_up3`. No `GenerateSignals` loops over bars to decide an entry. Exceptions:
+All 65,600 strategies get their signals from SQL: the five row families run one shared pipeline each (`sql/strategies/streak_strategy`, `tree_strategy`, `markov_model`, `markov_hmm`, `hold_strategy`) and the handful in `pkg/strategy` run `every_bar`, `annual_winner`, `price_action_reclaim` and `voo_up3`. No `GenerateSignals` loops over bars to decide an entry. Exceptions:
 
 | Sev | Strategy / code | Violation | Fix |
 |---|---|---|---|
@@ -61,7 +61,7 @@ Rule 1 says not to add to `pkg/study/*` and to move calculation into SQL when to
 
 ## Clean
 
-`check_overfit` (verdict logic is `sql/validation/check_overfit.sql`), `train markov`, `tree_strategy` and `markov_strategy` signal generation, `streak_strategy`, `hold_strategy`, `hold_bail_strategy` and the `gridsearch` streak entry build (all stage-per-file slice tables), `bar_sma`, `stratlist`, `refdb`.
+`check_overfit` (verdict logic is `sql/validation/check_overfit.sql`), `train markov`, `tree_strategy` and `markov_strategy` signal generation, `streak_strategy`, `hold_strategy` and the `gridsearch` streak entry build (all stage-per-file slice tables), `bar_sma`, `stratlist`, `refdb`.
 
 ## Not strategies, not flagged
 

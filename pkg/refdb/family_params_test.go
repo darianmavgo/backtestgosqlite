@@ -27,7 +27,7 @@ func TestEveryFamilyColumnIsDescribed(t *testing.T) {
 	defer fresh.Close()
 
 	for family, table := range map[string]string{
-		"streak": "streak_strategy", "hold": "hold_strategy", "hold_bail": "hold_bail_strategy",
+		"streak": "streak_strategy", "hold": "hold_strategy",
 		"tree": "tree_strategy", "markov": "markov_strategy",
 	} {
 		var cols []string

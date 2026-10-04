@@ -3,14 +3,17 @@ package hold_strategy
 import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
-const pipelineDir = "sql/strategies/first_bar"
+const pipelineDir = "sql/strategies/hold_strategy"
 
 type Strategy struct {
 	Row          refdb.HoldStrategy
@@ -28,6 +31,12 @@ func (s *Strategy) Name() string { return s.Row.Name }
 
 func (s *Strategy) Description() string {
 	desc := fmt.Sprintf("Buys and holds %s on the first available historical bar.", s.Row.Symbol)
+	if s.Row.TrailingStopPct > 0 {
+		desc = fmt.Sprintf("Buys and holds %s with %.0f%% trailing stop.", s.Row.Symbol, s.Row.TrailingStopPct*100)
+		if s.Row.SMAReentryPeriod > 0 {
+			desc += fmt.Sprintf(" Hops back in when Close > SMA%d.", s.Row.SMAReentryPeriod)
+		}
+	}
 	if s.Row.TotalReturn > 0 {
 		desc += " Simulated on dividend-adjusted prices (total return)."
 	}
@@ -39,7 +48,7 @@ func (s *Strategy) RequiredSymbols() []string { return []string{s.Row.Symbol} }
 func (s *Strategy) UsesTotalReturn() bool { return s.Row.TotalReturn > 0 }
 
 func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
-	return strategy.StrategyConfig{
+	cfg := strategy.StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
 		Description:        s.Description(),
@@ -54,7 +63,21 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		SlippagePct:        s.Row.SlippagePct,
 		CommissionPerShare: 0.0001,
 	}
+	if s.Row.TrailingStopPct > 0 {
+		// A bailing row keeps the setup of the old hold_bail family so its results do not move.
+		cfg.Benchmark = "SPY"
+		cfg.PositionSizing = "fixed_pct"
+		cfg.StopLossPct = 0.001
+		cfg.UseTrailingStop = true
+		cfg.TrailingStopPct = s.Row.TrailingStopPct
+		cfg.ReentryCooldownDays = 1 // a 1-day breath after an exit prevents a same-day re-whipsaw
+	}
+	return cfg
 }
+
+// PipelineDir is the directory of .sql files that calculates this strategy's
+// signals; `backtest stale` compares its newest file to a result's time.
+func (s *Strategy) PipelineDir() string { return filepath.Join(appenv.Folder(), pipelineDir) }
 
 func (s *Strategy) Validate() error { return strategy.ValidateConfig(s.DefaultConfig()) }
 
@@ -63,11 +86,17 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.calcDBPath = calcDBPath
 }
 
-// GenerateSignals runs the first_bar SQL pipeline: one entry on the first bar of
-// the run, held to the end.
+// GenerateSignals runs the hold_strategy pipeline: an entry on the first bar of
+// the run and, when Row.SMAReentryPeriod is set, on every bar closing above that
+// average. Row.TrailingStopPct, when set, is the simulator's exit.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	cfg := s.DefaultConfig()
-	cfg.SQLParams = map[string]string{"TOTAL_RETURN": totalReturnFlag(s.Row.TotalReturn > 0 && s.reinvest)}
+	period := max(s.Row.SMAReentryPeriod, 0)
+	cfg.SQLParams = map[string]string{
+		"TOTAL_RETURN":  totalReturnFlag(s.Row.TotalReturn > 0 && s.reinvest),
+		"SMA_PERIOD":    strconv.Itoa(period),
+		"SMA_PRECEDING": strconv.Itoa(max(period-1, 0)),
+	}
 	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), pipelineDir, cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }
 

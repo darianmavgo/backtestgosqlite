@@ -7,7 +7,7 @@ import (
 )
 
 func TestRunDispatchesFamilies(t *testing.T) {
-	for _, fam := range []string{"streak", "hold", "hold_bail"} {
+	for _, fam := range []string{"streak", "hold"} {
 		var out, errb bytes.Buffer
 		if code := Run([]string{fam}, &out, &errb); code != 0 || !strings.Contains(out.String(), "nothing to train") {
 			t.Fatalf("%s: code %d out %q err %q", fam, code, out.String(), errb.String())

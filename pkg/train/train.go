@@ -9,7 +9,6 @@
 //	markov     trained: per-symbol Markov regime model -> data/markov_models.db
 //	streak     nothing to train (rule parameters are row columns)
 //	hold       nothing to train
-//	hold_bail  nothing to train
 //	tree       trained: per-symbol 5 bucket CloudForest tree -> data/tree_models.db
 //
 // markov_hmm strategies read hmm_regime.db, which `study hmm_regime` writes.
@@ -39,11 +38,10 @@ func noModel(name, why string) family {
 }
 
 var families = map[string]family{
-	"markov":    {run: runMarkov, note: "trains the per-symbol Markov regime model on the market database"},
-	"streak":    noModel("streak", "a streak strategy has no fitted model; its parameters are the columns of its streak_strategy row."),
-	"hold":      noModel("hold", "a hold strategy has no fitted model; its parameters are the columns of its hold_strategy row."),
-	"hold_bail": noModel("hold_bail", "a hold_bail strategy has no fitted model; its parameters are the columns of its hold_bail_strategy row."),
-	"tree":      {run: runTree, note: "trains the per-symbol 5 bucket decision tree on the market database"},
+	"markov": {run: runMarkov, note: "trains the per-symbol Markov regime model on the market database"},
+	"streak": noModel("streak", "a streak strategy has no fitted model; its parameters are the columns of its streak_strategy row."),
+	"hold":   noModel("hold", "a hold strategy has no fitted model; its parameters are the columns of its hold_strategy row."),
+	"tree":   {run: runTree, note: "trains the per-symbol 5 bucket decision tree on the market database"},
 }
 
 // Main is the CLI entry point.

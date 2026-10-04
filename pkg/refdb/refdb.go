@@ -1,5 +1,5 @@
 // Package refdb is the reference database (refdata/strategies.db): strategy
-// configs live in SQLite tables (streak, tree, markov, hold, hold_bail).
+// configs live in SQLite tables (streak, tree, markov, hold).
 package refdb
 
 import (
@@ -439,39 +439,6 @@ func UpsertTreeStrategies(db *sqlx.DB, rows []TreeStrategy) error {
 	return tx.Commit()
 }
 
-// HoldBailStrategy is one row of hold_bail_strategy.
-type HoldBailStrategy struct {
-	ID               string  `db:"id"`
-	Name             string  `db:"name"`
-	Symbol           string  `db:"symbol"`
-	TrailingStopPct  float64 `db:"trailing_stop_pct"`
-	SMAReentryPeriod int     `db:"sma_reentry_period"`
-	AllocationPct    float64 `db:"allocation_pct"`
-	CashYield        float64 `db:"cash_yield"`
-	SlippagePct      float64 `db:"slippage_pct"`
-}
-
-// HoldBailStrategies returns every hold_bail_strategy row, ordered by id.
-func HoldBailStrategies(db *sqlx.DB) ([]HoldBailStrategy, error) { return holdBailStrategiesWhere(db, "") }
-
-// HoldBailStrategyByID returns the row whose id is exactly id.
-func HoldBailStrategyByID(db *sqlx.DB, id string) (HoldBailStrategy, bool, error) {
-	rows, err := holdBailStrategiesWhere(db, " WHERE id = ?", id)
-	if err != nil || len(rows) == 0 {
-		return HoldBailStrategy{}, false, err
-	}
-	return rows[0], true, nil
-}
-
-func holdBailStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HoldBailStrategy, error) {
-	var out []HoldBailStrategy
-	err := db.Select(&out, `
-		SELECT id, name, symbol, trailing_stop_pct, sma_reentry_period,
-		       allocation_pct, cash_yield, slippage_pct
-		FROM hold_bail_strategy` + where + ` ORDER BY id`, args...)
-	return out, err
-}
-
 // HoldStrategy is one row of hold_strategy.
 type HoldStrategy struct {
 	ID            string  `db:"id"`
@@ -481,6 +448,11 @@ type HoldStrategy struct {
 	AllocationPct float64 `db:"allocation_pct"`
 	CashYield     float64 `db:"cash_yield"`
 	SlippagePct   float64 `db:"slippage_pct"`
+	// TrailingStopPct is the trailing stop as a fraction of the high since entry;
+	// 0 never bails. SMAReentryPeriod is the length of the average whose close
+	// above it re-enters after a bail; 0 never re-enters.
+	TrailingStopPct  float64 `db:"trailing_stop_pct"`
+	SMAReentryPeriod int     `db:"sma_reentry_period"`
 }
 
 // HoldStrategies returns every hold_strategy row, ordered by id.
@@ -498,14 +470,15 @@ func HoldStrategyByID(db *sqlx.DB, id string) (HoldStrategy, bool, error) {
 func holdStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HoldStrategy, error) {
 	var out []HoldStrategy
 	err := db.Select(&out, `
-		SELECT id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct
+		SELECT id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct,
+		       trailing_stop_pct, sma_reentry_period
 		FROM hold_strategy` + where + ` ORDER BY id`, args...)
 	return out, err
 }
 
 // strategyTables are the tables CanonicalID and IDs accept.
 var strategyTables = map[string]bool{
-	"streak_strategy": true, "hold_strategy": true, "hold_bail_strategy": true,
+	"streak_strategy": true, "hold_strategy": true,
 	"tree_strategy": true, "markov_strategy": true,
 }
 

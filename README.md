@@ -35,7 +35,7 @@ Every strategy is calculated in SQL and run by Go. `backtest -strategylist` prin
 | Source | Count | Defined in |
 |---|---|---|
 | Own pipeline | a handful (`voo-up3`, `price-action-reclaim`, `biggest-winner*`, `tsll-daily-one-share`, covered calls) | a small config in `pkg/strategy/` plus `sql/strategies/<id>/` |
-| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 13,121, `hold_bail_strategy` 13,121, `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/hold_bail_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, each running one shared `sql/strategies/<family>/` |
+| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 once the hold_bail rows are merged in (see `sql/migrations/`), `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, each running one shared `sql/strategies/<family>/` |
 
 Most streak rows are a generic "drop 3 days, buy the rebound" rule, one per symbol. A few were promoted from sweeps (`source_strategy` `voo-up3`, `gld-decline`, `universe-screen`, `manual`). `streak-voo-buy-tecl` is now `streak-voo-buy-tecl`. `park-<symbol>` resolves for any ticker without registration (see below). The older `streak-voo-buy-tecl`, `gld-decline` and `googl-hop` strategies are no longer registered; their SQL folders remain in `sql/strategies/`.
 
@@ -61,7 +61,7 @@ Every command in this repo, in the order you use them to take one idea from raw 
 | 2 | Find symbols (optional) | `./bin/universe -stocks-only` | Rebuilds the stock and ETF universe to pick related tickers. Needs `POLYGON_API_KEY`. | writes `refdata/universe.db` |
 | 3 | See what exists | `./bin/strategy` then `./bin/backtest -strategylist` | Confirms the GOOGL ids above are registered and shows row counts per family. | reads `refdata/strategies.db` |
 | 4 | Explore the idea | `./bin/study -list`, `./bin/study -study hmm_regime -symbol GOOGL`, `./bin/markov_test` | Regime study for GOOGL; `markov_test` prints the bear / sideways / bull matrix and tomorrow's odds. Use `-study googl_market_context` only if a caller supplies a cluster DB. | reads market DB; writes `data/reports/<study>.db` |
-| 5 | Train models | `./bin/train markov GOOGL` and `./bin/train tree GOOGL` | Fits the Markov regime table and the depth-3 tree that `markov_model_googl` and `googl_tree` read. `streak`, `hold` and `hold_bail` have nothing to train. Use `-through <date>` on `tree` to keep later months out of sample. | writes `data/markov_models.db`, `data/tree_models.db` |
+| 5 | Train models | `./bin/train markov GOOGL` and `./bin/train tree GOOGL` | Fits the Markov regime table and the depth-3 tree that `markov_model_googl` and `googl_tree` read. `streak` and `hold` have nothing to train. Use `-through <date>` on `tree` to keep later months out of sample. | writes `data/markov_models.db`, `data/tree_models.db` |
 | 6 | Pick a list | `./bin/stratlist sql/lists/<file>.sql` | Turns a SELECT on `strategies.db` into ids, for example every strategy whose signal symbol is GOOGL. Feed it to `backtest -strategy "$(...)"`. | reads `refdata/strategies.db` |
 | 7 | First backtest | `./bin/backtest -strategy streak-googl-down3,googl_tree,markov_model_googl` | Runs each idea alone: an IN-SAMPLE pass, then one OUT-OF-SAMPLE pass on the last 12 months. Tune on the in-sample numbers only. | writes `data/reports/<run_id>/` (`streak.db`, `tree.db`, `markov.db`, `report.html`, `oos/`) |
 | 8 | Look at the grid | `./bin/gridsearch params streak-googl-down3` | Prints the hold, take-profit, stop and regime grid with no simulation. | none |
@@ -103,9 +103,9 @@ Default files:
 | Role | Path |
 |---|---|
 | Market bars | `data/market_history.db`, table `backtest_start` |
-| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`) |
+| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
-| Backtest results | one folder per run, `data/reports/<run_id>/`, numbered 1, 2, 3, … Inside it one database per strategy family (`markov.db`, `tree.db`, `streak.db`, `hold.db`, `hold_bail.db`, `builtin.db` for Go-defined strategies, `stack.db` for stacks), the HTML report as `report.html`, and the held-out pass in `oos/` with the same file names |
+| Backtest results | one folder per run, `data/reports/<run_id>/`, numbered 1, 2, 3, … Inside it one database per strategy family (`markov.db`, `tree.db`, `streak.db`, `hold.db`, `builtin.db` for Go-defined strategies, `stack.db` for stacks), the HTML report as `report.html`, and the held-out pass in `oos/` with the same file names |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
 | HTML tear sheet | `data/reports/backtest_report.html` |
 
@@ -163,7 +163,7 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -strategy streak-voo-buy-tecl -capital 100000
 ./bin/backtest -strategy streak-voo-buy-tecl,mara_tree
 ./bin/backtest -strategy all
-./bin/backtest -strategy markov                 # every row of one family: streak, hold, hold_bail, tree or markov
+./bin/backtest -strategy markov                 # every row of one family: streak, hold, tree or markov
 ./bin/backtest -strategy markov -run-id 7       # continue run 7: strategies already done in it are skipped
 ./bin/backtest -strategy "$(./bin/stratlist -comma sql/lists/sample_100_per_table.sql)"
 ./bin/backtest -primary streak-voo-buy-tecl -secondary mara_tree,pdd_tree -capital 100000
@@ -256,7 +256,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. `-end <date>` stops the sweep at that date, so the held-out months do not tune the parameters. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold and hold_bail: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. `-end <date>` stops the sweep at that date, so the held-out months do not tune the parameters. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -429,7 +429,7 @@ Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-e
 |---|---|
 | `markov` | trains the per-symbol Markov regime model into `data/markov_models.db` (`markov_prediction`, `markov_model_meta`) |
 | `tree` | trains a depth-3 CloudForest decision tree per signal symbol into `data/tree_models.db` (`tree_node`, `tree_model_meta`) |
-| `streak`, `hold`, `hold_bail` | nothing to train: these strategies have no fitted model, their parameters are the row's columns in `refdata/strategies.db` |
+| `streak`, `hold` | nothing to train: these strategies have no fitted model, their parameters are the row's columns in `refdata/strategies.db` |
 | `all` | every family above, in name order |
 
 `markov_hmm_*` strategies read `data/reports/hmm_regime.db`, which `study hmm_regime` writes; that is a study, not a `train` family.

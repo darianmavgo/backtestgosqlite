@@ -68,14 +68,14 @@ func (s *DividendMarginBuyHoldStrategy) DefaultConfig() StrategyConfig {
 
 func (s *DividendMarginBuyHoldStrategy) Validate() error { return ValidateConfig(s.DefaultConfig()) }
 
-// GenerateSignals runs the first_bar SQL pipeline: one entry on the first bar.
+// GenerateSignals runs the hold_strategy pipeline with no re-entry average: one entry on the first bar.
 func (s *DividendMarginBuyHoldStrategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	cfg := s.DefaultConfig()
-	cfg.SQLParams = map[string]string{"TOTAL_RETURN": "0"}
+	cfg.SQLParams = map[string]string{"TOTAL_RETURN": "0", "SMA_PERIOD": "0", "SMA_PRECEDING": "0"}
 	if s.reinvest {
 		cfg.SQLParams["TOTAL_RETURN"] = "1"
 	}
-	return RunPipeline(s.ID(), s.Name(), s.Description(), "sql/strategies/first_bar", cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
+	return RunPipeline(s.ID(), s.Name(), s.Description(), "sql/strategies/hold_strategy", cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }
 
 // SetReinvestDividends is called by the runner before GenerateSignals.

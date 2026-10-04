@@ -24,7 +24,7 @@ pkg/study              research studies; market_context is a subpackage
 sql/strategies/<id>/   ordered .sql pipeline for a strategy
 sql/studies            SQL text some studies execute
 sql/validation         walk-forward summary SQL
-refdata/strategies.db    streak, hold, hold_bail, tree and markov strategy tables; symbol tables
+refdata/strategies.db    streak, hold, tree and markov strategy tables; symbol tables
 data/market_history.db daily and intraday bars, option chains
 data/reports/          one SQLite file per run, plus HTML
 ```
@@ -109,7 +109,7 @@ Optional interfaces, checked by the runner:
 | `MinHistoryProvider` | trailing bars a live scan needs; default `DefaultMinHistoryBars` (250) |
 | `DeclineDaysConfigurable` | `SetDeclineDays` so `backtest optimized` can apply a swept streak length |
 
-`Register` keys on the lowercased id. `Get` also matches with `-`, `_`, and spaces removed. Constructors call `Register` from `init`. Row-backed tables (streak, hold, hold_bail, tree, markov) are not registered per row: each is a `strategy.Family` (`pkg/strategy/family.go`) and `Get` falls through to it, reading and building the one row asked for. `List()` returns only the strategies with their own pipeline; `ListAll()` also builds every row.
+`Register` keys on the lowercased id. `Get` also matches with `-`, `_`, and spaces removed. Constructors call `Register` from `init`. Row-backed tables (streak, hold, tree, markov) are not registered per row: each is a `strategy.Family` (`pkg/strategy/family.go`) and `Get` falls through to it, reading and building the one row asked for. `List()` returns only the strategies with their own pipeline; `ListAll()` also builds every row.
 
 `StrategyConfig` holds sizing (`fixed_pct`, `fixed_dollar`, `fixed_shares`, `kelly`), hold, slippage, commission, cash yield, and the two profit/stop fields. `TargetPct` / `TakeProfitPct`: the portfolio uses `TargetPct` when it is greater than 1, otherwise `TakeProfitPct`. `StopLossPct` is a price multiplier (`0.93` is −7%), not an offset. `NextDayLimitEntry` means the signal is known after the close and the order is a next-session limit at the signal price. It fills on that next bar only if the low is at or below the limit (at the limit, or at the open if the open is already through it). The booked price is the fill times `(1+SlippagePct)`. An unmet limit opens nothing. Signals saved in the result DB are the pre-simulator signals, so a dropped next-day order is still in `signals`.
 
@@ -138,9 +138,8 @@ Every strategy calculates its signals in SQL. `strategy.RunPipeline` runs a pipe
 |---|---|
 | `streak_strategy`, `tree_strategy`, `markov_model` | the streak, tree and markov rows (`tree_strategy` and `markov_model` read the saved model, see `train`) |
 | `markov_hmm` | `markov_hmm_*`, reading `hmm_regime.db` from `study hmm_regime` |
-| `first_bar` | buy on the first bar and hold: the `hold` family and the `*-margin-buy-hold` ids. `__TOTAL_RETURN__` prices the signal on dividend-adjusted prices when the runner simulates on them (`strategy.DividendModeSetter`) |
+| `hold_strategy` | the `hold` family and the `*-margin-buy-hold` ids: first bar, plus (when `sma_reentry_period` > 0) every bar whose close is above that SMA. `trailing_stop_pct` > 0 is the simulator's bail; 0 for both is plain buy and hold. `__TOTAL_RETURN__` prices the signal on dividend-adjusted prices when the runner simulates on them (`strategy.DividendModeSetter`) |
 | `every_bar` | `tsll-daily-one-share`: one entry per bar with its own take-profit, stop and hold |
-| `hold_bail_strategy` | the `hold_bail` family: first bar, then every bar whose close is above its SMA of `sma_reentry_period` |
 | `price_action_reclaim` | `price-action-reclaim`, over every symbol with 250 bars in the window |
 | `annual_winner` | `biggest-winner` (long), `-short` and `-inverse`: the prior calendar year's best performer, traded for the new year. A symbol whose first open of the year is 0 has no return and is not ranked |
 | `voo_up3` | `voo-up3` |

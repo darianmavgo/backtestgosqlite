@@ -97,6 +97,10 @@ func pipelineDirFor(s strategy.Strategy) (string, bool) {
 	if sp, ok := s.(*strategy.SQLPipelineStrategy); ok {
 		return sp.PipelineDir(), true
 	}
+	// A row-backed family that names its pipeline directory (the hold family).
+	if pd, ok := s.(interface{ PipelineDir() string }); ok {
+		return pd.PipelineDir(), true
+	}
 	siblingID := strings.ReplaceAll(s.ID(), "-", "_") + "-sql"
 	if sibling, ok := strategy.Get(siblingID); ok {
 		if sp, ok := sibling.(*strategy.SQLPipelineStrategy); ok {
