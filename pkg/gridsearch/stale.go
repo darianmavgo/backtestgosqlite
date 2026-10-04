@@ -67,9 +67,10 @@ func runStaleCommand(gridDBPath, marketDBPath, strategyArg string) error {
 		entries = append(entries, runner.AssessOne(r.StrategyID, computedAt, r.DataMaxDate, marketDB))
 	}
 
+	keep := idSet(strategyArg)
 	var neverSwept []string
 	for _, s := range strategy.ListAll() {
-		if !swept[s.ID()] {
+		if !swept[s.ID()] && (keep == nil || keep[strings.ToLower(s.ID())]) {
 			neverSwept = append(neverSwept, s.ID())
 		}
 	}

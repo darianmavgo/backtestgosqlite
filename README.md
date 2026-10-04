@@ -12,7 +12,7 @@ make list           # ./bin/backtest -strategylist
 
 ## Pipeline in order
 
-Each command is one stage and answers one question. Run them left to right.
+Each command is one stage and answers one question. Run them left to right, or run them all for a set of stocks with [`pipeline`](#pipeline).
 
 | Stage | Question | Command |
 |---|---|---|
@@ -68,7 +68,7 @@ Every `backtest` and `backtest stack` run now does step 5 itself (see the holdou
 
 ## Create and polish a strategy: GOOGL walkthrough
 
-Every command in this repo, in the order you use them to take one idea from raw bars to a live signal. The example is GOOGL, using the rows that already exist in `refdata/strategies.db`: `streak-googl-down3`, `streak-googl-down3-googl`, `googl_tree`, `markov_model_googl` and `markov_hmm_googl`. Swap in another ticker the same way. Flags go before positional ids. Steps 2, 3, 17 and 18 are optional; the rest are the path.
+Every command in this repo, in the order you use them to take one idea from raw bars to a live signal. `pipeline` runs all of these for you in one scoped run, and `scripts/googl_pipeline.sh` is the GOOGL example. The example is GOOGL, using the rows that already exist in `refdata/strategies.db`: `streak-googl-down3`, `streak-googl-down3-googl`, `googl_tree`, `markov_model_googl` and `markov_hmm_googl`. Swap in another ticker the same way. Flags go before positional ids. Steps 2, 3, 17 and 18 are optional; the rest are the path.
 
 | # | Stage | Command | What it does for GOOGL | Reads / writes |
 |---|---|---|---|---|
@@ -409,6 +409,40 @@ In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live 
 `path` prints how to open the ledger. `sync-deployed` snapshots the allowlist into `deployments`. `-sync-deployed` on an eval run does the same snapshot after the eval.
 
 ---
+
+## pipeline
+
+Runs every stage for a set of stocks as one controlled run: download the bars, train, backtest, sweep and tune, validate, score, stack, and compare. It calls the same code as the commands above, in order, and keeps the whole run in one folder.
+
+```bash
+./bin/pipeline -symbol GOOGL                      # every stage for GOOGL, in a new run
+./bin/pipeline -symbol GOOGL,AAPL -skip-network   # two stocks, no downloads
+./bin/pipeline -symbol GOOGL -strategy streak-googl-down3,googl_tree
+./bin/pipeline -run-id 17                         # resume run 17 and skip the steps it finished
+./bin/pipeline -steps backtest,validate -run-id 17 -redo
+./bin/pipeline -list-steps
+```
+
+**Scope.** The run may touch only the symbols and strategies it was started with. Without `-strategy` that is every strategy row tied to the symbols (as signal or trade symbol, from `streak_strategy`, `tree_strategy`, `markov_strategy` and `hold_strategy`), and rows the `gridsearch_promote` step writes for those symbols join it. With `-strategy` the list is fixed. The scope is stored in `pipeline.db` and a resumed run reads it back: naming different symbols for an existing run is refused. Every step gets that list, so nothing else is backtested, swept, validated or ranked.
+
+**Run id.** A new run takes the next folder number from `storage.NewRun`, which makes the folder atomically, so two runs never share an id. Inside the folder a `pipeline.lock` file holds the process id, and a second pipeline on the same run is refused while the first is alive (a lock left by a dead process is taken over).
+
+**State.** `pipeline.db` in the run folder has `pipeline_run`, `pipeline_scope` and `pipeline_step` (name, status, times, error). A failed step is recorded and the run goes on. The exit code is 1 if any step failed, and `pipeline -run-id N` retries the failed ones.
+
+**Steps**, in order, each named like its command: `market_history`, `market_history_options` (needs `POLYGON_API_KEY`), `study` (`hmm_regime`), `train` (markov and tree), `backtest`, `gridsearch_params`, `gridsearch`, `gridsearch_promote`, `gridsearch_apply`, `validate`, `strateval`, `stack`, `stack_eval`, `covered_call` (needs option bars), `park_sweep`, `scoreboard`, `stale`. `-steps` and `-skip` choose some of them.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-symbol` | GOOGL (a resumed run keeps its own) | stocks the run may touch |
+| `-strategy` | every strategy tied to the symbols | fixed strategy list |
+| `-park`, `-bench` | SGOV, VOO | park symbol of the stack steps, benchmark downloaded with the symbols |
+| `-primary` | `streak-<symbol>-down3-<symbol>` | primary of the stack steps |
+| `-years` | 6 | years of bars to download |
+| `-run-id` | 0 (new run) | resume this run |
+| `-steps`, `-skip`, `-redo` | all steps | which steps run, and rerun finished ones |
+| `-skip-network` | off | leave out the downloading steps |
+
+`scripts/googl_pipeline.sh` is a one-line wrapper for `pipeline -symbol GOOGL`. Not yet in the pipeline: `markov_test` (its logic is still in `cmd/`) and `universe`, `transaction_calc` and `livescan`, which are not part of building a strategy. `hmm_regime.db` is still written to `data/reports/` and shared between runs, because the `markov_hmm` strategies read it from there. `park_sweep` uses its own configured park symbol (GOOGL).
 
 ## validate
 

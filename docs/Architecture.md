@@ -17,6 +17,7 @@ pkg/models             Bar, Signal, Trade, Position, PerformanceReport
 pkg/strategy           Strategy interface, strategy configs, pipeline runner
 pkg/streak_strategy    one Strategy per streak_strategy row
 pkg/simulator          PortfolioSimulator and SharedAccountSimulator
+pkg/pipeline           one scoped run of every stage (scope and step state in pipeline.db)
 pkg/runner             load bars, run, stack, scan, staleness
 pkg/analytics          metrics and the HTML tear sheet
 pkg/options            covered-call simulation
