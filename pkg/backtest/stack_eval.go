@@ -30,7 +30,7 @@ func runStackEvalCommand(
 	}
 	primary, ok := strategy.Get(primaryID)
 	if !ok {
-		return stackEvalOutcome{}, fmt.Errorf("Primary strategy %q not found. Run ./bin/backtest -list", primaryID)
+		return stackEvalOutcome{}, fmt.Errorf("Primary strategy %q not found. Run ./bin/backtest -strategylist", primaryID)
 	}
 
 	// park-<symbol> in the candidate list is the residual book for every run.

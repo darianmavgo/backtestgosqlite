@@ -1,8 +1,10 @@
 package runner
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -125,25 +127,32 @@ func PrintPerformanceTearSheet(strategyName string, report models.PerformanceRep
 	table.Render()
 }
 
-func PrintStrategyList() {
-	fmt.Printf("\n========================================================================================================================\n")
-	fmt.Printf("📋 REGISTERED TRADING STRATEGIES (GO & SQL PIPELINES)\n")
-	fmt.Printf("========================================================================================================================\n")
+// PrintStrategyList prints how many strategies each family holds, then asks on
+// in whether to dump every strategy to out. Anything but y/yes (including EOF
+// on a non-interactive stdin) skips the dump.
+func PrintStrategyList(out io.Writer, in io.Reader) {
+	code := strategy.List()
+	fmt.Fprintf(out, "\n%d strategies defined by their own sql/strategies pipeline\n", len(code))
+	strategy.PrintFamilyCounts(out)
+	total := len(code)
+	for _, fc := range strategy.FamilyCounts() {
+		total += fc.Count
+	}
+	fmt.Fprintf(out, "\nDump all %d strategies to screen? [y/N] ", total)
+	line, _ := bufio.NewReader(in).ReadString('\n')
+	if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+		fmt.Fprintf(out, "\nRun any strategy with: ./bin/backtest -strategy <ID>\n\n")
+		return
+	}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Type", "Strategy Name", "Default Target", "Default Stop", "Hold", "Description"})
+	table := tablewriter.NewWriter(out)
+	table.SetHeader([]string{"ID", "Strategy Name", "Default Target", "Default Stop", "Hold", "Description"})
 	table.SetBorder(true)
 	table.SetAutoWrapText(false)
-
-	for _, s := range strategy.List() {
+	for _, s := range strategy.ListAll() {
 		cfg := s.DefaultConfig()
-		sType := "Go"
-		if strings.HasSuffix(s.ID(), "-sql") {
-			sType = "SQL Pipeline"
-		}
 		table.Append([]string{
 			s.ID(),
-			sType,
 			s.Name(),
 			FormatTargetDisplay(cfg),
 			FormatStopDisplay(cfg),
@@ -152,9 +161,7 @@ func PrintStrategyList() {
 		})
 	}
 	table.Render()
-	fmt.Printf("\nRow-backed families (not listed one by one):\n")
-	strategy.PrintFamilyCounts(os.Stdout)
-	fmt.Printf("\nRun any strategy with: ./bin/backtest -strategy <ID>\n\n")
+	fmt.Fprintf(out, "\nRun any strategy with: ./bin/backtest -strategy <ID>\n\n")
 }
 
 // FormatTargetDisplay and FormatStopDisplay render a strategy's baseline
@@ -163,7 +170,7 @@ func PrintStrategyList() {
 // conventions as pkg/simulator/portfolio.go. A plain (cfg.TargetPct-1)*100 or
 // (1-cfg.StopLossPct)*100 renders garbage ("+99800.0%", "-100.0%") for any
 // strategy that sets only TakeProfitPct or has StopLossPct == 0
-// (intentionally "no stop") — which covers most SQL-pipeline strategies.
+// (intentionally "no stop") — which covers most strategies.
 func FormatTargetDisplay(cfg strategy.StrategyConfig) string {
 	if cfg.TargetPct > 1.0 {
 		return fmt.Sprintf("+%.1f%%", (cfg.TargetPct-1)*100)

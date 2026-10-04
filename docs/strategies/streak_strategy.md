@@ -58,7 +58,7 @@ Backtest also downloads missing symbols when `-auto-download` is left on (the de
 
 ## 2. Create the row
 
-Use either a hand insert or a sweep. Both land in the same table. A bad row is logged and skipped. The command still starts. `./bin/backtest -list` shows only the rows that passed.
+Use either a hand insert or a sweep. Both land in the same table. A bad row is logged and skipped. The command still starts. `./bin/backtest -strategylist` shows only the rows that passed.
 
 A row is skipped when the id is empty or normalizes to `streakstrategy`, a symbol is not one to ten characters matching `A–Z`, digits, `.`, or `-`, direction is anything other than `drop` or `rally`, `signal_days` or `hold_days` is below 1, either offset is negative, the stop offset is 1 or more, the regime is not one of the three labels above, allocation is outside `(0, 1]`, cash yield or slippage is negative, or `next_day_limit` is not 0 or 1.
 
@@ -70,7 +70,7 @@ Open the app reference database, not the copy in the git repo.
 sqlite3 /Users/darianhickman/Documents/backtestgosqlite/refdata/strategies.db
 ```
 
-The table appears the first time backtest, gridsearch, or scoreboard opens that file. If the `INSERT` says there is no such table, run `./bin/backtest -list` once and try again.
+The table appears the first time backtest, gridsearch, or scoreboard opens that file. If the `INSERT` says there is no such table, run `./bin/backtest -strategylist` once and try again.
 
 ```sql
 INSERT INTO streak_strategy (
@@ -130,7 +130,7 @@ The printout lists each written id, the skipped duplicates, and a note when an o
 ## 3. See that it registered
 
 ```bash
-./bin/backtest -list
+./bin/backtest -strategylist
 ./bin/gridsearch -list
 ```
 
@@ -153,7 +153,7 @@ sqlite3 /Users/darianhickman/Documents/backtestgosqlite/refdata/strategies.db \
 ./bin/backtest -strategy streak-voo-up5-tqqq
 ```
 
-Several ids are comma-separated. `all` includes every streak row along with the Go strategies.
+Several ids are comma-separated. `all` includes every streak row along with the strategies that have their own pipeline.
 
 ```bash
 ./bin/backtest -strategy streak-voo-up5-tqqq,streak-gld-down4-gld
@@ -221,7 +221,7 @@ make build
 ./bin/market_history -symbols VOO,TQQQ -years 6
 ./bin/gridsearch -strategy voo-up3 -symbol TQQQ -no-html
 ./bin/gridsearch promote -strategy voo-up3 -min-win-rate 0.6 -min-trades 30 -top 5
-./bin/backtest -list
+./bin/backtest -strategylist
 ./bin/backtest -strategy streak-voo-up5-tqqq
 ./bin/scoreboard status
 ./bin/scoreboard compile

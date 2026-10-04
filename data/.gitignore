@@ -41,3 +41,6 @@ reports/.DS_Store
 /reports/strateval_runs/optimize_scratch/streak.db
 /reports/strateval_runs/optimize_scratch/tree.db
 # END ignore-over-50MB
+
+# oversized reports with embedded DBs exceed GitHub 100MB limit
+reports/data/reports/*/backtest_report.html

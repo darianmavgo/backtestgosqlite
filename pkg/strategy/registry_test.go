@@ -26,12 +26,12 @@ func TestAllStrategiesHaveAllocationPct(t *testing.T) {
 }
 
 // Strategies come only from Go files in pkg/strategy itself: a SQL pipeline
-// folder registers only when a Go strategy in this package owns it.
+// folder registers only when a strategy in this package owns it.
 func TestSQLPipelinesRegisterOnlyWithGoStrategy(t *testing.T) {
 	AutoRegisterSQLStrategies("../..", "../../data/market_history.db")
 
 	// voo_up3 still has voo_up3.go
 	if _, ok := Get("voo_up3-sql"); !ok {
-		t.Errorf("voo_up3-sql should be registered (owned by a Go strategy)")
+		t.Errorf("voo_up3-sql should be registered (owned by a strategy)")
 	}
 }

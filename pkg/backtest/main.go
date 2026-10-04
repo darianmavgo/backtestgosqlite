@@ -38,7 +38,7 @@ type Config struct {
 	OutDir              string   // -out-dir (the reports root: each run gets a numbered folder in it)
 	RunID               int      // -run-id
 	CPUProfile          string   // -cpuprofile
-	List                bool     // -list
+	List                bool     // -strategylist
 	Symbol              string   // -symbol
 	Capital             float64  // -capital
 	MaxPositions        int      // -max-positions
@@ -175,7 +175,7 @@ func Main() {
 	flag.StringVar(&conf.OutDir, "out-dir", d.OutDir, "Reports root. Each backtest run writes to a new numbered folder here, <out-dir>/<run_id>/<family>.db, and held-out results to <run_id>/oos/")
 	flag.StringVar(&conf.CPUProfile, "cpuprofile", d.CPUProfile, "Write a CPU profile of the run to this file (read it with go tool pprof)")
 	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Use this existing run folder instead of starting a new one: finish an interrupted run (strategies already done in it are skipped unless -force) or read it (stale)")
-	flag.BoolVar(&conf.List, "list", d.List, "List all registered Go and SQL strategies")
+	flag.BoolVar(&conf.List, "strategylist", d.List, "Print strategy counts per family, then ask whether to dump every strategy")
 	flag.StringVar(&conf.Symbol, "symbol", d.Symbol, "Optional: Filter backtest to a specific symbol (e.g. DFEN, SOXL)")
 	flag.Float64Var(&conf.Capital, "capital", d.Capital, "Starting portfolio capital for simulation")
 	flag.IntVar(&conf.MaxPositions, "max-positions", d.MaxPositions, "Optional override: Maximum concurrent open positions allowed")
@@ -238,7 +238,7 @@ func runOnce(conf Config) error {
 	// Ensure HTML reports land in reports/ directory
 	conf.Html = appenv.ReportFile(conf.Html)
 
-	// Auto-discover any SQL pipeline strategies in sql/strategies/
+	// Auto-discover the strategy pipelines in sql/strategies/
 	stratreg.RegisterAll(appenv.Folder(), conf.Db)
 
 	if conf.Mode == "stale" {
@@ -288,7 +288,7 @@ func runOnce(conf Config) error {
 	}
 
 	if conf.List {
-		runner.PrintStrategyList()
+		runner.PrintStrategyList(os.Stdout, os.Stdin)
 		return nil
 	}
 
@@ -552,7 +552,7 @@ func runOnce(conf Config) error {
 
 	selectedStrategies, err := runner.ResolveStrategies(stratArg, "bb-capitulation")
 	if err != nil {
-		return fmt.Errorf("%v. Run with -list to view available strategies.", err)
+		return fmt.Errorf("%v. Run with -strategylist to view available strategies.", err)
 	}
 
 	// For bulk runs (-strategy all, or a multi-symbol comma list), avoid duplicate

@@ -6,7 +6,7 @@ The platform distinguishes between **Strategies** (`pkg/strategy/`, standard bac
 
 ## 1. Buy Biggest Winner (Annual Hold)
 **Concept:** Buy and hold for a year the biggest winner of the previous year (beats SP500 most years).
-**Type:** `pkg/strategy` (Go strategy)
+**Type:** `pkg/strategy`
 **Implementation Plan:**
 - Create `pkg/strategy/biggest_winner.go`.
 - The strategy will scan all symbols in the provided universe at the end of every calendar year.

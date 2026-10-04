@@ -497,7 +497,7 @@ var (
 	autoRegistered   = map[string]bool{}
 )
 
-// AutoRegisterSQLStrategies registers the SQL pipeline behind each Go strategy
+// AutoRegisterSQLStrategies registers the pipeline behind each strategy
 // defined in pkg/strategy. A sql/strategies folder with no matching Go
 // strategy in this package (abandoned)
 // is NOT registered: strategies come only from pkg/strategy, never
@@ -529,7 +529,7 @@ func AutoRegisterSQLStrategies(rootDir string, defaultDBPath ...string) {
 				continue
 			}
 			id := fmt.Sprintf("%s-sql", dirName)
-			name := fmt.Sprintf("%s (SQL Pipeline)", strings.Title(strings.ReplaceAll(dirName, "_", " ")))
+			name := fmt.Sprintf("%s (sql/strategies)", strings.Title(strings.ReplaceAll(dirName, "_", " ")))
 			desc := fmt.Sprintf("SQL pipeline executed from sql/strategies/%s", dirName)
 			pipelinePath := filepath.Join(stratDir, dirName)
 

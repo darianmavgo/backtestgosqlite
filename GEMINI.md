@@ -13,7 +13,7 @@ make build            # every cmd/* into bin/
 make test             # go test ./pkg/... ./cmd/...
 go build ./... && go vet ./... && go test ./...   # required before saying it works
 go test ./pkg/strategy -run TestName              # one test
-./bin/backtest -list                              # registered strategy ids
+./bin/backtest -strategylist                              # registered strategy ids
 ```
 
 - Flags go before positional args (Go `flag` stops at the first bare arg). A subcommand is arg 1: `backtest stack-eval -primary ...`.
@@ -27,8 +27,8 @@ go test ./pkg/strategy -run TestName              # one test
 
 - `cmd/<name>/main.go` is a thin main that calls `pkg/<name>.Main` / `Run`. Flags, defaults and logic live in `pkg/<name>` so tests call `Run` without `os.Args`. Follow `pkg/backtest/main.go` and `pkg/livescan/main.go`.
 - `pkg/strategy` holds the `Strategy` interface and registry (`Register`, `RegisterAlias`, `Get`; lookup is case- and punctuation-insensitive). Keys differ by `-`/`_`, so do not add a second id that normalizes to an existing one.
-- Row-backed strategies (streak, hold, hold_bail, tree, markov) are not registered per row. Each table is one `strategy.Family` (`pkg/strategy/family.go`, `RowFamily`); `strategy.Get(id)` reads and builds the row on demand, with the same case/punctuation-insensitive match. `strategy.List()` returns only code and SQL-pipeline strategies; `strategy.ListAll()` also builds every row (use it only where "all" must mean every row). `pkg/stratreg.RegisterAll(root, db)` registers SQL pipelines plus the families; commands that only need the families call `stratreg.RegisterFamilies()`. Never loop over a table calling `strategy.Register`. Pick subsets with `stratlist` and a `.sql` file (`sql/lists/`).
-- Strategies are not only Go: about 65,600 are rows in `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`). Add or change those with SQL on the table, not Go. `etf_universe` is empty and the `etf_dt_strategies` / `dt_*` handling was deleted; the tree family is the one decision-tree family.
+- Row-backed strategies (streak, hold, hold_bail, tree, markov) are not registered per row. Each table is one `strategy.Family` (`pkg/strategy/family.go`, `RowFamily`); `strategy.Get(id)` reads and builds the row on demand, with the same case/punctuation-insensitive match. `strategy.List()` returns only the strategies with their own pipeline; `strategy.ListAll()` also builds every row (use it only where "all" must mean every row). `pkg/stratreg.RegisterAll(root, db)` registers SQL pipelines plus the families; commands that only need the families call `stratreg.RegisterFamilies()`. Never loop over a table calling `strategy.Register`. Pick subsets with `stratlist` and a `.sql` file (`sql/lists/`).
+- Every strategy is SQL controlled by Go. Most (about 65,600) are rows in `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `hold_bail_strategy`, `tree_strategy`, `markov_strategy`). Add or change those with SQL on the table, not Go. `etf_universe` is empty and the `etf_dt_strategies` / `dt_*` handling was deleted; the tree family is the one decision-tree family.
 - `park-<symbol>` (`strategy.ParkStrategy`) is a stack member for the residual-cash book. It is never a sleeve: `strategy.SplitResidual` removes it and the runner passes its symbol as `DefaultAsset`. Do not give it signals.
 - Other packages: `simulator` (portfolio and shared-account), `runner` (load bars, run, stack, stack-eval), `storage` (schemas, `OpenSQLite`, `ExecuteSQLFile`), `refdb` (strategies.db), `analytics` (metrics, HTML tear sheet), `calendar`, `transaction_calc` (IBKR CSV to report), `universe` (Polygon discovery into `refdata/universe.db`), `walk_forward` and `check_overfit` (out-of-sample screening).
 - `sql/search/` holds the stack-search gate and liquidity screen as numbered slice-table stages. Run them with `sqlite3` against the walk-forward, market and settings DBs; there is no Go wrapper yet.
@@ -60,4 +60,4 @@ In `models.Signal`, `TakeProfit` and `StopLoss` are absolute dollar prices (`150
 
 ## Before you finish
 
-Run the checklist in `../CLAUDE.md`, plus: strategy ids registered and listed by `backtest -list`; any new env var or flag is in `README.md`; `TakeProfit`/`StopLoss` are absolute or `0`.
+Run the checklist in `../CLAUDE.md`, plus: strategy ids registered and listed by `backtest -strategylist`; any new env var or flag is in `README.md`; `TakeProfit`/`StopLoss` are absolute or `0`.

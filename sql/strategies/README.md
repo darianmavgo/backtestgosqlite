@@ -1,14 +1,14 @@
-# SQL pipelines
+# Strategy pipelines
 
-A strategy is defined in Go (`pkg/strategy`) and calculated here. A folder under `sql/strategies/<id>/` is the signal math for the Go strategy with that id. It is not a second strategy type.
+Every strategy is calculated here in SQL and run by Go. A folder under `sql/strategies/<id>/` is the signal math for the strategy with that id; Go only builds its config and runs the folder.
 
 ## Directory Structure
 
-1. Register the Go strategy in `pkg/strategy`.
+1. Register the strategy config in `pkg/strategy`.
 2. Add `sql/strategies/<id>/` with `.sql` files that run in name order (`01_schema.sql`, `02_calc_signals.sql`, …).
 3. `GenerateSignals` runs that pipeline when the market and calc databases are set.
 
-A folder with no Go strategy is not registered. `AutoRegisterSQLStrategies` still inserts a `<dir>-sql` lookup for a pipeline that already has a Go owner. That id is the same pipeline. Run the Go id.
+A folder with no registered strategy is not run. `AutoRegisterSQLStrategies` still inserts a `<dir>-sql` lookup for a folder that already has an owner. That id is the same pipeline; run the owner id.
 
 ```
 sql/strategies/
@@ -16,7 +16,7 @@ sql/strategies/
 ├── tree_strategy/     one pipeline for every tree_strategy row
 ├── markov_model/      reads the persisted Markov model (see train)
 ├── markov_hmm/        reads hmm_regime.db from study hmm_regime
-└── voo_up3/           owned by the voo-up3 Go strategy
+└── voo_up3/           owned by the voo-up3 strategy
 ```
 
 ## Contract & Signal Extraction
@@ -32,6 +32,6 @@ The backtester looks for an output table containing trade triggers:
 ## Running
 
 ```bash
-./bin/backtest -list
+./bin/backtest -strategylist
 ./bin/backtest -strategy streak-voo-buy-tecl -capital 100000
 ```

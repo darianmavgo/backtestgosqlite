@@ -14,7 +14,7 @@ pkg/market_history     gap-filling writer into the market DB
 pkg/storage            bar, trade, signal, equity, performance, option schemas
 pkg/refdb              strategies.db universes, ETF-tree rows, streak_strategy
 pkg/models             Bar, Signal, Trade, Position, PerformanceReport
-pkg/strategy           Strategy interface, Go strategies, SQL pipelines
+pkg/strategy           Strategy interface, strategy configs, pipeline runner
 pkg/streak_strategy    one Strategy per streak_strategy row
 pkg/simulator          PortfolioSimulator and SharedAccountSimulator
 pkg/runner             load bars, run, stack, scan, staleness, stack-eval
@@ -109,11 +109,11 @@ Optional interfaces, checked by the runner:
 | `MinHistoryProvider` | trailing bars a live scan needs; default `DefaultMinHistoryBars` (250) |
 | `DeclineDaysConfigurable` | `SetDeclineDays` so `backtest optimized` can apply a swept streak length |
 
-`Register` keys on the lowercased id. `Get` also matches with `-`, `_`, and spaces removed. Constructors call `Register` from `init`. Row-backed tables (streak, hold, hold_bail, tree, markov) are not registered per row: each is a `strategy.Family` (`pkg/strategy/family.go`) and `Get` falls through to it, reading and building the one row asked for. `List()` returns only the registered code and SQL strategies; `ListAll()` also builds every row.
+`Register` keys on the lowercased id. `Get` also matches with `-`, `_`, and spaces removed. Constructors call `Register` from `init`. Row-backed tables (streak, hold, hold_bail, tree, markov) are not registered per row: each is a `strategy.Family` (`pkg/strategy/family.go`) and `Get` falls through to it, reading and building the one row asked for. `List()` returns only the strategies with their own pipeline; `ListAll()` also builds every row.
 
 `StrategyConfig` holds sizing (`fixed_pct`, `fixed_dollar`, `fixed_shares`, `kelly`), hold, slippage, commission, cash yield, and the two profit/stop fields. `TargetPct` / `TakeProfitPct`: the portfolio uses `TargetPct` when it is greater than 1, otherwise `TakeProfitPct`. `StopLossPct` is a price multiplier (`0.93` is −7%), not an offset. `NextDayLimitEntry` means the signal is known after the close and the order is a next-session limit at the signal price. It fills on that next bar only if the low is at or below the limit (at the limit, or at the open if the open is already through it). The booked price is the fill times `(1+SlippagePct)`. An unmet limit opens nothing. Signals saved in the result DB are the pre-simulator signals, so a dropped next-day order is still in `signals`.
 
-There is one strategy type. It is defined in Go (`pkg/strategy`) and its signals are calculated by the SQL pipeline in `sql/strategies/<id>/`. `AutoRegisterSQLStrategies(root, marketDB)` still inserts a `<dir>-sql` registry entry for a pipeline directory that already has a Go owner. That entry is the same pipeline, used to resolve the directory, not a second strategy. `failed_training/` has no matching Go strategy, so it stays unregistered. That SQL is archived; the Go package is behind `//go:build ignore` plus a `doc.go` stub. Registration is once per `(root, db)` for the process.
+There is one strategy type. Its config is built in Go (`pkg/strategy`) and its signals are calculated by the SQL in `sql/strategies/<id>/`. `AutoRegisterSQLStrategies(root, marketDB)` still inserts a `<dir>-sql` registry entry for a pipeline directory that already has an owner. That entry is the same pipeline, used to resolve the directory, not a second strategy. `failed_training/` has no matching registered strategy, so it stays unregistered. That SQL is archived; the Go package is behind `//go:build ignore` plus a `doc.go` stub. Registration is once per `(root, db)` for the process.
 
 A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrategy`. `pipelinefs.go` reads the directory on disk when it exists and otherwise the embedded FS in `sql/embed.go`, keyed by the directory's base name. Placeholders substituted from `StrategyConfig` before execution:
 
@@ -130,7 +130,7 @@ A pipeline is a directory of `.sql` files run in name order by `SQLPipelineStrat
 
 Each strategy gets its own calc DB (`calc_<id>.db`) so pipeline tables do not collide. `SetDatabases(market, calc)` is called before `GenerateSignals`.
 
-Registered from this tree today: `voo-up3`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their orphaned SQL folders were deleted. `mara_tree`, `nvdl_tree` and `pdd_tree` are rows of `tree_strategy`; their own SQL folders were deleted because the generic `tree_strategy` pipeline gives identical signals (109, 65 and 150 on the real market DB). Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -list` is the live set.
+Registered from this tree today: `voo-up3`, `price-action-reclaim`, `biggest-winner` (and its `-inverse` and `-short` variants), `tsll-daily-one-share`, dividend buy-and-hold and covered-call ids. `sig-voo-buy-tecl`, `sig-voo-buy-spxu`, `gld-decline` and `mara_pdd_nvdl` no longer register as Go strategies (the TECL signal is the `streak-voo-buy-tecl` row), and their orphaned SQL folders were deleted. `mara_tree`, `nvdl_tree` and `pdd_tree` are rows of `tree_strategy`; their own SQL folders were deleted because the generic `tree_strategy` pipeline gives identical signals (109, 65 and 150 on the real market DB). Most strategies are rows in the settings tables, loaded by `pkg/stratreg.RegisterAll`. `./bin/backtest -strategylist` is the live set.
 
 Every strategy calculates its signals in SQL. `strategy.RunPipeline` runs a pipeline directory with the market database attached as `backtest_start` and the strategy's calc database for the slice tables, and gives the pipeline `__START_DATE__` and `__END_DATE__` (the window of bars the run loaded) plus the strategy's own `StrategyConfig.SQLParams`. With either database path empty it logs and returns no signals. Go only passes parameters and stamps the strategy id on the result.
 
@@ -145,7 +145,7 @@ Every strategy calculates its signals in SQL. `strategy.RunPipeline` runs a pipe
 | `annual_winner` | `biggest-winner` (long), `-short` and `-inverse`: the prior calendar year's best performer, traded for the new year. A symbol whose first open of the year is 0 has no return and is not ranked |
 | `voo_up3` | `voo-up3` |
 
-The covered-call ids (`schd-covered-call`, `vym-covered-call`, `dvy-covered-call` and the `-5pct` ids) return no stock signals: the overlay is simulated in Go in `pkg/options`. A `<dir>-sql` registry id (`voo_up3-sql`) is a duplicate of a pipeline that already has a Go strategy, and `stack-eval` drops it.
+The covered-call ids (`schd-covered-call`, `vym-covered-call`, `dvy-covered-call` and the `-5pct` ids) return no stock signals: the overlay is simulated in Go in `pkg/options`. A `<dir>-sql` registry id (`voo_up3-sql`) is a duplicate of a pipeline that already has an owner, and `stack-eval` drops it.
 
 Still Go, and not signal generation: the simulator and its metrics (`pkg/simulator`, `pkg/analytics`), the dividend-adjusted price copy and dividend recovery in `pkg/runner`, the covered-call overlay, and the studies in `pkg/study`.
 

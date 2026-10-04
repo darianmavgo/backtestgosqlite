@@ -21,7 +21,7 @@ test:
 	$(GOCMD) test ./pkg/... ./cmd/...
 
 list: build
-	./$(BIN_DIR)/backtest -list
+	./$(BIN_DIR)/backtest -strategylist
 
 clean:
 	rm -rf $(BIN_DIR)/*

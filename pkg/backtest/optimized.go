@@ -63,7 +63,7 @@ func bestParamsFor(gdb *sqlx.DB, strategyID string) (optimizedParams, bool) {
 func runOptimizedCommand(stratArg, targetDb, tableName, outDir, gridDBPath string, capital float64, symbolFilter string, autoDownload bool, downloadYears, concurrency int, reinvestDividends bool, allocPct float64) error {
 	targets, err := runner.ResolveStrategies(stratArg, "all")
 	if err != nil {
-		return fmt.Errorf("%v. Run with -list to see available strategies.", err)
+		return fmt.Errorf("%v. Run with -strategylist to see available strategies.", err)
 	}
 
 	gdb, err := storage.OpenSQLite(gridDBPath)

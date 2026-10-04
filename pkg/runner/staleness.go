@@ -35,7 +35,7 @@ import (
 //     file in the strategy's pipeline directory was edited after this result
 //     was computed, so it may not reflect the current entry/exit logic.
 //
-// Deliberately NOT attempted: guessing a pure-Go strategy's source .go file
+// Deliberately NOT attempted: guessing a strategy's source .go file
 // from its ID to check code-vs-result mtime. The ID-to-filename convention
 // isn't reliable enough across this codebase (e.g. "rsi2" -> rsi2_trend.go)
 // to risk a false signal — better to report "n/a" than to lie.
@@ -250,7 +250,7 @@ func PrintStalenessReport(source string, entries []StaleEntry, neverComputed []s
 			status = "⚠️  STALE"
 			staleCount++
 		} else if !e.HasPipeline {
-			reasons = "(pure-Go strategy — code freshness not tracked; data freshness only)"
+			reasons = "(no sql/strategies pipeline to track; data freshness only)"
 		}
 		table.Append([]string{e.StrategyID, e.ComputedAt.Format("2006-01-02 15:04"), status, reasons})
 	}

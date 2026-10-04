@@ -38,7 +38,7 @@ func ResolveStrategies(arg, defaultID string) ([]strategy.Strategy, error) {
 				out = append(out, members...)
 				continue
 			}
-			return nil, fmt.Errorf("strategy %q not found in registry (use -list)", token)
+			return nil, fmt.Errorf("strategy %q not found in registry (use backtest -strategylist)", token)
 		}
 		out = append(out, s)
 	}

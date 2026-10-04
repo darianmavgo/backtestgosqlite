@@ -9,7 +9,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// A SQL pipeline strategy must open its calc DB even when that DB's directory
+// A strategy must open its calc DB even when that DB's directory
 // does not exist yet. Before the fix this failed with "unable to open database
 // file", the pipeline returned no signals, and a real entry was reported as
 // NO_SIGNAL.

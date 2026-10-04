@@ -122,7 +122,7 @@ Once saved, rebuild and execute:
 
 ```bash
 # Verify it appears in the strategy list
-./bin/backtest -list
+./bin/backtest -strategylist
 
 # Run backtest with tear sheet & HTML report
 ./bin/backtest -strategy sma-cross -capital 100000
