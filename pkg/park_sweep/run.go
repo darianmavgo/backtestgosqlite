@@ -25,10 +25,10 @@ import (
 // built once; each strategy clears only its signal rows before generating.
 var markovMu sync.Mutex
 
-// Run simulates every pending strategy with the park symbol. Failed and
+// Run simulates every pending strategy (or only those in ids, when ids is not empty) with the park symbol. Failed and
 // running rows from an earlier process are claimed again. A failure during
 // this process stays failed until the next Run.
-func Run(sweepPath, marketPath string, concurrency int) error {
+func Run(sweepPath, marketPath string, concurrency int, ids []string) error {
 	sweep, err := Open(sweepPath)
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func Run(sweepPath, marketPath string, concurrency int) error {
 			}
 			defer market.Close()
 			for {
-				id, err := claimNext(sweep)
+				id, err := claimNext(sweep, ids)
 				if err != nil {
 					errCh <- err
 					return
@@ -90,21 +90,22 @@ func Run(sweepPath, marketPath string, concurrency int) error {
 	return nil
 }
 
-func claimNext(db *sqlx.DB) (string, error) {
+func claimNext(db *sqlx.DB, ids []string) (string, error) {
 	tx, err := db.Beginx()
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback()
 	var id string
+	in, inArgs := inClause("r.strategy_id", ids)
 	err = tx.Get(&id, `
 		SELECT r.strategy_id
 		FROM strategy_run r
 		JOIN sweep_strategy s ON s.strategy_id = r.strategy_id
-		WHERE r.status = 'pending'
+		WHERE r.status = 'pending'`+in+`
 		ORDER BY CASE s.kind WHEN 'streak' THEN 0 ELSE 1 END,
 		         r.strategy_id
-		LIMIT 1`)
+		LIMIT 1`, inArgs...)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

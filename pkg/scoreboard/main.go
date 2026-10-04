@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type Config struct {
 	Serial      bool     // -serial
 	Start       string   // -start
 	Force       bool     // -force
+	Strategy    string   // -strategy: comma-separated ids, a family name, or "all" (empty = all)
 	RunID       int      // -run-id
 	Mode        string   // subcommand (empty = default)
 	Args        []string // positional arguments
@@ -70,6 +72,7 @@ func Main() {
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to backtest; earlier bars only warm up SMAs. Empty = full history")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(default mode only) redo every strategy's backtest even if a usable result already exists")
 	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Run folder under the reports root to read (compile, status) or to continue (default mode). Without it compile and status read the latest run and the default mode starts a new one")
+	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "Strategies to compare: comma-separated ids, a family (streak, hold, tree, markov), or all. Empty = every registered strategy")
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"compile": "compile", "status": "status"})
 	flag.Parse()
 	conf.Args = flag.Args()
@@ -108,19 +111,54 @@ func Run(conf Config) error {
 
 	switch conf.Mode {
 	case "compile":
-		if err := runCompile(conf.Concurrency); err != nil {
+		if err := runCompile(conf.Concurrency, conf.Strategy); err != nil {
 			return err
 		}
 	case "status":
-		if err := runStatus(conf.Concurrency); err != nil {
+		if err := runStatus(conf.Concurrency, conf.Strategy); err != nil {
 			return err
 		}
 	default:
-		if err := runAll(conf.Concurrency, conf.Force); err != nil {
+		if err := runAll(conf.Concurrency, conf.Force, conf.Strategy); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// registered returns the strategies this run covers: those named by -strategy,
+// otherwise every registered strategy. Call it after the strategies are registered.
+func registered(arg string) ([]strategy.Strategy, error) {
+	if strings.TrimSpace(arg) == "" || strings.EqualFold(strings.TrimSpace(arg), "all") {
+		return strategy.ListAll(), nil
+	}
+	return runner.ResolveStrategies(arg, "")
+}
+
+// only keeps the results of list when arg names a selection, and all of them otherwise.
+func only(byStrategy map[string]runner.CompiledResult, list []strategy.Strategy, arg string) map[string]runner.CompiledResult {
+	if strings.TrimSpace(arg) == "" || strings.EqualFold(strings.TrimSpace(arg), "all") {
+		return byStrategy
+	}
+	out := make(map[string]runner.CompiledResult, len(list))
+	for _, s := range list {
+		if c, ok := byStrategy[s.ID()]; ok {
+			out[s.ID()] = c
+		}
+	}
+	return out
+}
+
+// missingAmong lists the ids of list that have no usable result.
+func missingAmong(list []strategy.Strategy, byStrategy map[string]runner.CompiledResult) []string {
+	var missing []string
+	for _, s := range list {
+		if _, ok := byStrategy[s.ID()]; !ok {
+			missing = append(missing, s.ID())
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 // runAll ensures every registered strategy has a usable backtest result. It does
@@ -130,13 +168,16 @@ func Run(conf Config) error {
 // backtests strategies that are missing a usable result. Pass -force to ignore
 // existing results and redo everything anyway. The final table/scoreboard.db
 // always covers every strategy — freshly run ones plus whatever was already valid.
-func runAll(concurrency int, force bool) error {
+func runAll(concurrency int, force bool, arg string) error {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
 	stratreg.RegisterFamilies()
 
-	allStrategies := strategy.ListAll()
+	allStrategies, err := registered(arg)
+	if err != nil {
+		return err
+	}
 	if len(allStrategies) == 0 {
 		return fmt.Errorf("No strategies registered.")
 	}
@@ -231,13 +272,18 @@ func runAll(concurrency int, force bool) error {
 // `cmd/backtest -strategy all`) and just reads each per-strategy SQLite DB's
 // performance_summary table already sitting in reports/, instead of re-running
 // anything. Much cheaper: no bar loading, no simulation, no tree fitting.
-func runCompile(concurrency int) error {
+func runCompile(concurrency int, arg string) error {
 	fmt.Println("📖 COMPILING SCOREBOARD from existing per-strategy result databases (no backtests run)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategy names/descriptions resolve too
 	stratreg.RegisterFamilies()
 
+	list, err := registered(arg)
+	if err != nil {
+		return err
+	}
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
+	byStrategy = only(byStrategy, list, arg)
 	if totalGroups == 0 {
 		return fmt.Errorf("No result databases found in %s/*.db. Run backtests first (e.g. cmd/backtest -strategy all).", outDir)
 	}
@@ -245,7 +291,7 @@ func runCompile(concurrency int) error {
 	fmt.Printf("⚡ %d strategies compiled (%d fell back to a lower run increment after finding corruption, %d had every increment compromised and were skipped).\n",
 		len(byStrategy), usedFallback, allCompromised)
 
-	if missing := runner.MissingStrategies(byStrategy); len(missing) > 0 {
+	if missing := missingAmong(list, byStrategy); len(missing) > 0 {
 		fmt.Printf("⚠️  %d currently-registered strategies have NO usable result at all (never backtested, or every run compromised) — compute is NOT fully done:\n",
 			len(missing))
 		runner.PrintMissingList(missing)
@@ -278,14 +324,19 @@ func runCompile(concurrency int) error {
 // printing the full comparison table or touching scoreboard.db — it just
 // validates every existing result DB (same as compile) and reports which
 // currently-registered strategies are covered vs. missing/compromised.
-func runStatus(concurrency int) error {
+func runStatus(concurrency int, arg string) error {
 	fmt.Println("🔎 SCOREBOARD STATUS — checking whether every registered strategy has a usable backtest result")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb)
 	stratreg.RegisterFamilies()
 
-	total := len(strategy.ListAll())
+	list, err := registered(arg)
+	if err != nil {
+		return err
+	}
+	total := len(list)
 	byStrategy, _, totalGroups, usedFallback, allCompromised := runner.ScanAndValidate(outDir, concurrency)
+	byStrategy = only(byStrategy, list, arg)
 
 	fmt.Printf("\n📋 %d strategies currently registered.\n", total)
 	fmt.Printf("   %d result-DB groups found in %s/, %d validated successfully (%d needed a fallback to an older run increment).\n",
@@ -294,7 +345,7 @@ func runStatus(concurrency int) error {
 		fmt.Printf("   %d strategies have result files but every increment is compromised.\n", allCompromised)
 	}
 
-	missing := runner.MissingStrategies(byStrategy)
+	missing := missingAmong(list, byStrategy)
 	if len(missing) == 0 {
 		fmt.Println("\n✅ All necessary compute is done — every registered strategy has a usable result. Safe to run `scoreboard compile`.")
 		return nil

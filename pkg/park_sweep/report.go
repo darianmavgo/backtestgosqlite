@@ -54,13 +54,13 @@ CREATE INDEX idx_strategy_result_kind_edge ON strategy_result(kind, edge_vs_hold
 `
 
 // WriteReport copies the sweep into a snapshot database and writes an HTML page.
-func WriteReport(sweepPath, reportPath, htmlPath string) error {
+func WriteReport(sweepPath, reportPath, htmlPath string, ids []string) error {
 	sweep, err := Open(sweepPath)
 	if err != nil {
 		return err
 	}
 	defer sweep.Close()
-	view, err := loadReport(sweep, sweepPath)
+	view, err := loadReport(sweep, sweepPath, ids)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ type reportView struct {
 	Failed        int
 }
 
-func loadReport(sweep *sqlx.DB, source string) (reportView, error) {
+func loadReport(sweep *sqlx.DB, source string, ids []string) (reportView, error) {
 	cfg, err := loadConfig(sweep)
 	if err != nil {
 		return reportView{}, err
@@ -142,6 +142,7 @@ func loadReport(sweep *sqlx.DB, source string) (reportView, error) {
 		allocExpr = `?`
 		args = append(args, cfg.AllocationPct.Float64)
 	}
+	in, inArgs := inClause("r.strategy_id", ids)
 	q := fmt.Sprintf(`
 		SELECT s.strategy_id, s.kind, r.status, s.signal_symbol, s.trade_symbol,
 		       %s AS allocation_pct,
@@ -162,7 +163,9 @@ func loadReport(sweep *sqlx.DB, source string) (reportView, error) {
 		       COALESCE(r.error, '') AS error
 		FROM strategy_run r
 		JOIN sweep_strategy s ON s.strategy_id = r.strategy_id
+		WHERE 1 = 1`+in+`
 		ORDER BY s.kind, r.edge_vs_googl DESC`, allocExpr)
+	args = append(args, inArgs...)
 	var rows []reportRow
 	if err := sweep.Select(&rows, q, args...); err != nil {
 		return reportView{}, err

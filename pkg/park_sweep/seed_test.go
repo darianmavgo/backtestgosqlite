@@ -46,7 +46,7 @@ func TestSeedCopiesThreeKindsAndSkipsLateSymbols(t *testing.T) {
 	}
 	db.Close()
 
-	counts, err := Seed(sweep, settings, market)
+	counts, err := Seed(sweep, settings, market, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestTwoWorkersCannotClaimTheSameRow(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			id, err := claimNext(db)
+			id, err := claimNext(db, nil)
 			if err != nil {
 				t.Errorf("claim: %v", err)
 				return

@@ -39,7 +39,7 @@ func TestWriteReportSnapshotsTheSweep(t *testing.T) {
 	}
 	db.Close()
 
-	if err := WriteReport(sweep, report, htmlPath); err != nil {
+	if err := WriteReport(sweep, report, htmlPath, nil); err != nil {
 		t.Fatal(err)
 	}
 	out, err := Open(report)

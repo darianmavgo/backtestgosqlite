@@ -38,10 +38,10 @@ func TestRunParksLeftoverCashInGOOGL(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	if _, err := Seed(sweep, settings, market); err != nil {
+	if _, err := Seed(sweep, settings, market, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := Run(sweep, market, 2); err != nil {
+	if err := Run(sweep, market, 2, nil); err != nil {
 		t.Fatal(err)
 	}
 

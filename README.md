@@ -22,7 +22,7 @@ make list           # ./bin/backtest -strategylist
 | Sweep hold, take-profit and stop, then promote winners to new strategies | `gridsearch` |
 | Walk-forward folds plus an overfit verdict per strategy | `walk_forward`, `check_overfit` |
 | In-sample / out-of-sample ledger with tiers A to D | `strateval` |
-| Rank every registered strategy | `scoreboard` |
+| Rank every registered strategy, or a list | `scoreboard` |
 | Live signal scan for the next session | `livescan` |
 | Research studies (clustering, HMM regimes, lead/lag, decision trees) | `study` |
 | Report on an IBKR transaction CSV | `transaction_calc` |
@@ -73,9 +73,9 @@ Every command in this repo, in the order you use them to take one idea from raw 
 | 14 | Ledger and tier | `./bin/strateval -strategy streak-googl-down3-googl`, then `strateval report` | Records in-sample and out-of-sample results and a tier A to D (A needs 12 OOS trades, win rate 0.55, drawdown under 0.15). `-optimize -max-trials 50` searches parameters inside the eval. | writes `data/reports/strategies.db` |
 | 15 | Stack it | `./bin/backtest -strategy "streak-googl-down3-googl+googl_tree+park-googl" -alloc 0.1` | Shares one cash ledger. `park-googl` (or `-default-asset GOOGL`) holds leftover cash in GOOGL and is never the primary. | writes `data/reports/<run_id>/stack.db` |
 | 16 | Find complements | `./bin/backtest stack-eval -primary streak-googl-down3-googl -secondary "googl_tree,markov_model_googl,park-sgov" -stack-depth 3` | Ranks each secondary as an idle-cash overlay, then builds the greedy stack. Rank finalists by Calmar and max drawdown. Beat [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md). | writes `data/reports/stack_eval_<primary>.db` |
-| 17 | Park-symbol sweep (optional) | `./bin/park_sweep seed`, `run`, `rank`, `report` | Runs every `streak_strategy` and `markov_strategy` row with leftover cash parked in GOOGL and ranks them. | writes `data/reports/park_googl.db`, `park_googl.html` |
+| 17 | Park-symbol sweep (optional) | `./bin/park_sweep -strategy <ids> seed`, `run`, `rank`, `report` | Runs the listed `streak_strategy` and `markov_strategy` rows (all rows without `-strategy`) with leftover cash parked in GOOGL and ranks them. | writes `data/reports/park_googl.db`, `park_googl.html` |
 | 18 | Options overlay (optional) | `./bin/market_history -source polygon-options -symbols GOOGL`, then `./bin/backtest covered-call -symbol GOOGL` | Compares holding GOOGL with selling a monthly call. | writes `option_*` tables; prints to stdout |
-| 19 | Rank everything | `./bin/scoreboard`, `scoreboard status` | Backtests every registered strategy missing a result and ranks them against your GOOGL candidates. | writes `data/reports/scoreboard.db` |
+| 19 | Rank everything | `./bin/scoreboard -strategy <ids>`, `scoreboard status -strategy <ids>` | Backtests the listed strategies (all registered ones without `-strategy`) that lack a result and ranks them. | writes `data/reports/scoreboard.db` |
 | 20 | Keep fresh | `./bin/backtest stale` and `./bin/gridsearch stale` | Lists results made stale by new bars or edited SQL. Rerun steps 1, 5, 7 for those. | none |
 | 21 | Go live | `./bin/livescan -strategy streak-googl-down3-googl,googl_tree -json` | Signals for the next session from the last completed bar. `ENTER` means buy next session. `trade_orchestrator` consumes the JSON. | writes `data/reports/livescan.db` |
 | 22 | Check real trades | `./bin/transaction_calc -in data/<ibkr export>.csv` | Builds the same performance report from your broker CSV, so live results can be compared to the backtest. | writes `data/reports/<date>/<csv>.html` |
@@ -311,9 +311,10 @@ Run every row of `streak_strategy` and `markov_strategy` with leftover cash park
 ./bin/park_sweep run
 ./bin/park_sweep rank
 ./bin/park_sweep report
+./bin/park_sweep -strategy streak-googl-down3-googl,markov_model_googl seed   # compare only these rows; put the same -strategy on run, rank and report
 ```
 
-`report` writes `data/reports/park_googl_report.db` and `data/reports/park_googl.html` from the sweep. The database holds every strategy row. The page shows the park buy-and-hold, every done streak, and the 25 Markov rows with the highest edge.
+`-strategy a,b,c` limits seed, run, rank and report to those ids (case-insensitive). Only `streak_strategy` and `markov_strategy` ids qualify, and any other id is printed and skipped. `report` writes `data/reports/park_googl_report.db` and `data/reports/park_googl.html` from the sweep. The database holds every strategy row. The page shows the park buy-and-hold, every done streak, and the 25 Markov rows with the highest edge.
 
 `sweep_config` holds the window (`2021-10-01` through `2026-10-01`), capital (`100000`), and park symbol (`GOOGL`). `allocation_pct` NULL uses each row's own allocation. A symbol that does not cover the window is stored as `skipped`. `run` retries `failed` and `running` rows and leaves `done` rows. `rank` prints whatever is already `done`. `-db`, `-market-db`, `-settings-db`, and `-concurrency` override the defaults.
 
@@ -332,9 +333,11 @@ Backtest every registered strategy that lacks a usable result, then rank them.
 ./bin/scoreboard -force
 ./bin/scoreboard compile
 ./bin/scoreboard status
+./bin/scoreboard -force -strategy streak-googl-down3,googl_tree   # compare only these (ids, a family name, or all)
+./bin/scoreboard compile -strategy streak-googl-down3,googl_tree
 ```
 
-`compile` only reads result DBs. `status` reports whether every registered strategy has a usable result and does not write `scoreboard.db`.
+`-strategy` takes comma-separated ids or a family name (`streak`, `hold`, `tree`, `markov`) and limits the backtests, the comparison table and `scoreboard.db` to those strategies. With a subcommand, put it after the subcommand. `compile` only reads result DBs. `status` reports whether every registered strategy has a usable result and does not write `scoreboard.db`.
 
 ---
 

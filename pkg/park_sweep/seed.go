@@ -20,9 +20,10 @@ type SeedCounts struct {
 }
 
 // Seed copies streak_strategy and markov_strategy into the
-// sweep database. A symbol whose daily bars do not cover the config window is
+// sweep database, or only the rows named in ids when ids is not empty. Ids that
+// are not streak or markov rows are printed and skipped. A symbol whose daily bars do not cover the config window is
 // stored as skipped. Rows already done are left done.
-func Seed(sweepPath, settingsPath, marketPath string) ([]SeedCounts, error) {
+func Seed(sweepPath, settingsPath, marketPath string, ids []string) ([]SeedCounts, error) {
 	sweep, err := Open(sweepPath)
 	if err != nil {
 		return nil, err
@@ -50,6 +51,9 @@ func Seed(sweepPath, settingsPath, marketPath string) ([]SeedCounts, error) {
 	rows, err := loadSourceRows(settings)
 	if err != nil {
 		return nil, err
+	}
+	if len(ids) > 0 {
+		rows = onlyIDs(rows, ids)
 	}
 	cov, err := coverage(market)
 	if err != nil {
@@ -332,4 +336,26 @@ func countSeed(sweep *sqlx.DB) ([]SeedCounts, error) {
 		out = append(out, *byKind[kind])
 	}
 	return out, nil
+}
+
+// onlyIDs keeps the rows named in ids (matched case-insensitively) and prints the
+// ids that are not a streak_strategy or markov_strategy row.
+func onlyIDs(rows []Strategy, ids []string) []Strategy {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[strings.ToLower(id)] = true
+	}
+	var out []Strategy
+	for _, r := range rows {
+		if want[strings.ToLower(r.StrategyID)] {
+			out = append(out, r)
+			delete(want, strings.ToLower(r.StrategyID))
+		}
+	}
+	for _, id := range ids {
+		if want[strings.ToLower(id)] {
+			fmt.Printf("  skipped %s: park_sweep only runs streak_strategy and markov_strategy rows\n", id)
+		}
+	}
+	return out
 }

@@ -7,7 +7,7 @@ import (
 )
 
 // Rank prints done rows by kind, best edge versus holding the park symbol first.
-func Rank(sweepPath string) error {
+func Rank(sweepPath string, ids []string) error {
 	db, err := Open(sweepPath)
 	if err != nil {
 		return err
@@ -38,12 +38,14 @@ func Rank(sweepPath string) error {
 		N      int    `db:"n"`
 	}
 	var counts []count
+	in, inArgs := inClause("r.strategy_id", ids)
 	if err := db.Select(&counts, `
 		SELECT s.kind, r.status, COUNT(*) AS n
 		FROM strategy_run r
 		JOIN sweep_strategy s ON s.strategy_id = r.strategy_id
+		WHERE 1 = 1`+in+`
 		GROUP BY s.kind, r.status
-		ORDER BY s.kind, r.status`); err != nil {
+		ORDER BY s.kind, r.status`, inArgs...); err != nil {
 		return err
 	}
 	fmt.Println("counts")
@@ -53,20 +55,21 @@ func Rank(sweepPath string) error {
 	fmt.Println()
 
 	for _, kind := range []string{"streak", "markov"} {
-		if err := printKind(db, cfg, kind); err != nil {
+		if err := printKind(db, cfg, kind, ids); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func printKind(db *sqlx.DB, cfg Config, kind string) error {
+func printKind(db *sqlx.DB, cfg Config, kind string, ids []string) error {
+	in, inArgs := inClause("r.strategy_id", ids)
 	var total int
 	if err := db.Get(&total, `
 		SELECT COUNT(*)
 		FROM strategy_run r
 		JOIN sweep_strategy s ON s.strategy_id = r.strategy_id
-		WHERE r.status = 'done' AND s.kind = ?`, kind); err != nil {
+		WHERE r.status = 'done' AND s.kind = ?`+in, append([]interface{}{kind}, inArgs...)...); err != nil {
 		return err
 	}
 	fmt.Printf("%s  (%d done)\n", kind, total)
@@ -100,9 +103,10 @@ func printKind(db *sqlx.DB, cfg Config, kind string) error {
 		       r.total_trades, r.win_rate, r.sleeve_net, r.park_contribution, r.edge_vs_googl
 		FROM strategy_run r
 		JOIN sweep_strategy s ON s.strategy_id = r.strategy_id
-		WHERE r.status = 'done' AND s.kind = ?
+		WHERE r.status = 'done' AND s.kind = ?`+in+`
 		ORDER BY r.edge_vs_googl DESC
 		LIMIT 25`, allocExpr)
+	args = append(args, inArgs...)
 	if err := db.Select(&rows, q, args...); err != nil {
 		return err
 	}

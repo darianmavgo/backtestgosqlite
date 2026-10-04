@@ -18,6 +18,7 @@ func Main() {
 	concurrency := flag.Int("concurrency", runtime.NumCPU(), "worker count")
 	reportDB := flag.String("report-db", "", "report snapshot database (default data/reports/park_googl_report.db)")
 	htmlPath := flag.String("html", "", "report HTML (default data/reports/park_googl.html)")
+	strategies := flag.String("strategy", "", "comma-separated streak_strategy or markov_strategy ids to compare (default: every row). Applies to seed, run, rank and report")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: park_sweep [flags] seed|run|rank|report\n\n")
 		flag.PrintDefaults()
@@ -32,6 +33,7 @@ func Main() {
 	if *settings == "" {
 		*settings = appenv.RefDB()
 	}
+	ids := ParseIDs(*strategies)
 	if flag.NArg() != 1 {
 		flag.Usage()
 		os.Exit(2)
@@ -39,7 +41,7 @@ func Main() {
 	var err error
 	switch flag.Arg(0) {
 	case "seed":
-		counts, seedErr := Seed(*dbPath, *settings, *market)
+		counts, seedErr := Seed(*dbPath, *settings, *market, ids)
 		err = seedErr
 		if err == nil {
 			fmt.Printf("seed %s\n", *dbPath)
@@ -48,9 +50,9 @@ func Main() {
 			}
 		}
 	case "run":
-		err = Run(*dbPath, *market, *concurrency)
+		err = Run(*dbPath, *market, *concurrency, ids)
 	case "rank":
-		err = Rank(*dbPath)
+		err = Rank(*dbPath, ids)
 	case "report":
 		if *reportDB == "" {
 			*reportDB = filepath.Join(appenv.Reports(), "park_googl_report.db")
@@ -58,7 +60,7 @@ func Main() {
 		if *htmlPath == "" {
 			*htmlPath = filepath.Join(appenv.Reports(), "park_googl.html")
 		}
-		err = WriteReport(*dbPath, *reportDB, *htmlPath)
+		err = WriteReport(*dbPath, *reportDB, *htmlPath, ids)
 		if err == nil {
 			fmt.Printf("report %s\nhtml %s\n", *reportDB, *htmlPath)
 		}
