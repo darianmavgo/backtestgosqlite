@@ -1,0 +1,353 @@
+package pipeline
+
+import (
+	"fmt"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/backtest"
+	"github.com/darianmavgo/backtestgosqlite/pkg/check_overfit"
+	"github.com/darianmavgo/backtestgosqlite/pkg/gridsearch"
+	"github.com/darianmavgo/backtestgosqlite/pkg/market_history"
+	"github.com/darianmavgo/backtestgosqlite/pkg/park_sweep"
+	"github.com/darianmavgo/backtestgosqlite/pkg/scoreboard"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
+	"github.com/darianmavgo/backtestgosqlite/pkg/strateval"
+	"github.com/darianmavgo/backtestgosqlite/pkg/study"
+	"github.com/darianmavgo/backtestgosqlite/pkg/train"
+	"github.com/darianmavgo/backtestgosqlite/pkg/validate"
+	"github.com/darianmavgo/backtestgosqlite/pkg/walk_forward"
+)
+
+// step is one stage of the pipeline. Its name is the job name used everywhere
+// else: the command, the log prefix and the pipeline_step row.
+type step struct {
+	name         string
+	network      bool // downloads data
+	needsKey     bool // needs an option-data key
+	needsPrimary bool // needs a stack primary in scope
+	run          func(*runCtx) error
+}
+
+// skipReason says why a step cannot run in this run, or "" when it can.
+func (s step) skipReason(r *runCtx) string {
+	switch {
+	case s.network && r.cfg.SkipNetwork:
+		return "network steps are off"
+	case s.needsKey && r.cfg.PolygonKey == "":
+		return "no option-data key (POLYGON_API_KEY)"
+	case s.needsPrimary && r.primary == "":
+		return "no primary strategy in scope"
+	}
+	return ""
+}
+
+// allSteps is the pipeline in order.
+func allSteps() []step {
+	return []step{
+		{name: "market_history", network: true, run: stepMarketHistory},
+		{name: "market_history_options", network: true, needsKey: true, run: stepMarketHistoryOptions},
+		{name: "study", run: stepStudy},
+		{name: "train", run: stepTrain},
+		{name: "backtest", run: stepBacktest},
+		{name: "gridsearch_params", run: stepGridsearchParams},
+		{name: "gridsearch", run: stepGridsearch},
+		{name: "gridsearch_promote", needsPrimary: true, run: stepPromote},
+		{name: "gridsearch_apply", run: stepApply},
+		{name: "validate", run: stepValidate},
+		{name: "strateval", run: stepStrateval},
+		{name: "stack", needsPrimary: true, run: stepStack},
+		{name: "stack_eval", needsPrimary: true, run: stepStackEval},
+		{name: "covered_call", network: true, needsKey: true, run: stepCoveredCall},
+		{name: "park_sweep", run: stepParkSweep},
+		{name: "scoreboard", run: stepScoreboard},
+		{name: "stale", run: stepStale},
+	}
+}
+
+// StepNames lists the steps in order.
+func StepNames() []string {
+	var out []string
+	for _, s := range allSteps() {
+		out = append(out, s.name)
+	}
+	return out
+}
+
+// selectSteps applies Config.Steps and Config.Skip, refusing a name that is not a step.
+func selectSteps(cfg Config) ([]step, error) {
+	known := map[string]bool{}
+	for _, n := range StepNames() {
+		known[n] = true
+	}
+	for _, list := range [][]string{cfg.Steps, cfg.Skip} {
+		for _, n := range list {
+			if !known[n] {
+				return nil, fmt.Errorf("pipeline: unknown step %q (steps: %s)", n, strings.Join(StepNames(), ", "))
+			}
+		}
+	}
+	only := map[string]bool{}
+	for _, n := range cfg.Steps {
+		only[n] = true
+	}
+	skip := map[string]bool{}
+	for _, n := range cfg.Skip {
+		skip[n] = true
+	}
+	var out []step
+	for _, s := range allSteps() {
+		if (len(only) > 0 && !only[s.name]) || skip[s.name] {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// --- data, studies, training ---
+
+func stepMarketHistory(r *runCtx) error {
+	mc := market_history.DefaultConfig()
+	mc.DB = r.cfg.MarketDB
+	mc.Symbols = strings.Join(append(append([]string{}, r.symbols...), r.cfg.Bench, r.cfg.Park), ",")
+	mc.Years = r.cfg.Years
+	mc.Force = true
+	mc.Out = r.out
+	_, err := market_history.Run(r.ctx, mc)
+	return err
+}
+
+func stepMarketHistoryOptions(r *runCtx) error {
+	mc := market_history.DefaultConfig()
+	mc.DB = r.cfg.MarketDB
+	mc.Source = "polygon-options"
+	mc.PolygonKey = r.cfg.PolygonKey
+	mc.Symbols = strings.Join(r.symbols, ",")
+	mc.Force = true
+	mc.Out = r.out
+	_, err := market_history.Run(r.ctx, mc)
+	return err
+}
+
+func stepStudy(r *runCtx) error {
+	var errs []error
+	for _, sym := range r.symbols {
+		sc := study.DefaultConfig()
+		sc.DB = r.cfg.MarketDB
+		sc.Study = "hmm_regime"
+		sc.Symbol = sym
+		if _, err := study.Run(sc); err != nil {
+			errs = append(errs, fmt.Errorf("hmm_regime %s: %w", sym, err))
+		}
+	}
+	return join(errs...)
+}
+
+func stepTrain(r *runCtx) error {
+	var errs []error
+	for _, family := range []string{"markov", "tree"} {
+		args := append([]string{family}, r.symbols...)
+		if code := train.Run(args, r.out, r.out); code != 0 {
+			errs = append(errs, fmt.Errorf("train %s exited %d", family, code))
+		}
+	}
+	return join(errs...)
+}
+
+// --- backtest, sweep, tune ---
+
+func stepBacktest(r *runCtx) error {
+	bt := backtest.DefaultConfig()
+	bt.Db = r.cfg.MarketDB
+	bt.Strategy = r.ids()
+	bt.RunID = r.runID
+	bt.Force = true
+	return backtest.Run(bt)
+}
+
+func gridConfig(r *runCtx) gridsearch.Config {
+	gs := gridsearch.DefaultConfig()
+	gs.Db = r.cfg.MarketDB
+	gs.RunID = r.runID
+	return gs
+}
+
+func stepGridsearchParams(r *runCtx) error {
+	var errs []error
+	for _, id := range r.strategies {
+		gs := gridConfig(r)
+		gs.Subcommand = "params"
+		gs.Args = []string{id}
+		if err := gridsearch.Run(gs); err != nil {
+			errs = append(errs, fmt.Errorf("params %s: %w", id, err))
+		}
+	}
+	return join(errs...)
+}
+
+func stepGridsearch(r *runCtx) error {
+	cutoff, err := cutoffFor(r.cfg.MarketDB, r.symbols)
+	if err != nil {
+		return err
+	}
+	gs := gridConfig(r)
+	gs.Strategy = r.ids()
+	gs.Force = true
+	gs.End = cutoff
+	return gridsearch.Run(gs)
+}
+
+func stepPromote(r *runCtx) error {
+	gs := gridConfig(r)
+	gs.Subcommand = "promote"
+	gs.Strategy = r.primary
+	if err := gridsearch.Run(gs); err != nil {
+		return err
+	}
+	return r.refreshScope()
+}
+
+func stepApply(r *runCtx) error {
+	gs := gridConfig(r)
+	gs.Subcommand = "apply"
+	gs.Strategy = r.ids()
+	return gridsearch.Run(gs)
+}
+
+// --- validate and score ---
+
+func stepValidate(r *runCtx) error {
+	return validate.Run(r.ctx, r.out, validate.Config{
+		Walk: walk_forward.Config{
+			Strategy: r.ids(), MarketDB: r.cfg.MarketDB, Table: "backtest_start", KeepGoing: true,
+			Options: walk_forward.Options{TrainMonths: 24, TestMonths: 6, StepMonths: 6, Capital: 100000},
+		},
+		Check: check_overfit.Config{
+			Strategy: r.ids(), Gates: check_overfit.Gates{MinOOSTrades: 8, TrialCutoff: 20, Decay: 0.25},
+		},
+		RunID: r.runID,
+	})
+}
+
+func stepStrateval(r *runCtx) error {
+	sc := strateval.DefaultConfig()
+	sc.MarketDb = r.cfg.MarketDB
+	sc.RunFolder = r.runID
+	sc.Strategy = r.ids()
+	sc.Optimize = true
+	sc.MaxTrials = 50
+	errs := []error{strateval.Run(sc)}
+	for _, sub := range []string{"report", "status"} {
+		rc := strateval.DefaultConfig()
+		rc.RunFolder = r.runID
+		rc.Strategy = r.ids()
+		rc.Subcommand = sub
+		errs = append(errs, strateval.Run(rc))
+	}
+	return join(errs...)
+}
+
+// --- stacks ---
+
+// stackMembers is the primary, each symbol's tree strategy when in scope, and a
+// park of the first symbol.
+func (r *runCtx) stackMembers() string {
+	have := map[string]bool{}
+	for _, s := range r.strategies {
+		have[s] = true
+	}
+	members := []string{r.primary}
+	for _, sym := range r.symbols {
+		if id := strings.ToLower(sym) + "_tree"; have[id] {
+			members = append(members, id)
+		}
+	}
+	members = append(members, "park-"+strings.ToLower(r.symbols[0]))
+	return strings.Join(members, "+")
+}
+
+func stepStack(r *runCtx) error {
+	bt := backtest.DefaultConfig()
+	bt.Db = r.cfg.MarketDB
+	bt.Strategy = r.stackMembers()
+	bt.Alloc = 0.1
+	bt.RunID = r.runID
+	bt.Force = true
+	return backtest.Run(bt)
+}
+
+func stepStackEval(r *runCtx) error {
+	var secondary []string
+	for _, s := range r.strategies {
+		if s != r.primary {
+			secondary = append(secondary, s)
+		}
+	}
+	secondary = append(secondary, "park-"+strings.ToLower(r.cfg.Park))
+	bt := backtest.DefaultConfig()
+	bt.Db = r.cfg.MarketDB
+	bt.Mode = "stack-eval"
+	bt.Primary = r.primary
+	bt.Secondary = strings.Join(secondary, ",")
+	bt.StackDepth = 3
+	bt.PersistBest = true
+	bt.RunID = r.runID
+	return backtest.Run(bt)
+}
+
+func stepCoveredCall(r *runCtx) error {
+	bt := backtest.DefaultConfig()
+	bt.Db = r.cfg.MarketDB
+	bt.Mode = "covered-call"
+	bt.Symbol = r.symbols[0]
+	bt.Otm = 2
+	bt.Commission = 0.65
+	bt.OptSlip = 0.05
+	return backtest.Run(bt)
+}
+
+// --- compare ---
+
+func stepParkSweep(r *runCtx) error {
+	ids := park_sweep.ParseIDs(r.ids())
+	sweep := filepath.Join(r.dir, "park_sweep.db")
+	report := filepath.Join(r.dir, "park_sweep_report.db")
+	html := filepath.Join(r.dir, "park_sweep.html")
+	counts, err := park_sweep.Seed(sweep, r.cfg.RefDB, r.cfg.MarketDB, ids)
+	if err != nil {
+		return err
+	}
+	for _, c := range counts {
+		r.printf("  %-14s %6d rows   %6d pending   %6d skipped\n", c.Kind, c.Rows, c.Pending, c.Skipped)
+	}
+	if err := park_sweep.Run(sweep, r.cfg.MarketDB, runtime.NumCPU(), ids); err != nil {
+		return err
+	}
+	if err := park_sweep.Rank(sweep, ids); err != nil {
+		return err
+	}
+	return park_sweep.WriteReport(sweep, report, html, ids)
+}
+
+func stepScoreboard(r *runCtx) error {
+	var errs []error
+	for _, mode := range []string{"", "compile", "status"} {
+		sc := scoreboard.DefaultConfig()
+		sc.Mode = mode
+		sc.RunID = r.runID
+		sc.Strategy = r.ids()
+		sc.Force = mode == ""
+		sc.Start = storage.DefaultStartDate
+		errs = append(errs, scoreboard.Run(sc))
+	}
+	return join(errs...)
+}
+
+func stepStale(r *runCtx) error {
+	gs := gridConfig(r)
+	gs.Subcommand = "stale"
+	gs.Strategy = r.ids()
+	return gridsearch.Run(gs)
+}

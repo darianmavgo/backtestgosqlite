@@ -89,7 +89,10 @@ func Run(conf Config) error {
 	}
 	startDate = conf.Start
 
-	// outDir is the reports root until here, then the folder of this run.
+	// outDir is the reports root until here, then the folder of this run. It is
+	// reset each call so a process that runs several scoreboard commands in a row
+	// (the pipeline) does not treat the last run's folder as the root.
+	outDir = appenv.Reports()
 	root := outDir
 	var id int
 	var err error
