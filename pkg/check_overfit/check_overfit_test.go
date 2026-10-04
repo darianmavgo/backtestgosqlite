@@ -47,3 +47,17 @@ func TestVerdicts(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyKeepsListedStrategies(t *testing.T) {
+	rows := []Verdict{{StrategyID: "a"}, {StrategyID: "B"}, {StrategyID: "c"}}
+	if got := Only(rows, ""); len(got) != 3 {
+		t.Errorf("empty keeps all, got %d", len(got))
+	}
+	if got := Only(rows, "all"); len(got) != 3 {
+		t.Errorf("all keeps all, got %d", len(got))
+	}
+	got := Only(rows, "b, A")
+	if len(got) != 2 || got[0].StrategyID != "a" || got[1].StrategyID != "B" {
+		t.Errorf("got %+v", got)
+	}
+}

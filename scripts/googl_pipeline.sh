@@ -26,8 +26,11 @@ step() { # step "<label>" cmd args...
   "$@" || { echo "   !! FAILED: $label"; failed+=("$label"); }
 }
 
-echo "Building..."
-make build >/dev/null || { echo "build failed"; exit 1; }
+make build >/dev/null 2>&1 || { echo "build failed: run make build"; exit 1; }
+IDS=$(./bin/stratlist -comma sql/lists/googl.sql)
+[ -n "$IDS" ] || { echo "no $SYM strategies found"; exit 1; }
+echo "$SYM strategies: $IDS"
+PRIMARY=${PRIMARY:-streak-${sym_lc}-down3-${sym_lc}}
 
 # 1. data
 if [ -z "${SKIP_NETWORK:-}" ]; then
@@ -39,13 +42,6 @@ if [ -z "${SKIP_NETWORK:-}" ]; then
   fi
 fi
 
-# 2. which strategies are ours
-step "strategy (counts)" ./bin/strategy
-IDS=$(./bin/stratlist -comma sql/lists/googl.sql)
-[ -n "$IDS" ] || { echo "no $SYM strategies found"; exit 1; }
-echo "$SYM strategies: $IDS"
-PRIMARY=${PRIMARY:-streak-${sym_lc}-down3-${sym_lc}}
-
 # 3. explore and train
 step "markov_test" ./bin/markov_test
 step "study hmm_regime $SYM" ./bin/study -study hmm_regime -symbol "$SYM"
@@ -54,45 +50,51 @@ step "train tree $SYM" ./bin/train tree "$SYM"
 step "train streak (nothing to train)" ./bin/train streak
 step "train hold (nothing to train)" ./bin/train hold
 
-# 4. backtest each, then sweep and promote. The sweep stops at the holdout cutoff.
-step "backtest $SYM strategies" ./bin/backtest -force -strategy "$IDS"
-CUTOFF=$(sqlite3 -readonly data/market_history.db \
+# 4. everything below writes into one run folder, data/reports/<RUN>, so no command
+# sees results from earlier runs or other strategies.
+RUN=$(./bin/backtest newrun) || { echo "could not start a run folder"; exit 1; }
+RUNDIR=data/reports/$RUN
+echo "Run folder: $RUNDIR"
+
+# 5. backtest each, then sweep and promote. The sweep stops at the holdout cutoff.
+step "backtest $SYM strategies" ./bin/backtest -force -run-id "$RUN" -strategy "$IDS"
+CUTOFF=$(sqlite3 data/market_history.db \
   "SELECT date(max(substr(Date,1,10)), '-12 months') FROM backtest_start WHERE symbol='$SYM' AND length(Date)=10")
+[ -n "$CUTOFF" ] || { echo "no $SYM bars in data/market_history.db"; exit 1; }
 for id in $(echo "$IDS" | tr ',' ' '); do
   step "gridsearch params $id" ./bin/gridsearch params "$id"
 done
-step "gridsearch $SYM strategies" ./bin/gridsearch -force -end "$CUTOFF" -strategy "$IDS"
-step "gridsearch promote $PRIMARY" ./bin/gridsearch promote -strategy "$PRIMARY" -min-win-rate 0.6 -min-trades 30 -top 5
-step "backtest optimized" ./bin/backtest optimized -strategy "$IDS"
+step "gridsearch $SYM strategies" ./bin/gridsearch -force -run-id "$RUN" -end "$CUTOFF" -strategy "$IDS"
+step "gridsearch promote $PRIMARY" ./bin/gridsearch promote -run-id "$RUN" -strategy "$PRIMARY" -min-win-rate 0.6 -min-trades 30 -top 5
+step "gridsearch apply" ./bin/gridsearch apply -run-id "$RUN" -strategy "$IDS"
 
-# 5. validate
-step "walk_forward" ./bin/walk_forward -keep-going -strategy "$IDS"
-step "check_overfit" ./bin/check_overfit
-step "strateval" ./bin/strateval -strategy "$IDS" -optimize -max-trials 50
-step "strateval report" ./bin/strateval report
-step "strateval status" ./bin/strateval status
-step "strateval path" ./bin/strateval path
+# 6. validate
+step "validate" ./bin/validate -keep-going -run-id "$RUN" -strategy "$IDS"
+step "strateval" ./bin/strateval -run-id "$RUN" -strategy "$IDS" -optimize -max-trials 50
+step "strateval report" ./bin/strateval report -run-id "$RUN" -strategy "$IDS"
+step "strateval status" ./bin/strateval status -run-id "$RUN" -strategy "$IDS"
+step "strateval path" ./bin/strateval path -run-id "$RUN"
 
-# 6. stack
+# 7. stack
 SECONDARY=$(echo "$IDS" | tr ',' '\n' | grep -vx "$PRIMARY" | paste -sd, -)
-step "backtest stack with park-$sym_lc" ./bin/backtest -force -alloc 0.1 -strategy "$PRIMARY+${sym_lc}_tree+park-$sym_lc"
-step "backtest stack-eval" ./bin/backtest stack-eval -primary "$PRIMARY" -secondary "$SECONDARY,park-$park_lc" -stack-depth 3 -persist-best
+step "backtest stack with park-$sym_lc" ./bin/backtest -force -run-id "$RUN" -alloc 0.1 -strategy "$PRIMARY+${sym_lc}_tree+park-$sym_lc"
+step "backtest stack" ./bin/backtest stack -run-id "$RUN" -primary "$PRIMARY" -secondary "$SECONDARY,park-$park_lc" -stack-depth 3 -persist-best
 if [ -z "${SKIP_NETWORK:-}" ] && [ -n "${POLYGON_API_KEY:-}" ]; then
   step "backtest covered-call $SYM" ./bin/backtest covered-call -symbol "$SYM" -otm 2 -commission 0.65 -opt-slip 0.05
 fi
 
-# 7. compare the same strategies: park_sweep (streak and markov rows only) and scoreboard
-step "park_sweep seed" ./bin/park_sweep -strategy "$IDS" seed
-step "park_sweep run" ./bin/park_sweep -strategy "$IDS" run
-step "park_sweep rank" ./bin/park_sweep -strategy "$IDS" rank
-step "park_sweep report" ./bin/park_sweep -strategy "$IDS" report
-step "scoreboard" ./bin/scoreboard -force -strategy "$IDS"
-step "scoreboard compile" ./bin/scoreboard compile -strategy "$IDS"
-step "scoreboard status" ./bin/scoreboard status -strategy "$IDS"
+# 8. compare the same strategies: park_sweep (streak and markov rows only) and scoreboard
+PS="./bin/park_sweep -db $RUNDIR/park_googl.db -report-db $RUNDIR/park_googl_report.db -html $RUNDIR/park_googl.html -strategy $IDS"
+step "park_sweep seed" $PS seed
+step "park_sweep run" $PS run
+step "park_sweep rank" $PS rank
+step "park_sweep report" $PS report
+step "scoreboard" ./bin/scoreboard -force -run-id "$RUN" -strategy "$IDS"
+step "scoreboard compile" ./bin/scoreboard compile -run-id "$RUN" -strategy "$IDS"
+step "scoreboard status" ./bin/scoreboard status -run-id "$RUN" -strategy "$IDS"
 
-# 8. staleness
-step "backtest stale" ./bin/backtest stale
-step "gridsearch stale" ./bin/gridsearch stale
+# 9. staleness of this run's sweep (backtest stale is skipped: it reports on every run)
+step "gridsearch stale" ./bin/gridsearch stale -run-id "$RUN" -strategy "$IDS"
 
 echo
 if [ ${#failed[@]} -gt 0 ]; then

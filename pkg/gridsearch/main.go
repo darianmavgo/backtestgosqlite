@@ -128,7 +128,8 @@ type Config struct {
 	Force         bool            // -force
 	IncludeStreak bool            // -include-streak
 	MinWinRate    float64         // -min-win-rate (promote)
-	GridsearchDb  string          // -gridsearch-db
+	GridsearchDb  string          // -gridsearch-db (empty = gridsearch.db in the run folder)
+	RunID         int             // -run-id
 	MaxPerms      int             // -max-perms
 	Subcommand    string          // "params", "stale", "promote", or empty
 	Passed        map[string]bool // flags set explicitly on the command line (nil = none)
@@ -157,7 +158,7 @@ func DefaultConfig() Config {
 		Force:         false,
 		IncludeStreak: false,
 		MinWinRate:    0.6,
-		GridsearchDb:  appenv.ReportFile("gridsearch.db"),
+		GridsearchDb:  "",
 		MaxPerms:      20000,
 	}
 }
@@ -197,9 +198,10 @@ func Main() {
 	flag.BoolVar(&conf.Force, "force", d.Force, "Redo strategies that already have a completed sweep in data/reports/gridsearch.db")
 	flag.BoolVar(&conf.IncludeStreak, "include-streak", d.IncludeStreak, "Include streak-* strategies (rows of refdata streak_strategy) in -strategy all. They are already a promoted config, so excluded by default")
 	flag.Float64Var(&conf.MinWinRate, "min-win-rate", d.MinWinRate, "gridsearch promote: minimum win rate (0-1)")
-	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables")
+	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables (default: gridsearch.db in the run folder)")
+	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Run folder under data/reports for gridsearch.db and the HTML. A sweep without it starts a new run. stale and promote without it use the latest run")
 	flag.IntVar(&conf.MaxPerms, "max-perms", d.MaxPerms, "Multi-strategy mode: skip a strategy whose generic parameter grid exceeds this many permutations (e.g. genetic-momentum's 50-symbol RequiredSymbols list balloons its generic grid to 210,000+ combos, none of which even exercise its real Python-driven signal logic). 0 disables the cap. Single-strategy mode ignores this.")
-	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"params": "params", "stale": "stale", "promote": "promote"})
+	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"params": "params", "stale": "stale", "promote": "promote", "apply": "apply"})
 	flag.Parse()
 	conf.Passed = map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { conf.Passed[f.Name] = true })
@@ -214,8 +216,23 @@ func Run(conf Config) error {
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
 	stratreg.RegisterFamilies()
 
+	if conf.GridsearchDb == "" && conf.Subcommand != "params" && !conf.List {
+		create := conf.Subcommand == ""
+		path, id, err := storage.RunFile(appenv.Reports(), conf.RunID, create, "gridsearch.db")
+		if err != nil {
+			return fmt.Errorf("gridsearch: %w", err)
+		}
+		conf.GridsearchDb = path
+		conf.RunID = id
+		fmt.Printf("📁 Run %d: %s\n", id, filepath.Dir(path))
+	}
+
+	if conf.Subcommand == "apply" {
+		return runApply(conf)
+	}
+
 	if conf.Subcommand == "stale" {
-		runStaleCommand(conf.GridsearchDb, conf.Db)
+		runStaleCommand(conf.GridsearchDb, conf.Db, conf.Strategy)
 		return nil
 	}
 
@@ -401,7 +418,7 @@ func Run(conf Config) error {
 		printSweepReport(strat, outcome)
 
 		if !conf.NoHtml {
-			reportFile := defaultReportPath(strat, conf.Html)
+			reportFile := defaultReportPath(strat, conf.Html, filepath.Dir(conf.GridsearchDb))
 			if err := exportSweepHTML(strat, outcome, reportFile, conf.Capital); err != nil {
 				log.Printf("Warning: Failed to save HTML report: %v", err)
 			} else {
@@ -416,14 +433,14 @@ func Run(conf Config) error {
 	return nil
 }
 
-func defaultReportPath(strat strategy.Strategy, override string) string {
+// defaultReportPath is the HTML path of one strategy's sweep: the -html override
+// under the reports root, otherwise <id>_gridsearch.html in dir (the run folder).
+func defaultReportPath(strat strategy.Strategy, override, dir string) string {
 	if override != "" {
-		reportFile := override
-		reportFile = appenv.ReportFile(reportFile)
-		return reportFile
+		return appenv.ReportFile(override)
 	}
 	cleanID := strings.ReplaceAll(strat.ID(), "-", "_")
-	return appenv.ReportFile(fmt.Sprintf("%s_gridsearch.html", cleanID))
+	return filepath.Join(dir, fmt.Sprintf("%s_gridsearch.html", cleanID))
 }
 
 func printSweepHeader(strat strategy.Strategy, opts sweepOptions) {

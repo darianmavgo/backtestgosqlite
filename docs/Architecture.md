@@ -17,7 +17,7 @@ pkg/models             Bar, Signal, Trade, Position, PerformanceReport
 pkg/strategy           Strategy interface, strategy configs, pipeline runner
 pkg/streak_strategy    one Strategy per streak_strategy row
 pkg/simulator          PortfolioSimulator and SharedAccountSimulator
-pkg/runner             load bars, run, stack, scan, staleness, stack-eval
+pkg/runner             load bars, run, stack, scan, staleness
 pkg/analytics          metrics and the HTML tear sheet
 pkg/options            covered-call simulation
 pkg/study              research studies; market_context is a subpackage
@@ -62,7 +62,7 @@ idx, Date, timeframe, asset_class, open, high, low, close, "Adj Close", volume, 
 UNIQUE (symbol, Date, timeframe)
 ```
 
-`storage.FetchBars` is the daily simulator's read. It keeps `length(Date) = 10`, so `1m` timestamps never enter a daily run. It no longer computes moving averages: `Bar.SMA50` and `Bar.SMA200` are filled only for strategies that need them, by `strategy.LoadBarSMA`, which runs the `sql/stages/bar_sma` stage into a `bar_sma` slice table in that run's calc database and copies the values onto the bars. Multi-strategy runs (`backtest`, `scoreboard`, `backtest optimized`) go through `runner.RunBatched`: bars are loaded per batch of up to 200 strategies, only for the symbols that batch declares, and a strategy that declares none runs in one final full-universe batch. `-start` is applied in Go after that window, so bars before the start still warm the averages, then drop out of the simulated dates. `FetchRecentBars` is the live-scan equivalent: same daily filter, last N bars per symbol, averages still computed on the longer series.
+`storage.FetchBars` is the daily simulator's read. It keeps `length(Date) = 10`, so `1m` timestamps never enter a daily run. It no longer computes moving averages: `Bar.SMA50` and `Bar.SMA200` are filled only for strategies that need them, by `strategy.LoadBarSMA`, which runs the `sql/stages/bar_sma` stage into a `bar_sma` slice table in that run's calc database and copies the values onto the bars. Multi-strategy runs (`backtest`, `scoreboard`, `gridsearch apply`) go through `runner.RunBatched`: bars are loaded per batch of up to 200 strategies, only for the symbols that batch declares, and a strategy that declares none runs in one final full-universe batch. `-start` is applied in Go after that window, so bars before the start still warm the averages, then drop out of the simulated dates. `FetchRecentBars` is the live-scan equivalent: same daily filter, last N bars per symbol, averages still computed on the longer series.
 
 Option tables in the same market DB (`storage.EnsureOptionTables`):
 
@@ -103,11 +103,11 @@ Optional interfaces, checked by the runner:
 
 | Interface | Role |
 |---|---|
-| `RequiredSymbolsProvider` | symbols to load; also marks a stack-eval candidate as eligible without `-include-universe` |
+| `RequiredSymbolsProvider` | symbols to load; also marks a stack candidate as eligible without `-include-universe` |
 | `TotalReturnProvider` | simulate on `Adj Close` / `Close` scaled bars so dividends reinvest; `ExecuteStrategyWithDividends(..., false)` keeps raw prices and pays cash dividends |
 | `OptionOverlayProvider` | no stock signals; covered call via `pkg/options` |
 | `MinHistoryProvider` | trailing bars a live scan needs; default `DefaultMinHistoryBars` (250) |
-| `DeclineDaysConfigurable` | `SetDeclineDays` so `backtest optimized` can apply a swept streak length |
+| `DeclineDaysConfigurable` | `SetDeclineDays` so `gridsearch apply` can apply a swept streak length |
 
 `Register` keys on the lowercased id. `Get` also matches with `-`, `_`, and spaces removed. Constructors call `Register` from `init`. Row-backed tables (streak, hold, tree, markov) are not registered per row: each is a `strategy.Family` (`pkg/strategy/family.go`) and `Get` falls through to it, reading and building the one row asked for. `List()` returns only the strategies with their own pipeline; `ListAll()` also builds every row.
 
@@ -144,7 +144,7 @@ Every strategy calculates its signals in SQL. `strategy.RunPipeline` runs a pipe
 | `annual_winner` | `biggest-winner` (long), `-short` and `-inverse`: the prior calendar year's best performer, traded for the new year. A symbol whose first open of the year is 0 has no return and is not ranked |
 | `voo_up3` | `voo-up3` |
 
-The covered-call ids (`schd-covered-call`, `vym-covered-call`, `dvy-covered-call` and the `-5pct` ids) return no stock signals: the overlay is simulated in Go in `pkg/options`. A `<dir>-sql` registry id (`voo_up3-sql`) is a duplicate of a pipeline that already has an owner, and `stack-eval` drops it.
+The covered-call ids (`schd-covered-call`, `vym-covered-call`, `dvy-covered-call` and the `-5pct` ids) return no stock signals: the overlay is simulated in Go in `pkg/options`. A `<dir>-sql` registry id (`voo_up3-sql`) is a duplicate of a pipeline that already has an owner, and `backtest stack` drops it.
 
 Still Go, and not signal generation: the simulator and its metrics (`pkg/simulator`, `pkg/analytics`), the dividend-adjusted price copy and dividend recovery in `pkg/runner`, the covered-call overlay, and the studies in `pkg/study`.
 
@@ -154,9 +154,9 @@ Still Go, and not signal generation: the simulator and its metrics (`pkg/simulat
 
 `SharedAccountSimulator` is one cash ledger. List order is priority; 0 is primary. Only the primary may preempt: it can liquidate a subordinate for cash or for the same symbol. Same-symbol eviction requires `signal.Priority == 0` and `position.Priority > 0`. Overlays never evict each other; they size to leftover cash or skip. On a cash shortfall the primary sells the default-asset lot first, then liquidates subordinates longest `HoldDays` first. Subordinates use `CalculateShares(cash, equity, …)` and skip when they cannot afford the order. Positions are keyed by symbol. Idle stats (`AvgCashPct`, `FullyIdlePct`, `DaysFullyIdle`) come from the equity curve. An idle day is `invested IS NULL OR invested = 0`.
 
-`-default-asset` parks leftover cash in one symbol after entries each session. The park lot is not a `Positions` entry, so a sleeve can hold that same symbol beside it. Park fills use the primary's slippage and commission and are not written to `trades`, so the sleeve trade count stays comparable to a cash run. Cash dividends on the park come from steps in `Adj Close / Close` and are swept back into the park the same day. A session with no bar for the symbol stays in cash. The park counts as an open position, so idle days fall while it is held. The result file is `reports/shared_<primary>_<secondaries>_default-<symbol>.db`. When that filename plus `-journal` would pass 255 bytes, the file is `reports/default_asset_<symbol>.db`. `shared_account_audit` stores `default_asset`, `avg_default_pct`, `default_dividends`, and `days_unparked`.
+`-default-asset` parks leftover cash in one symbol after entries each session. The park lot is not a `Positions` entry, so a sleeve can hold that same symbol beside it. Park fills use the primary's slippage and commission and are not written to `trades`, so the sleeve trade count stays comparable to a cash run. Cash dividends on the park come from steps in `Adj Close / Close` and are swept back into the park the same day. A session with no bar for the symbol stays in cash. The park counts as an open position, so idle days fall while it is held. The result goes to `stack.db` in the run folder. `shared_account_audit` stores `default_asset`, `avg_default_pct`, `default_dividends`, and `days_unparked`.
 
-`park-<symbol>` names the same park as a stack member (`strategy.ParkStrategy`, `strategy.SplitResidual`). `Get` resolves it for any ticker-shaped symbol, `backtest` and `stack-eval` pull it out of the member list and pass its symbol as `DefaultAsset`, and `ExecuteStack` rejects a park left in the sleeve list.
+`park-<symbol>` names the same park as a stack member (`strategy.ParkStrategy`, `strategy.SplitResidual`). `Get` resolves it for any ticker-shaped symbol, `backtest` and `backtest stack` pull it out of the member list and pass its symbol as `DefaultAsset`, and `ExecuteStack` rejects a park left in the sleeve list.
 
 `park_sweep` runs that same one-primary park for every settings row. Streak rows run the `streak_strategy` SQL pipeline; `gridsearch` calculates their entries once per (trade symbol, streak length, regime) in the `streak_slice` and `streak_entry` stages (`sql/stages/`) and applies take-profit, stop and hold per grid point. Decision-tree rows call `DecisionTreeSignals` in memory and are absent while `etf_dt_strategies` is empty. Markov rows call `sql/strategies/markov_model` (or `markov_hmm` when the id contains `hmm`). The Markov prediction table does not depend on the strategy row, so it is built once in a temporary calc database and reused. Each strategy deletes only its signal rows before the next insert. Results stay in `reports/park_googl.db`. `edge_vs_googl` is final equity minus the buy-and-hold final equity stored on `park_asset` for the same window and capital. Park contribution is ending equity minus starting capital minus sleeve net profit.
 
@@ -188,16 +188,15 @@ Written by `pkg/storage` into each strategy or shared DB:
 | `gridsearch_runs` | one row per strategy: status `running` / `done` / `failed`, best Calmar and resilience, `data_max_date` for staleness |
 | `gridsearch_results` | one row per config: label, baseline flag, CAGR, drawdown, Calmar, resilience, trades, win rate, idle days, and (added later) `symbol`, `signal_days`, `hold_days`, `take_profit_pct`, `stop_loss_pct`, `regime`, `signal_symbol`, `allocation_pct`. Older sweeps leave `idle_days` NULL |
 
-`running` and `failed` are retried. `done` is skipped unless `-force`. `backtest optimized` reads the best row and applies it, including `DeclineDays` when the strategy implements `DeclineDaysConfigurable`. Many older rows have NULL `hold_days`; the label is `SYM/sigDaysd/holdd/+TP%-SL%/regime` or `SYM/Hold-Nd/TP+x%/SL-y%`. Older rows also have NULL `signal_symbol` and `allocation_pct`. `gridsearch promote` fills the watch symbol from the parent strategy's `ParameterSpace` when the column is NULL.
+`running` and `failed` are retried. `done` is skipped unless `-force`. `gridsearch apply` reads the best row and applies it, including `DeclineDays` when the strategy implements `DeclineDaysConfigurable`. Many older rows have NULL `hold_days`; the label is `SYM/sigDaysd/holdd/+TP%-SL%/regime` or `SYM/Hold-Nd/TP+x%/SL-y%`. Older rows also have NULL `signal_symbol` and `allocation_pct`. `gridsearch promote` fills the watch symbol from the parent strategy's `ParameterSpace` when the column is NULL.
 
 `pkg/streak_strategy` is the `streak` family: `strategy.Get` builds a `streak_strategy` row from its `id` (`streak-<signal>-<up|down><days>-<trade>`). The package imports `pkg/strategy`, so registration is a call to `Register` from backtest, gridsearch, scoreboard, livescan, and strateval, right after `AutoRegisterSQLStrategies`. Signals come from `sql/strategies/streak_strategy/` (`__SIGNAL_SYMBOL__`, `__TRADE_SYMBOL__`, `__STREAK_COL__`, `__REGIME_PREDICATE__`). `gridsearch -strategy all` skips the `streak-` prefix unless `-include-streak`. Scoreboard and `backtest -strategy all` include the rows.
 
-`reports/stack_eval_<primary>.db` table `overlay_rankings` is replaced on each stack-eval (`DELETE` then insert). Columns include combined equity, CAGR, Sharpe, max drawdown, incremental equity versus the primary alone, secondary PnL and trades, preempted count, and idle-cash percents.
+`reports/stack_eval_<primary>.db` table `overlay_rankings` is replaced on each stack (`DELETE` then insert). Columns include combined equity, CAGR, Sharpe, max drawdown, incremental equity versus the primary alone, secondary PnL and trades, preempted count, and idle-cash percents.
 
 Stack-eval candidate filter (`runner.OverlayCandidates`), when `-secondary` is empty:
 
 - drop the primary, duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`
-- drop the sibling pair `sig-voo-buy-tecl` / `voo-tecl-spxu-combo`
 - strategies that do not implement `RequiredSymbolsProvider` only with `-include-universe`
 
 Explicit `-secondary` ids skip that filter. After pairwise ranking, a greedy pass stacks up to `-stack-depth` overlays whose traded symbols do not overlap. `-persist-best` writes one shared DB for that stack. Calc databases for the sweep sit in `reports/stack_eval_calc/`.
@@ -228,6 +227,8 @@ Staleness (`pkg/runner/staleness.go`) is shared by `backtest stale` and `gridsea
 `sql/studies/cluster_5pct.sql` is the cluster study's SQL text.
 
 ## Validation
+
+`validate` (`pkg/validate`) is the one command for this stage: `validate` runs the folds and then the verdict, `validate walk` only the folds, `validate verdict` only the verdict. The two halves below keep their logic in `pkg/walk_forward` and `pkg/check_overfit`, and the commands of those names are deprecated aliases.
 
 `walk_forward` slices the daily bars into rolling folds (default 24 months in sample, 6 out of sample, step 6). Each fold is a full `PortfolioSimulator` run. Rows land in `walk_forward_fold`. `sql/validation/walk_forward_summary.sql` rebuilds `walk_forward_summary`. The default file `reports/walk_forward.db` is relative to the process working directory, not `appenv.Reports()`.
 

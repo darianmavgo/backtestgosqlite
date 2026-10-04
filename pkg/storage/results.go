@@ -471,3 +471,26 @@ func RunDir(root string, runID int) (string, error) {
 	}
 	return dir, nil
 }
+
+// RunFile returns the path of name inside a run folder under root, and the run's
+// number. runID > 0 is that existing run. With runID 0, create makes the next
+// run (the way a command that writes files starts one) and otherwise the latest
+// run is used (the way a command that reads them finds the last one).
+func RunFile(root string, runID int, create bool, name string) (string, int, error) {
+	var dir string
+	var err error
+	switch {
+	case runID > 0:
+		dir, err = RunDir(root, runID)
+	case create:
+		runID, dir, err = NewRun(root)
+	default:
+		if runID, dir = LatestRunDir(root); dir == "" {
+			err = fmt.Errorf("no runs in %s yet", root)
+		}
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	return filepath.Join(dir, name), runID, nil
+}

@@ -24,16 +24,21 @@ type Config struct {
 	// KeepGoing skips a strategy that cannot be walked (short history, no
 	// bars) and continues, instead of aborting a long list.
 	KeepGoing bool
+	// RunID is the run folder holding walk_forward.db when DB is empty; 0 starts a new run.
+	RunID int
 	Options
 }
 
 // Main parses flags and runs. It returns errors instead of exiting.
+//
+// Deprecated: walk_forward is the first half of `validate`. Use `validate walk`.
 func Main(out io.Writer) error {
 	var conf Config
 	flag.StringVar(&conf.Strategy, "strategy", "", "strategy id, or a comma-separated list")
 	flag.StringVar(&conf.MarketDB, "market-db", appenv.MarketDB(), "market bars SQLite")
 	flag.StringVar(&conf.Table, "table", "backtest_start", "bars table")
-	flag.StringVar(&conf.DB, "db", appenv.ReportFile("walk_forward.db"), "SQLite file for fold rows and walk_forward_summary")
+	flag.StringVar(&conf.DB, "db", "", "SQLite file for fold rows and walk_forward_summary (default: walk_forward.db in the run folder)")
+	flag.IntVar(&conf.RunID, "run-id", 0, "run folder under data/reports to keep walk_forward.db in (0 = start a new run)")
 	flag.IntVar(&conf.TrainMonths, "train-months", 24, "rolling in-sample window, calendar months (the strategy is run on it, nothing is fitted)")
 	flag.IntVar(&conf.TestMonths, "test-months", 6, "out-of-sample window, calendar months")
 	flag.IntVar(&conf.StepMonths, "step-months", 6, "how far each fold moves forward, calendar months")
@@ -51,7 +56,12 @@ func Run(ctx context.Context, out io.Writer, conf Config) error {
 		return fmt.Errorf("walk_forward: -strategy is required")
 	}
 	if strings.TrimSpace(conf.DB) == "" {
-		return fmt.Errorf("walk_forward: -db is required")
+		path, id, err := storage.RunFile(appenv.Reports(), conf.RunID, true, "walk_forward.db")
+		if err != nil {
+			return fmt.Errorf("walk_forward: %w", err)
+		}
+		conf.DB = path
+		fmt.Fprintf(out, "run %d: %s\n", id, conf.DB)
 	}
 	market, err := storage.OpenSQLite(conf.MarketDB)
 	if err != nil {

@@ -93,12 +93,52 @@ func Open(path string) (*sqlx.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("refdb schema: %w", err)
 	}
+	if err := upgradeHold(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("refdb hold upgrade: %w", err)
+	}
 	// strategy_family_param: what gridsearch can vary per family (sql/stages/family_params).
 	if err := storage.RunStage(db, "family_params", nil); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("refdb family params: %w", err)
 	}
 	return db, nil
+}
+
+// upgradeHold brings an older hold_strategy table up to date on open. It adds
+// trailing_stop_pct and sma_reentry_period (0 = never) when they are missing and
+// copies in any hold_bail_strategy rows not yet there, which is how the hold_bail
+// family was merged into hold. It never drops or deletes, and does nothing on a
+// database without a hold_strategy table.
+func upgradeHold(db *sqlx.DB) error {
+	var cols []string
+	if err := db.Select(&cols, `SELECT name FROM pragma_table_info('hold_strategy')`); err != nil || len(cols) == 0 {
+		return err
+	}
+	have := map[string]bool{}
+	for _, c := range cols {
+		have[c] = true
+	}
+	if !have["trailing_stop_pct"] {
+		if _, err := db.Exec(`ALTER TABLE hold_strategy ADD COLUMN trailing_stop_pct REAL NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !have["sma_reentry_period"] {
+		if _, err := db.Exec(`ALTER TABLE hold_strategy ADD COLUMN sma_reentry_period INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	var n int
+	if err := db.Get(&n, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'hold_bail_strategy'`); err != nil || n == 0 {
+		return err
+	}
+	_, err := db.Exec(`
+		INSERT OR IGNORE INTO hold_strategy
+			(id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct, trailing_stop_pct, sma_reentry_period)
+		SELECT id, name, symbol, 0, allocation_pct, cash_yield, slippage_pct, trailing_stop_pct, sma_reentry_period
+		FROM hold_bail_strategy`)
+	return err
 }
 
 // OpenExisting opens the reference DB only if the file already exists and is

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
@@ -14,7 +15,7 @@ import (
 // runStaleCommand implements `gridsearch stale`: assess every strategy with a
 // completed sweep in gridDBPath for staleness (see runner.AssessOne) and
 // print a report. No sweeps are run.
-func runStaleCommand(gridDBPath, marketDBPath string) error {
+func runStaleCommand(gridDBPath, marketDBPath, strategyArg string) error {
 	gdb, err := storage.OpenSQLite(gridDBPath)
 	if err != nil {
 		return fmt.Errorf("Failed to open gridsearch pipeline DB %s: %v", gridDBPath, err)
@@ -32,6 +33,15 @@ func runStaleCommand(gridDBPath, marketDBPath string) error {
 	var rows []row
 	if err := gdb.Select(&rows, `SELECT strategy_id, finished_at, COALESCE(data_max_date, '') AS data_max_date FROM gridsearch_runs WHERE status = 'done'`); err != nil {
 		return fmt.Errorf("Failed to query gridsearch_runs: %v", err)
+	}
+	if keep := idSet(strategyArg); keep != nil {
+		kept := rows[:0]
+		for _, r := range rows {
+			if keep[strings.ToLower(r.StrategyID)] {
+				kept = append(kept, r)
+			}
+		}
+		rows = kept
 	}
 	if len(rows) == 0 {
 		log.Println("No completed sweeps found in", gridDBPath, "— nothing to assess. Run some sweeps first.")
@@ -68,4 +78,18 @@ func runStaleCommand(gridDBPath, marketDBPath string) error {
 	runner.PrintStalenessReport(gridDBPath, entries, neverSwept)
 
 	return nil
+}
+
+// idSet is the lower-cased ids of a -strategy list, or nil (no filter) when the
+// list is empty or "all".
+func idSet(arg string) map[string]bool {
+	arg = strings.TrimSpace(arg)
+	if arg == "" || strings.EqualFold(arg, "all") {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, id := range strings.Split(arg, ",") {
+		out[strings.ToLower(strings.TrimSpace(id))] = true
+	}
+	return out
 }

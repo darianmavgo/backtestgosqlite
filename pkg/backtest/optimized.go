@@ -53,7 +53,7 @@ func bestParamsFor(gdb *sqlx.DB, strategyID string) (optimizedParams, bool) {
 	return p, true
 }
 
-// runOptimizedCommand implements `backtest optimized`: run every selected
+// runOptimizedCommand implements `gridsearch apply` (the deprecated `backtest optimized`): run every selected
 // strategy with the best (highest resilience score) config a prior
 // `gridsearch` sweep found for it, instead of the strategy's own hardcoded
 // baseline. Strategies with no sweep on record run with their baseline

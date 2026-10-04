@@ -30,42 +30,19 @@ import (
 func defaultLedgerDB() string {
 	// Do NOT use appenv.ReportFile here: sourcing trade_orchestrator's .env
 	// often sets APP_FOLDER=/mnt/data (Linux deploy path), which breaks on a Mac.
+	// Without one of these the ledger is strategies.db in the run folder (see Run).
 	if v := strings.TrimSpace(os.Getenv("STRATEGIES_DB")); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("STRATEVAL_DB")); v != "" {
-		return v
-	}
-	// Prefer <repo>/data/reports/strategies.db when run from the module tree.
-	if root := findModuleRoot(); root != "" {
-		return filepath.Join(root, "data", "reports", "strategies.db")
-	}
-	return filepath.Join("data", "reports", "strategies.db")
-}
-
-func findModuleRoot() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	dir := wd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
+	return strings.TrimSpace(os.Getenv("STRATEVAL_DB"))
 }
 
 // Config holds the settings of a strateval run; subcommands use the subset they need.
 type Config struct {
 	Db            string  // -db
 	Allowlist     string  // -allowlist
-	RunId         string  // -run-id
+	RunId         string  // ledger id of an evaluation (a timestamp unless set by Run)
+	RunFolder     int     // -run-id: run folder under data/reports holding the ledger (0 = new for an evaluation, latest otherwise)
 	MarketDb      string  // -market-db
 	Table         string  // -table
 	Strategy      string  // -strategy
@@ -92,7 +69,7 @@ func DefaultConfig() Config {
 		MarketDb:      appenv.MarketDB(),
 		Table:         "backtest_start",
 		Strategy:      "",
-		OutDir:        appenv.ReportFile("strateval_runs"),
+		OutDir:        "",
 		Capital:       100000,
 		Start:         storage.DefaultStartDate,
 		OosMonths:     12,
@@ -108,17 +85,24 @@ func DefaultConfig() Config {
 
 // Main is the CLI entry point.
 func Main() {
+	flag.Usage = func() {
+		fmt.Fprint(flag.CommandLine.Output(), "Usage: strateval [report|status|sync-deployed|path] [flags]\n\n"+
+			"Scores strategies in and out of sample, assigns a tier A to D, and keeps the\n"+
+			"ledger of which are deployed. Stage: after backtest and gridsearch, alongside\n"+
+			"validate (walk-forward and overfit verdict). Its ledger is strategies.db in the run folder.\n\n")
+		flag.PrintDefaults()
+	}
 	log.SetFlags(0)
 	conf := DefaultConfig()
 	d := conf
 	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"report": "report", "status": "status", "sync-deployed": "sync-deployed", "path": "path"})
-	flag.StringVar(&conf.Db, "db", d.Db, "strategies SQLite ledger")
+	flag.StringVar(&conf.Db, "db", d.Db, "strategies SQLite ledger (default: strategies.db in the run folder, or $STRATEGIES_DB)")
 	flag.StringVar(&conf.Allowlist, "allowlist", d.Allowlist, "comma-separated STRATEGY_ALLOWLIST")
-	flag.StringVar(&conf.RunId, "run-id", d.RunId, "optional run id filter")
+	flag.IntVar(&conf.RunFolder, "run-id", d.RunFolder, "run folder under data/reports for the ledger and artifacts. An evaluation without it starts a new run, and the other subcommands use the latest")
 	flag.StringVar(&conf.MarketDb, "market-db", d.MarketDb, "market bars SQLite")
 	flag.StringVar(&conf.Table, "table", d.Table, "bars table")
 	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "strategy id, comma-list, or 'all'")
-	flag.StringVar(&conf.OutDir, "out-dir", d.OutDir, "per-run artifact dir")
+	flag.StringVar(&conf.OutDir, "out-dir", d.OutDir, "per-run artifact dir (default: strateval_runs in the run folder)")
 	flag.Float64Var(&conf.Capital, "capital", d.Capital, "starting capital")
 	flag.StringVar(&conf.Start, "start", d.Start, "earliest bar date")
 	flag.IntVar(&conf.OosMonths, "oos-months", d.OosMonths, "held-out OOS months")
@@ -138,6 +122,22 @@ func Main() {
 // Run executes the subcommand (or evaluation) selected by conf. It returns
 // errors instead of exiting.
 func Run(conf Config) error {
+	if !conf.List && (conf.Db == "" || (conf.OutDir == "" && conf.Subcommand == "")) {
+		create := conf.Subcommand == ""
+		ledger, id, err := storage.RunFile(appenv.Reports(), conf.RunFolder, create, "strategies.db")
+		if err != nil {
+			return fmt.Errorf("strateval: %w", err)
+		}
+		if conf.Db == "" {
+			conf.Db = ledger
+		}
+		if conf.OutDir == "" {
+			conf.OutDir = filepath.Join(filepath.Dir(ledger), "strateval_runs")
+		}
+		if create {
+			fmt.Printf("📁 Run %d: %s\n", id, filepath.Dir(ledger))
+		}
+	}
 	switch conf.Subcommand {
 	case "report":
 		return runReport(conf)
@@ -165,6 +165,15 @@ func runStatus(conf Config) error {
 	rows, err := st.ListStatus()
 	if err != nil {
 		return fmt.Errorf("status: %v", err)
+	}
+	if keep := idSet(conf.Strategy); keep != nil {
+		kept := rows[:0]
+		for _, r := range rows {
+			if keep[strings.ToLower(r.StrategyID)] {
+				kept = append(kept, r)
+			}
+		}
+		rows = kept
 	}
 	fmt.Printf("ledger: %s\n\n", conf.Db)
 	fmt.Print(FormatStatusTable(rows))
@@ -202,6 +211,15 @@ func runReport(conf Config) error {
 	rows, err := st.LatestByStrategy(conf.RunId)
 	if err != nil {
 		return fmt.Errorf("query: %v", err)
+	}
+	if keep := idSet(conf.Strategy); keep != nil {
+		kept := rows[:0]
+		for _, r := range rows {
+			if keep[strings.ToLower(r.StrategyID)] {
+				kept = append(kept, r)
+			}
+		}
+		rows = kept
 	}
 	fmt.Print(FormatReport(rows, splitList(conf.Allowlist)))
 	return nil
@@ -318,6 +336,20 @@ func splitList(raw string) []string {
 		if p != "" {
 			out = append(out, p)
 		}
+	}
+	return out
+}
+
+// idSet is the lower-cased ids of a -strategy list, or nil (no filter) when the
+// list is empty or "all". report and status use it to show only those strategies.
+func idSet(arg string) map[string]bool {
+	arg = strings.TrimSpace(arg)
+	if arg == "" || strings.EqualFold(arg, "all") {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, id := range splitList(arg) {
+		out[strings.ToLower(id)] = true
 	}
 	return out
 }

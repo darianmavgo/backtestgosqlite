@@ -25,7 +25,7 @@ func parkEntry(id string, alloc float64, hold int, stop float64) StrategyPriorit
 		StopLossPct:    stop,
 	}
 	return StrategyPriorityEntry{
-		Strategy: &mockStrategy{id: id, name: id, cfg: cfg},
+		Strategy: rowStrategy(id),
 		Priority: 0,
 		Config:   cfg,
 	}

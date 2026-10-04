@@ -26,7 +26,7 @@ func runStackEvalCommand(
 	override runner.ConfigOverride,
 ) (stackEvalOutcome, error) {
 	if primaryID == "" {
-		return stackEvalOutcome{}, fmt.Errorf("stack-eval requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack-eval -primary sig-voo-buy-tecl")
+		return stackEvalOutcome{}, fmt.Errorf("stack requires a primary strategy (positional or -primary). Example:\n  ./bin/backtest stack -primary streak-voo-buy-tecl")
 	}
 	primary, ok := strategy.Get(primaryID)
 	if !ok {
@@ -41,7 +41,7 @@ func runStackEvalCommand(
 			if st, ok := strategy.Get(id); ok {
 				if rp, isPark := st.(strategy.ResidualProvider); isPark {
 					if parkSym != "" && parkSym != rp.ParkSymbol() {
-						return stackEvalOutcome{}, fmt.Errorf("stack-eval takes one park, got %s and %s", parkSym, rp.ParkSymbol())
+						return stackEvalOutcome{}, fmt.Errorf("stack takes one park, got %s and %s", parkSym, rp.ParkSymbol())
 					}
 					parkSym = rp.ParkSymbol()
 					continue
@@ -50,7 +50,7 @@ func runStackEvalCommand(
 			kept = append(kept, id)
 		}
 		if len(kept) == 0 && len(explicitSecondaries) > 0 {
-			return stackEvalOutcome{}, fmt.Errorf("stack-eval needs at least one overlay besides the park")
+			return stackEvalOutcome{}, fmt.Errorf("stack needs at least one overlay besides the park")
 		}
 		explicitSecondaries = kept
 	}
@@ -84,7 +84,7 @@ func runStackEvalCommand(
 		fmt.Printf("\nLoading ALL bars from '%s' (universe overlays enabled)...\n", tableName)
 	} else {
 		fetchSymbols = reqSymbols
-		fmt.Printf("\nLoading bars for %v from '%s' for stack-eval of %s (capital $%.0f)...\n",
+		fmt.Printf("\nLoading bars for %v from '%s' for stack of %s (capital $%.0f)...\n",
 			reqSymbols, tableName, primary.ID(), capital)
 	}
 	barsBySymbol, sortedDates, err := storage.FetchBars(db, tableName, fetchSymbols, backtestStart, backtestEnd)

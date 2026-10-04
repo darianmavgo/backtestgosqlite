@@ -285,7 +285,7 @@ func PrintSharedAccountTearSheet(res SharedRunResult) {
 	fmt.Printf("========================================================================================================================\n")
 
 	// Print Consolidated Tear Sheet
-	PrintPerformanceTearSheet("Shared Account Portfolio", res.CombinedReport)
+	PrintPerformanceTearSheet("Portfolio", res.CombinedReport)
 
 	// Strategy Attribution Breakdown Table
 	fmt.Printf("\n========================================================================================================================\n")

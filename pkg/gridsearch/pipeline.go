@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"path/filepath"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -434,7 +435,7 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 					printMu.Unlock()
 
 					if len(outcome.Results) > 0 && !noHTML {
-						reportFile := defaultReportPath(st.strat, "")
+						reportFile := defaultReportPath(st.strat, "", filepath.Dir(gridDBPath))
 						if err := exportSweepHTML(st.strat, outcome, reportFile, opts.Capital); err != nil {
 							log.Printf("Warning: HTML export failed for %s: %v", st.strat.ID(), err)
 						}

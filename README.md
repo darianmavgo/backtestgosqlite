@@ -10,6 +10,21 @@ make list           # ./bin/backtest -strategylist
 
 `go run ./cmd/<name>` is the same program as `./bin/<name>`. Package map and internals are in [Architecture.md](Architecture.md); rules for editing the code are in [CLAUDE.md](CLAUDE.md).
 
+## Pipeline in order
+
+Each command is one stage and answers one question. Run them left to right.
+
+| Stage | Question | Command |
+|---|---|---|
+| Data | What bars do I have? | `market_history`, `universe` |
+| Train | Fit the models | `train` |
+| Run | How did it do? | `backtest` |
+| Tune | Which parameters? | `gridsearch` |
+| Validate | Is it real or overfit? | `validate` |
+| Score | In and out of sample, with a tier A to D and the deployed ledger | `strateval` |
+| Rank | Which is best? | `scoreboard` |
+| Go live | What do I buy next session? | `livescan` |
+
 ## What it can do
 
 | Capability | Command |
@@ -18,9 +33,9 @@ make list           # ./bin/backtest -strategylist
 | Build the stock and ETF universe (`refdata/universe.db`) | `universe` |
 | Backtest one strategy, many, or a shared-cash stack | `backtest` |
 | Stack strategies on one cash ledger with `a+b+c`, with leftover cash parked in a symbol (`park-<symbol>`) | `backtest` |
-| Rank strategies as idle-cash overlays and build a greedy stack | `backtest stack-eval` |
+| Rank strategies as idle-cash overlays and build a greedy stack | `backtest stack` |
 | Sweep hold, take-profit and stop, then promote winners to new strategies | `gridsearch` |
-| Walk-forward folds plus an overfit verdict per strategy | `walk_forward`, `check_overfit` |
+| Is it real or overfit: walk-forward folds plus a verdict per strategy | `validate` |
 | In-sample / out-of-sample ledger with tiers A to D | `strateval` |
 | Rank every registered strategy, or a list | `scoreboard` |
 | Live signal scan for the next session | `livescan` |
@@ -35,7 +50,7 @@ Every strategy is calculated in SQL and run by Go. `backtest -strategylist` prin
 | Source | Count | Defined in |
 |---|---|---|
 | Own pipeline | a handful (`voo-up3`, `price-action-reclaim`, `biggest-winner*`, `tsll-daily-one-share`, covered calls) | a small config in `pkg/strategy/` plus `sql/strategies/<id>/` |
-| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 once the hold_bail rows are merged in (see `sql/migrations/`), `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, each running one shared `sql/strategies/<family>/` |
+| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 (the old hold_bail rows were merged in when the DB was first opened) `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, each running one shared `sql/strategies/<family>/` |
 
 Most streak rows are a generic "drop 3 days, buy the rebound" rule, one per symbol. A few were promoted from sweeps (`source_strategy` `voo-up3`, `gld-decline`, `universe-screen`, `manual`). `streak-voo-buy-tecl` is now `streak-voo-buy-tecl`. `park-<symbol>` resolves for any ticker without registration (see below). The older `streak-voo-buy-tecl`, `gld-decline` and `googl-hop` strategies are no longer registered; their SQL folders remain in `sql/strategies/`.
 
@@ -43,13 +58,13 @@ Most streak rows are a generic "drop 3 days, buy the rebound" rule, one per symb
 
 The search that produced the current numbers, in order:
 
-1. `walk_forward -keep-going` over the candidates on a market DB cut off before a held-out final year, then `check_overfit`.
+1. `validate -keep-going` over the candidates on a market DB cut off before a held-out final year.
 2. `sql/search/01_gate_walk_forward.sql`: strict out-of-sample gate (at least 30 OOS trades, OOS Sharpe 1.5, 75% positive folds, worst fold drawdown 6%).
 3. `sql/search/02_liquidity_returns.sql` and `03_liquidity_screen.sql`: dollar volume, price and split-jump screen. `04_candidates.sql` joins the survivors to their trade symbols. Run these with `sqlite3`, attaching the walk-forward DB (`wf`), market DB (`mkt`) and `refdata/strategies.db` (`ref`).
-4. `backtest stack-eval` over the survivors for several primaries and `-alloc` sizes.
+4. `backtest stack` over the survivors for several primaries and `-alloc` sizes.
 5. Re-run the frozen stacks on the held-out year with `-start`.
 
-Every `backtest` and `stack-eval` run now does step 5 itself (see the holdout note under `backtest`). Result to date: no stack reached 79% CAGR with drawdown under 6%. Liquid stacks held a Calmar of about 4 to 8 in-sample and about 4.5 on the holdout. The benchmark to beat is in [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md).
+Every `backtest` and `backtest stack` run now does step 5 itself (see the holdout note under `backtest`). Result to date: no stack reached 79% CAGR with drawdown under 6%. Liquid stacks held a Calmar of about 4 to 8 in-sample and about 4.5 on the holdout. The benchmark to beat is in [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md).
 
 ## Create and polish a strategy: GOOGL walkthrough
 
@@ -67,12 +82,12 @@ Every command in this repo, in the order you use them to take one idea from raw 
 | 8 | Look at the grid | `./bin/gridsearch params streak-googl-down3` | Prints the hold, take-profit, stop and regime grid with no simulation. | none |
 | 9 | Sweep parameters | `./bin/gridsearch -strategy streak-googl-down3 -end <cutoff> -top 20` | Sweeps hold, target, stop and regime. `-end` stops the sweep before the held-out months so they do not tune the result. | writes `data/reports/gridsearch.db`, `<strategy>_gridsearch.html` |
 | 10 | Promote winners | `./bin/gridsearch promote -strategy streak-googl-down3 -min-win-rate 0.6 -min-trades 30 -top 5` | Copies the best sweep rows into `streak_strategy` as new ids such as `streak-googl-down3-googl`. | writes `refdata/strategies.db` |
-| 11 | Re-run tuned | `./bin/backtest optimized -strategy streak-googl-down3` | Re-runs with the highest-resilience sweep row. Compare to step 7. | reads `gridsearch.db` |
-| 12 | Walk-forward | `./bin/walk_forward -strategy streak-googl-down3-googl,googl_tree -keep-going` | Rolling 24 month train / 6 month test folds, one strategy at a time. | writes `data/reports/walk_forward.db` |
-| 13 | Overfit verdict | `./bin/check_overfit` | Prints `HOLDS`, `DECAYS`, `CURVE_FIT` or `INSUFFICIENT` per strategy. Drop anything that is not `HOLDS`. | reads/writes `walk_forward.db` |
+| 11 | Re-run tuned | `./bin/gridsearch apply -run-id <N> -strategy streak-googl-down3` | Re-runs with the highest-resilience sweep row. Compare to step 7. | reads `gridsearch.db` |
+| 12 | Walk-forward | `./bin/validate walk -keep-going -strategy streak-googl-down3-googl,googl_tree` | Rolling 24 month train / 6 month test folds, one strategy at a time. | writes `data/reports/walk_forward.db` |
+| 13 | Overfit verdict | `./bin/validate verdict -strategy streak-googl-down3-googl,googl_tree` (or plain `validate`, which does 12 and 13 together) | Prints `HOLDS`, `DECAYS`, `CURVE_FIT` or `INSUFFICIENT` per strategy. Drop anything that is not `HOLDS`. | reads/writes `walk_forward.db` |
 | 14 | Ledger and tier | `./bin/strateval -strategy streak-googl-down3-googl`, then `strateval report` | Records in-sample and out-of-sample results and a tier A to D (A needs 12 OOS trades, win rate 0.55, drawdown under 0.15). `-optimize -max-trials 50` searches parameters inside the eval. | writes `data/reports/strategies.db` |
 | 15 | Stack it | `./bin/backtest -strategy "streak-googl-down3-googl+googl_tree+park-googl" -alloc 0.1` | Shares one cash ledger. `park-googl` (or `-default-asset GOOGL`) holds leftover cash in GOOGL and is never the primary. | writes `data/reports/<run_id>/stack.db` |
-| 16 | Find complements | `./bin/backtest stack-eval -primary streak-googl-down3-googl -secondary "googl_tree,markov_model_googl,park-sgov" -stack-depth 3` | Ranks each secondary as an idle-cash overlay, then builds the greedy stack. Rank finalists by Calmar and max drawdown. Beat [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md). | writes `data/reports/stack_eval_<primary>.db` |
+| 16 | Find complements | `./bin/backtest stack -primary streak-googl-down3-googl -secondary "googl_tree,markov_model_googl,park-sgov" -stack-depth 3` | Ranks each secondary as an idle-cash overlay, then builds the greedy stack. Rank finalists by Calmar and max drawdown. Beat [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md). | writes `data/reports/stack_eval_<primary>.db` |
 | 17 | Park-symbol sweep (optional) | `./bin/park_sweep -strategy <ids> seed`, `run`, `rank`, `report` | Runs the listed `streak_strategy` and `markov_strategy` rows (all rows without `-strategy`) with leftover cash parked in GOOGL and ranks them. | writes `data/reports/park_googl.db`, `park_googl.html` |
 | 18 | Options overlay (optional) | `./bin/market_history -source polygon-options -symbols GOOGL`, then `./bin/backtest covered-call -symbol GOOGL` | Compares holding GOOGL with selling a monthly call. | writes `option_*` tables; prints to stdout |
 | 19 | Rank everything | `./bin/scoreboard -strategy <ids>`, `scoreboard status -strategy <ids>` | Backtests the listed strategies (all registered ones without `-strategy`) that lack a result and ranks them. | writes `data/reports/scoreboard.db` |
@@ -96,7 +111,7 @@ Notes:
 | `APP_FOLDER` | `.` | repository root. `data/`, `refdata/` and `data/reports/` are fixed subfolders of it |
 | `POLYGON_API_KEY` | empty | Polygon equity and option downloads, `universe` |
 | `STRATEGY_ALLOWLIST` | empty | `strateval` live-list snapshot |
-| `STRATEGIES_DB` or `STRATEVAL_DB` | empty | overrides the strateval ledger path |
+| `STRATEGIES_DB` or `STRATEVAL_DB` | empty | overrides the strateval ledger path (otherwise `strategies.db` in the run folder) |
 
 Default files:
 
@@ -111,7 +126,7 @@ Default files:
 
 Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db`. `market_history`, `gridsearch` and `scoreboard` also default to it and `market_history` creates it when it writes.
 
-The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack-eval -primary …`, not `backtest -primary … stack-eval`.
+The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack -primary …`, not `backtest -primary … stack`.
 
 Daily simulations load rows with `length(Date) = 10`. Minute bars stay in the same table and are skipped by the daily bar query.
 
@@ -154,7 +169,7 @@ Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Poly
 
 Run one strategy, many strategies, or a shared cash account.
 
-**Reads:** market DB (`-db`, table `-table` `backtest_start`). `optimized` also reads `data/reports/gridsearch.db`. SQL pipelines read `sql/strategies/<id>/` when that directory exists, otherwise the copy embedded in the binary.
+**Reads:** market DB (`-db`, table `-table` `backtest_start`). `gridsearch apply` is what reads `gridsearch.db` and calls back into this package. SQL pipelines read `sql/strategies/<id>/` when that directory exists, otherwise the copy embedded in the binary.
 
 **Writes:** `data/reports/<id>.db` (next free `data/reports/<id>_N.db` if the name is taken). Tables `signals`, `trades`, `equity_curve`, `performance_summary`, and when relevant `return_breakdown` and `run_metrics`. HTML at `data/reports/backtest_report.html`. Auto-download (`-auto-download`, default on) writes missing bars into the market DB. Window starts `2021-01-01` (`-start`); earlier bars warm up SMAs only. Capital default `$100,000`. `-download-years` default `5`.
 
@@ -172,9 +187,17 @@ Run one strategy, many strategies, or a shared cash account.
 ./bin/backtest -primary streak-voo-buy-tecl -secondary mara_tree -alloc 0.10 -default-asset VYM
 ```
 
-**Out-of-sample holdout (default).** The last 12 months of history are held out. The main pass runs from `-start` through the cutoff (the last bar minus `-holdout-months`), prints as `IN-SAMPLE`, and writes its usual files. Then the same strategy, or for `stack-eval` the stack it found (park included), runs once on the held-out months, flat at the start, printed as `OUT-OF-SAMPLE` and written to `data/reports/oos/` with an `_oos` HTML file. Select and tune on the in-sample pass only. `-holdout-months 0` simulates all history in one pass; `-end YYYY-MM-DD` ends history earlier. The split is skipped, with a message, when less than a year would be left in-sample. It does not apply to `-strategylist`, `-signals-only`, `stale`, `optimized` or `covered-call`. Two caveats: single-strategy results in `data/reports/<id>.db` now cover the in-sample window only, and a strategy whose SQL pipeline or tree was fitted on all history can still see the future inside the held-out months.
+**Out-of-sample holdout (default).** The last 12 months of history are held out. The main pass runs from `-start` through the cutoff (the last bar minus `-holdout-months`), prints as `IN-SAMPLE`, and writes its usual files. Then the same strategy, or for `backtest stack` the stack it found (park included), runs once on the held-out months, flat at the start, printed as `OUT-OF-SAMPLE` and written to `data/reports/oos/` with an `_oos` HTML file. Select and tune on the in-sample pass only. `-holdout-months 0` simulates all history in one pass; `-end YYYY-MM-DD` ends history earlier. The split is skipped, with a message, when less than a year would be left in-sample. It does not apply to `-strategylist`, `-signals-only`, `stale`, `gridsearch apply` or `covered-call`. Two caveats: single-strategy results in `data/reports/<id>.db` now cover the in-sample window only, and a strategy whose SQL pipeline or tree was fitted on all history can still see the future inside the held-out months.
 
-`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result file is `data/reports/shared_<primary>_<secondaries>_default-<symbol>.db`. When that name would make the SQLite journal longer than 255 bytes, the file is `data/reports/default_asset_<symbol>.db`. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
+`-symbol` limits the book to one ticker. `-hold`, `-target`, `-stoploss`, `-max-positions`, and `-alloc` override the strategy config when set (non-zero). `-alloc` is a fraction of equity per position (`0.10` = 10%) on standalone runs and on shared-account stacks. `-default-asset GOOGL` is shared-account only: after each session, leftover cash is bought into that symbol, and a sleeve entry sells it first to fund the order. The result goes to `stack.db` in the run folder, and `shared_account_audit` records the default asset. `-no-reinvest-dividends` pays dividends into cash for total-return strategies. `-force` re-runs strategies that already have a usable result (multi-strategy only). `-signals-only` skips the portfolio sim and scans the live window the same way `livescan` does; it does not stack.
+
+### backtest newrun
+
+Create the next run folder and print only its number, so a script can pass one `-run-id` to every command and keep a whole pipeline in one folder (`scripts/googl_pipeline.sh` does this).
+
+```bash
+RUN=$(./bin/backtest newrun)
+```
 
 ### backtest stale
 
@@ -184,37 +207,28 @@ Print which `data/reports/*.db` results are stale (unknown strategy, newer marke
 ./bin/backtest stale
 ```
 
-### backtest optimized
+### backtest stack
 
-Re-run strategies with the highest-resilience row in `data/reports/gridsearch.db` (`hold_days` must be set; older rows without it are ignored). No `-strategy` means every registered strategy. A strategy with no usable sweep runs on its own defaults and is named in the output.
-
-```bash
-./bin/backtest optimized -strategy streak-voo-buy-tecl
-./bin/backtest optimized
-```
-
-### backtest stack-eval
-
-Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `data/reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `data/reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
+`backtest stack-eval` is the deprecated name. Rank registered strategies as idle-cash overlays on one primary, one shared ledger. Rankings go to `data/reports/stack_eval_<primary>.db` (table `overlay_rankings`). Pairwise runs do not each write a `shared_*.db`. `-persist-best` (default on) writes one `data/reports/shared_<primary>_<secondaries>_N.db` for the greedy stack.
 
 Default candidates skip duplicate `*-sql` ids, `voo-buy-hold`, `genetic-momentum`, and any strategy that does not name its symbols. Pairs are ranked by added equity; the greedy stack is chosen the same way, not by drawdown. Rank the finalists by Calmar and max drawdown from the persisted DB. `-include-universe` adds symbol-scanning strategies. Pass `-secondary` with an explicit list when the registry holds tens of thousands of strategies; `-db`, `-auto-download=false` and `-out-dir` let a search run on a trimmed market DB without touching `data/`. `-stack-depth` (3) is how many complementary overlays are stacked after the ranking.
 
 ```bash
-./bin/backtest stack-eval -primary streak-voo-buy-tecl
-./bin/backtest stack-eval -primary streak-voo-buy-tecl -secondary mara_tree,pdd_tree -persist-best
-./bin/backtest stack-eval -primary streak-voo-buy-tecl -stack-depth 5
+./bin/backtest stack -primary streak-voo-buy-tecl
+./bin/backtest stack -primary streak-voo-buy-tecl -secondary mara_tree,pdd_tree -persist-best
+./bin/backtest stack -primary streak-voo-buy-tecl -stack-depth 5
 ```
 
 ### Park member in a stack
 
-`park-<symbol>` (for example `park-googl`, `park-sgov`) is a stack member that holds leftover cash in that symbol. It is the same book as `-default-asset`, written as a stack member so it can be named in `-strategy`, `-secondary` and `stack-eval`. It emits no signals, resolves for any ticker without registration, cannot be the primary, and a stack holds one. Combining it with `-default-asset` for a different symbol is an error.
+`park-<symbol>` (for example `park-googl`, `park-sgov`) is a stack member that holds leftover cash in that symbol. It is the same book as `-default-asset`, written as a stack member so it can be named in `-strategy`, `-secondary` and `backtest stack`. It emits no signals, resolves for any ticker without registration, cannot be the primary, and a stack holds one. Combining it with `-default-asset` for a different symbol is an error.
 
 ```bash
 ./bin/backtest -strategy "streak-voo-buy-tecl+streak-fslr-down3+park-googl" -alloc 0.1
-./bin/backtest stack-eval -primary streak-voo-buy-tecl -secondary "streak-fslr-down3,streak-penn-down3,park-sgov"
+./bin/backtest stack -primary streak-voo-buy-tecl -secondary "streak-fslr-down3,streak-penn-down3,park-sgov"
 ```
 
-In `stack-eval` the park applies to the baseline, every pairwise run and the final stack; it is not ranked as an overlay. Compare parks by running `stack-eval` once per park symbol.
+In `backtest stack` the park applies to the baseline, every pairwise run and the final stack; it is not ranked as an overlay. Compare parks by running `backtest stack` once per park symbol.
 
 ### backtest covered-call
 
@@ -256,7 +270,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `data/reports/gridsearch.db` (`gridsearch_runs`, `gridsearch_results`). Single-strategy HTML defaults to `data/reports/<strategy>_gridsearch.html`. `-end <date>` stops the sweep at that date, so the held-out months do not tune the parameters. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+**Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-end <date>` stops the sweep at that date, so the held-out months do not tune the parameters. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -295,6 +309,17 @@ Copy winning sweep rows into `refdata/strategies.db` table `streak_strategy`. Ea
 Defaults for promote are win rate `0.6`, `30` trades, and `-top 5`. A sweep's own `-min-trades` default stays `5`. `-gridsearch-db` chooses the sweep file. Rows that share an id keep the higher win rate. A NULL `signal_symbol` (sweeps from before that column existed) uses the parent strategy's watch symbol.
 
 The walkthrough for writing a row, backtesting it, sweeping it, and ranking it is [docs/strategies/streak_strategy.md](docs/strategies/streak_strategy.md).
+
+### gridsearch apply
+
+Re-run strategies with the highest-resilience row the sweep recorded in the run folder's `gridsearch.db` (`hold_days` must be set, older rows without it are ignored). It goes back into the run that holds the sweep: `-run-id N` names it, and without it the latest run is used. No `-strategy` means every registered strategy. A strategy with no usable sweep runs on its own defaults and is named in the output. The backtest itself is `pkg/backtest`'s, so the holdout and the result files work as for `backtest`.
+
+```bash
+./bin/gridsearch apply -run-id 12 -strategy streak-voo-buy-tecl
+./bin/gridsearch apply -run-id 12
+```
+
+`backtest optimized` is the deprecated name.
 
 ---
 
@@ -369,7 +394,7 @@ In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live 
 
 **Reads:** `data/market_history.db`, table `backtest_start`. Allowlist from `-allowlist` or `STRATEGY_ALLOWLIST` (comma-separated ids).
 
-**Writes:** `data/reports/strategies.db` (`strategies`, `strategy_evals`, `deployments`), unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. Scratch artifacts under `data/reports/strateval_runs/`. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
+**Writes:** `strategies.db` (`strategies`, `strategy_evals`, `deployments`) in a run folder, `data/reports/<run_id>/`, unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. `-run-id N` uses run N and without it an evaluation starts a new run (`report`, `status`, `path` use the latest). `report` and `status` take `-strategy` to show only those ids. Scratch artifacts under `strateval_runs/` in the same folder. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
 
 ```bash
 ./bin/strateval -list
@@ -385,29 +410,25 @@ In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live 
 
 ---
 
-## walk_forward
+## validate
 
-Rolling train / test folds.
+Is the strategy real or overfit? Walks it through rolling train / test folds (24 months in sample, 6 out, step 6), then prints a verdict per strategy: `HOLDS`, `DECAYS`, `CURVE_FIT`, or `INSUFFICIENT`.
+
+```bash
+./bin/validate -keep-going -strategy streak-googl-down3,googl_tree    # folds, then the verdict
+./bin/validate walk -strategy streak-googl-down3                       # only the folds
+./bin/validate verdict -run-id 12 -strategy streak-googl-down3         # only the verdict, from run 12
+```
 
 **Reads:** `data/market_history.db`, table `backtest_start`.
 
-**Writes:** `data/reports/walk_forward.db`. Tables `walk_forward_fold` and `walk_forward_summary`. Train 24 months, test 6, step 6. Capital `$100,000`. Registers the same strategies as `backtest` (`pkg/stratreg`). It walks strategies one at a time, not as a stack. `-keep-going` skips a strategy with too little history instead of stopping the list. `-market-db` and `-db` choose the inputs, so a run can use a copy of the market DB that ends before a held-out period.
+**Writes:** `walk_forward.db` (`walk_forward_fold`, `walk_forward_summary`, and `check_overfit_gate` with the gates) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes into run N. Without it the folds start a new run and a verdict alone uses the latest. `-db` names a file instead. `-strategy` is required for the folds, and for a verdict it limits the output to those ids.
 
-```bash
-./bin/walk_forward -strategy streak-voo-buy-tecl
-./bin/walk_forward -strategy streak-voo-buy-tecl,mara_tree -train-months 24 -test-months 6 -step-months 6
-```
+Folds: train 24 months, test 6, step 6 (`-train-months`, `-test-months`, `-step-months`), capital `$100,000`. It registers the same strategies as `backtest` and walks them one at a time, not as a stack. `-keep-going` skips a strategy with too little history instead of stopping the list. `-market-db` lets a run use a copy of the market DB that ends before a held-out period.
 
-## check_overfit
+Verdict gates: `-min-oos-trades 8`, `-trial-cutoff 20`, `-decay 0.25`. A streak strategy has one trial, so it is never `CURVE_FIT` however many were screened. After screening thousands on the same data, add a stricter gate such as `sql/search/01_gate_walk_forward.sql`.
 
-Read a walk-forward DB and print a verdict per strategy: `HOLDS`, `DECAYS`, `CURVE_FIT`, or `INSUFFICIENT`.
-
-**Reads / writes:** `data/reports/walk_forward.db`. Adds `check_overfit_gate` when it records the gates. Defaults: `-min-oos-trades 8`, `-trial-cutoff 20`, `-decay 0.25`. A streak strategy has one trial, so it is never `CURVE_FIT` however many were screened. After screening thousands on the same data, add a stricter gate such as `sql/search/01_gate_walk_forward.sql`.
-
-```bash
-./bin/check_overfit
-./bin/check_overfit -db data/reports/walk_forward.db -min-oos-trades 8
-```
+`walk_forward` and `check_overfit` still work as the two halves (`validate walk`, `validate verdict`) and print a deprecation note. The logic stays in `pkg/walk_forward` and `pkg/check_overfit`.
 
 ---
 

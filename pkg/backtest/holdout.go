@@ -141,7 +141,7 @@ func Run(conf Config) error {
 	oos.outcome = nil
 	if conf.Mode == "stack-eval" {
 		if outcome.StackID == "" {
-			fmt.Println("\nstack-eval built no stack, so there is nothing to test out of sample.")
+			fmt.Println("\nstack built no stack, so there is nothing to test out of sample.")
 			return nil
 		}
 		oos.Mode = ""
@@ -170,7 +170,7 @@ func lastOrLatest(end string) string {
 // folder. stale only reads, so it takes the named run or the latest. The HTML
 // report, unless -html names a path, goes in the run folder as report.html.
 func prepareRun(conf Config) (Config, error) {
-	if conf.Mode == "covered-call" {
+	if conf.Mode == "covered-call" || conf.Mode == "newrun" {
 		return conf, nil
 	}
 	root := conf.OutDir

@@ -5,51 +5,38 @@ import (
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 )
 
-type mockStrategy struct {
-	id   string
-	name string
-	cfg  strategy.StrategyConfig
-}
-
-func (m *mockStrategy) ID() string                             { return m.id }
-func (m *mockStrategy) Name() string                           { return m.name }
-func (m *mockStrategy) Description() string                    { return m.name }
-func (m *mockStrategy) DefaultConfig() strategy.StrategyConfig { return m.cfg }
-func (m *mockStrategy) Validate() error                        { return nil }
-func (m *mockStrategy) SetDatabases(mPath, cPath string)       {}
-func (m *mockStrategy) GenerateSignals(bars map[string][]models.Bar) []models.Signal {
-	return nil
+// rowStrategy is a real streak_strategy row, used for its id. The simulator takes
+// each strategy's sizing from the entry's Config and its trades from the signals,
+// and both are written out literally in the tests.
+func rowStrategy(id string) strategy.Strategy {
+	return &streak_strategy.Strategy{Row: refdb.StreakStrategy{
+		ID: id, Name: id, SignalSymbol: "VOO", TradeSymbol: "TECL", Direction: "drop",
+		SignalDays: 3, HoldDays: 8, Regime: "All Regimes", AllocationPct: 0.1,
+	}}
 }
 
 func TestSharedAccountPreemption(t *testing.T) {
-	primaryStrat := &mockStrategy{
-		id:   "sig-voo-buy-tecl",
-		name: "Primary Strategy",
-		cfg: strategy.StrategyConfig{
-			ID:            "sig-voo-buy-tecl",
-			AllocationPct: 0.65, // Needs 65% ($65,000 on $100k equity)
-			PositionCap:   1,
-			HoldingWindow: 8,
-		},
+	primaryCfg := strategy.StrategyConfig{
+		ID:            "streak-voo-buy-tecl",
+		AllocationPct: 0.65, // Needs 65% ($65,000 on $100k equity)
+		PositionCap:   1,
+		HoldingWindow: 8,
 	}
-
-	secondaryStrat := &mockStrategy{
-		id:   "bb-capitulation",
-		name: "Secondary Strategy",
-		cfg: strategy.StrategyConfig{
-			ID:            "bb-capitulation",
-			AllocationPct: 0.20, // Needs 20% ($20,000)
-			PositionCap:   5,
-			HoldingWindow: 10,
-		},
+	secondaryCfg := strategy.StrategyConfig{
+		ID:            "streak-amd-down3",
+		AllocationPct: 0.20, // Needs 20% ($20,000)
+		PositionCap:   5,
+		HoldingWindow: 10,
 	}
 
 	entries := []StrategyPriorityEntry{
-		{Strategy: primaryStrat, Priority: 0, Config: primaryStrat.cfg},
-		{Strategy: secondaryStrat, Priority: 1, Config: secondaryStrat.cfg},
+		{Strategy: rowStrategy("streak-voo-buy-tecl"), Priority: 0, Config: primaryCfg},
+		{Strategy: rowStrategy("streak-amd-down3"), Priority: 1, Config: secondaryCfg},
 	}
 
 	sim := NewSharedAccountSimulator(entries, 100000.0)
@@ -80,17 +67,17 @@ func TestSharedAccountPreemption(t *testing.T) {
 		},
 	}
 
-	// Day 1 (2026-01-01): bb-capitulation enters 3 positions ($20k each = $60k invested, $40k cash remaining)
-	// Day 2 (2026-01-02): sig-voo-buy-tecl fires buy signal for TECL (needs 65% of $100k = $65k).
-	// Since Cash is only $40k, it must PREEMPT one or more bb-capitulation positions!
+	// Day 1 (2026-01-01): streak-amd-down3 enters 3 positions ($20k each = $60k invested, $40k cash remaining)
+	// Day 2 (2026-01-02): streak-voo-buy-tecl fires buy signal for TECL (needs 65% of $100k = $65k).
+	// Since Cash is only $40k, it must PREEMPT one or more streak-amd-down3 positions!
 	signals := []models.Signal{
 		// Day 1: Secondary signals
-		{Date: "2026-01-01", Symbol: "AMD", Close: 100, BuyLimit: 100, StrategyID: "bb-capitulation", Priority: 1, OrderType: "limit"},
-		{Date: "2026-01-01", Symbol: "NVDA", Close: 100, BuyLimit: 100, StrategyID: "bb-capitulation", Priority: 1, OrderType: "limit"},
-		{Date: "2026-01-01", Symbol: "AAPL", Close: 100, BuyLimit: 100, StrategyID: "bb-capitulation", Priority: 1, OrderType: "limit"},
+		{Date: "2026-01-01", Symbol: "AMD", Close: 100, BuyLimit: 100, StrategyID: "streak-amd-down3", Priority: 1, OrderType: "limit"},
+		{Date: "2026-01-01", Symbol: "NVDA", Close: 100, BuyLimit: 100, StrategyID: "streak-amd-down3", Priority: 1, OrderType: "limit"},
+		{Date: "2026-01-01", Symbol: "AAPL", Close: 100, BuyLimit: 100, StrategyID: "streak-amd-down3", Priority: 1, OrderType: "limit"},
 
 		// Day 2: Primary signal (TECL)
-		{Date: "2026-01-02", Symbol: "TECL", Close: 50, BuyLimit: 50, StrategyID: "sig-voo-buy-tecl", Priority: 0, OrderType: "limit"},
+		{Date: "2026-01-02", Symbol: "TECL", Close: 50, BuyLimit: 50, StrategyID: "streak-voo-buy-tecl", Priority: 0, OrderType: "limit"},
 	}
 
 	report, perStratReport, closedTrades, equityCurve := sim.Run(signals, barsBySymbol, sortedDates)
@@ -109,8 +96,8 @@ func TestSharedAccountPreemption(t *testing.T) {
 	for _, tr := range closedTrades {
 		if tr.ExitReason == models.ExitReasonPreempted {
 			foundPreempted = true
-			if tr.StrategyID != "bb-capitulation" {
-				t.Errorf("expected preempted trade to belong to bb-capitulation, got %s", tr.StrategyID)
+			if tr.StrategyID != "streak-amd-down3" {
+				t.Errorf("expected preempted trade to belong to streak-amd-down3, got %s", tr.StrategyID)
 			}
 			t.Logf("✅ Verified Preempted Trade: %s on %s with PnL $%.2f", tr.Symbol, tr.ExitDate, tr.NetPnL)
 		}
@@ -120,23 +107,23 @@ func TestSharedAccountPreemption(t *testing.T) {
 		t.Errorf("expected to find trade with ExitReasonPreempted in closed trades")
 	}
 
-	// Verify TECL was entered by sig-voo-buy-tecl
+	// Verify TECL was entered by streak-voo-buy-tecl
 	var foundTECL bool
 	for _, tr := range closedTrades {
-		if tr.Symbol == "TECL" && tr.StrategyID == "sig-voo-buy-tecl" {
+		if tr.Symbol == "TECL" && tr.StrategyID == "streak-voo-buy-tecl" {
 			foundTECL = true
 		}
 	}
 	if !foundTECL {
-		t.Errorf("expected TECL trade to have executed for primary strategy sig-voo-buy-tecl")
+		t.Errorf("expected TECL trade to have executed for primary strategy streak-voo-buy-tecl")
 	}
 
 	// Check per-strategy reports exist
-	if _, ok := perStratReport["sig-voo-buy-tecl"]; !ok {
-		t.Errorf("missing report for sig-voo-buy-tecl")
+	if _, ok := perStratReport["streak-voo-buy-tecl"]; !ok {
+		t.Errorf("missing report for streak-voo-buy-tecl")
 	}
-	if _, ok := perStratReport["bb-capitulation"]; !ok {
-		t.Errorf("missing report for bb-capitulation")
+	if _, ok := perStratReport["streak-amd-down3"]; !ok {
+		t.Errorf("missing report for streak-amd-down3")
 	}
 
 	t.Logf("Combined Total Return: %.2f%%", report.TotalReturnPct*100)
@@ -165,7 +152,7 @@ func TestSharedAccountTenPercentBookFillsEverySlot(t *testing.T) {
 			CommissionPerShare: 0.0001,
 		}
 		entries[i] = StrategyPriorityEntry{
-			Strategy: &mockStrategy{id: id, name: id, cfg: cfg},
+			Strategy: rowStrategy(id),
 			Priority: i,
 			Config:   cfg,
 		}
@@ -205,28 +192,16 @@ func TestSharedAccountTenPercentBookFillsEverySlot(t *testing.T) {
 }
 
 func TestSharedAccountSecondaryDoesNotPreemptTertiary(t *testing.T) {
-	p0 := &mockStrategy{
-		id: "primary",
-		cfg: strategy.StrategyConfig{
-			ID: "primary", AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
-		},
-	}
-	p1 := &mockStrategy{
-		id: "secondary",
-		cfg: strategy.StrategyConfig{
-			ID: "secondary", AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
-		},
-	}
-	p2 := &mockStrategy{
-		id: "tertiary",
-		cfg: strategy.StrategyConfig{
-			ID: "tertiary", AllocationPct: 0.80, PositionCap: 1, HoldingWindow: 8,
-		},
-	}
 	entries := []StrategyPriorityEntry{
-		{Strategy: p0, Priority: 0, Config: p0.cfg},
-		{Strategy: p1, Priority: 1, Config: p1.cfg},
-		{Strategy: p2, Priority: 2, Config: p2.cfg},
+		{Strategy: rowStrategy("primary"), Priority: 0, Config: strategy.StrategyConfig{
+			ID: "primary", AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
+		}},
+		{Strategy: rowStrategy("secondary"), Priority: 1, Config: strategy.StrategyConfig{
+			ID: "secondary", AllocationPct: 0.65, PositionCap: 1, HoldingWindow: 8,
+		}},
+		{Strategy: rowStrategy("tertiary"), Priority: 2, Config: strategy.StrategyConfig{
+			ID: "tertiary", AllocationPct: 0.80, PositionCap: 1, HoldingWindow: 8,
+		}},
 	}
 	sim := NewSharedAccountSimulator(entries, 100000.0)
 

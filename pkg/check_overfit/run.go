@@ -116,3 +116,23 @@ func Format(rows []Verdict) string {
 func Write(out io.Writer, rows []Verdict) {
 	fmt.Fprint(out, Format(rows))
 }
+
+// Only keeps the verdicts of the strategy ids in arg (comma-separated, matched
+// case-insensitively). An empty arg or "all" keeps every verdict.
+func Only(rows []Verdict, arg string) []Verdict {
+	arg = strings.TrimSpace(arg)
+	if arg == "" || strings.EqualFold(arg, "all") {
+		return rows
+	}
+	want := map[string]bool{}
+	for _, id := range strings.Split(arg, ",") {
+		want[strings.ToLower(strings.TrimSpace(id))] = true
+	}
+	var out []Verdict
+	for _, r := range rows {
+		if want[strings.ToLower(r.StrategyID)] {
+			out = append(out, r)
+		}
+	}
+	return out
+}

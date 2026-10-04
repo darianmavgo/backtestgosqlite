@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -96,7 +97,7 @@ func DefaultConfig() Config {
 		DownloadYears:       5,
 		Concurrency:         runtime.NumCPU(),
 		Force:               false,
-		GridsearchDb:        appenv.ReportFile("gridsearch.db"),
+		GridsearchDb:        "",
 		IncludeUniverse:     false,
 		StackDepth:          3,
 		PersistBest:         true,
@@ -157,13 +158,14 @@ func Main() {
 	//                          newer market data, or an edited SQL pipeline
 	//                          since the result was made) and exit — no
 	//                          backtests run
-	//   backtest optimized  -> run every selected strategy (default: all) with
-	//                          the best config a prior `gridsearch` sweep
-	//                          found for it, instead of its baseline defaults
+	//   backtest optimized  -> deprecated: this is `gridsearch apply`, which calls
+	//                          into this package. Runs every selected strategy
+	//                          with the best config a prior sweep found for it
 	//   backtest covered-call -> hold -symbol (default VOO) and sell a monthly
 	//                          call; needs `market_history -source polygon-options`
-	//   backtest stack-eval -> rank existing strategies as idle-cash overlays
+	//   backtest stack      -> rank existing strategies as idle-cash overlays
 	//                          on one primary, one shared cash ledger
+	//                          (stack-eval is the deprecated name)
 	conf := DefaultConfig()
 	d := conf
 	flag.StringVar(&conf.Db, "db", d.Db, "Path to source SQLite DB containing historical market bars")
@@ -204,7 +206,17 @@ func Main() {
 	flag.Float64Var(&conf.OptSlip, "opt-slip", d.OptSlip, "(covered-call) $ per share given up vs the last-trade option price when selling")
 	flag.BoolVar(&conf.NoReinvestDividends, "no-reinvest-dividends", d.NoReinvestDividends, "Total-return strategies (e.g. schd-buy-hold): take dividends as idle cash instead of reinvesting them")
 	flag.StringVar(&conf.DefaultAsset, "default-asset", d.DefaultAsset, "Shared-account only: symbol that leftover cash is held in after each session (e.g. GOOGL)")
-	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack-eval": "stack-eval"})
+	called := ""
+	if len(os.Args) > 1 {
+		called = os.Args[1]
+	}
+	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack": "stack-eval", "stack-eval": "stack-eval", "newrun": "newrun"})
+	switch called {
+	case "stack-eval":
+		fmt.Fprintln(os.Stderr, "note: `backtest stack-eval` is now `backtest stack`")
+	case "optimized":
+		fmt.Fprintln(os.Stderr, "note: `backtest optimized` is now `gridsearch apply`")
+	}
 	flag.Parse()
 	conf.Args = flag.Args()
 	defer storage.CloseSharedResults()
@@ -235,6 +247,16 @@ func runOnce(conf Config) error {
 		return nil
 	}
 
+	if conf.Mode == "newrun" {
+		// Start a run folder and print only its number, for a script to pass to -run-id.
+		id, _, err := storage.NewRun(appenv.Reports())
+		if err != nil {
+			return err
+		}
+		fmt.Println(id)
+		return nil
+	}
+
 	// Ensure HTML reports land in reports/ directory
 	conf.Html = appenv.ReportFile(conf.Html)
 
@@ -249,6 +271,14 @@ func runOnce(conf Config) error {
 	}
 
 	if conf.Mode == "optimized" {
+		if conf.GridsearchDb == "" {
+			// This run's own folder is brand new unless -run-id named an existing one,
+			// so the sweep to read must be named: -run-id of the run that holds it.
+			if conf.RunID == 0 {
+				return fmt.Errorf("optimized: pass -run-id (the run folder holding gridsearch.db) or -gridsearch-db")
+			}
+			conf.GridsearchDb = filepath.Join(conf.OutDir, "gridsearch.db")
+		}
 		optArg := strings.TrimSpace(conf.Strategy)
 		if optArg == "" && len(conf.Args) > 0 {
 			optArg = strings.Join(conf.Args, ",")

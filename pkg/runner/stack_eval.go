@@ -70,7 +70,7 @@ func OverlayCandidates(primary strategy.Strategy, opts OverlayCandidateOptions) 
 			}
 			s, ok := strategy.Get(id)
 			if !ok {
-				log.Printf("stack-eval: unknown overlay strategy %q — skipping", id)
+				log.Printf("stack: unknown overlay strategy %q — skipping", id)
 				continue
 			}
 			if s.ID() == primaryID {
@@ -103,21 +103,10 @@ func isEligibleOverlay(primary, cand strategy.Strategy, opts OverlayCandidateOpt
 	if id == "voo-buy-hold" || id == "genetic-momentum" {
 		return false
 	}
-	if isSiblingCombo(primary.ID(), id) {
-		return false
-	}
 	if _, ok := cand.(strategy.RequiredSymbolsProvider); !ok {
 		return opts.IncludeUniverse
 	}
 	return true
-}
-
-func isSiblingCombo(primaryID, candID string) bool {
-	siblings := map[string]string{
-		"sig-voo-buy-tecl":    "voo-tecl-spxu-combo",
-		"voo-tecl-spxu-combo": "sig-voo-buy-tecl",
-	}
-	return siblings[primaryID] == candID
 }
 
 // StackEvalOptions is the idle-overlay sweep configuration.
@@ -444,7 +433,7 @@ func sanitizeID(id string) string {
 // and optional greedy N-way stack.
 func PrintStackEvalTearSheet(res StackEvalResult) {
 	if res.Primary == nil {
-		fmt.Println("stack-eval: no primary strategy")
+		fmt.Println("stack: no primary strategy")
 		return
 	}
 	base := res.Baseline.CombinedReport
