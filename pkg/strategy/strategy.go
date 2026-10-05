@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
@@ -79,6 +80,15 @@ type OptionOverlayProvider interface {
 // given DefaultMinHistoryBars.
 type MinHistoryProvider interface {
 	MinHistoryBars() int
+}
+
+// Preparer is optionally implemented by strategies that must build something from
+// the bars before they can produce a signal for the latest session, such as a model
+// trained through the latest bar. A live scan calls Prepare once per scan, after the
+// bars are refreshed and before GenerateSignals. An error stops the scan: a strategy
+// whose model is stale would otherwise report "no signal", which looks like a quiet day.
+type Preparer interface {
+	Prepare(ctx context.Context, marketDB string) error
 }
 
 // DefaultMinHistoryBars covers SMA200-style indicators plus slack.

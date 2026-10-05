@@ -95,15 +95,22 @@ type Config struct {
 	MaxChecks  int
 	StocksOnly bool
 	ETFsOnly   bool
-	Out        io.Writer
+	// Refresh verifies every symbol again. Without it a symbol whose first trade
+	// date is already stored is not looked up again, since that date never changes.
+	Refresh bool
+	// RetryDays is how long a symbol that could not be verified waits before the
+	// next attempt, so delisted tickers are not asked about on every run.
+	RetryDays int
+	Out       io.Writer
 }
 
 // DefaultConfig provides sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		DBPath:  DefaultPath,
-		Workers: 16,
-		Limit:   1000,
+		DBPath:    DefaultPath,
+		Workers:   16,
+		Limit:     1000,
+		RetryDays: 7,
 	}
 }
 
@@ -624,6 +631,41 @@ func VerifySymbolHistory(client *http.Client, sym string) VerificationResult {
 	return res
 }
 
+// known is what the universe already holds about a symbol.
+type known struct {
+	FirstTradeDate string `db:"first_trade_date"`
+	UpdatedAt      string `db:"updated_at"`
+}
+
+// planVerification splits discovered tickers into those that need a lookup and
+// those that do not. A symbol with a stored first trade date is a settled fact
+// and is skipped. A symbol that failed verification before is retried only once
+// retryDays have passed since its last attempt. refresh sends everything.
+func planVerification(discovered []RawTicker, have map[string]known, refresh bool, retryDays int, now time.Time) (verify []RawTicker, skippedKnown, skippedRecent int) {
+	for _, t := range discovered {
+		k, ok := have[t.Symbol]
+		switch {
+		case refresh || !ok:
+			verify = append(verify, t)
+		case k.FirstTradeDate != "":
+			skippedKnown++
+		case recentlyTried(k.UpdatedAt, retryDays, now):
+			skippedRecent++
+		default:
+			verify = append(verify, t)
+		}
+	}
+	return verify, skippedKnown, skippedRecent
+}
+
+func recentlyTried(updatedAt string, retryDays int, now time.Time) bool {
+	t, err := time.Parse("2006-01-02 15:04:05", updatedAt)
+	if err != nil {
+		return false
+	}
+	return now.Sub(t) < time.Duration(retryDays)*24*time.Hour
+}
+
 // Run executes the complete discovery, verification, classification, and database saving workflow.
 func Run(cfg Config) (int, error) {
 	out := cfg.Out
@@ -645,6 +687,21 @@ func Run(cfg Config) (int, error) {
 		return 0, fmt.Errorf("failed to fetch tickers: %w", err)
 	}
 	fmt.Fprintf(out, "✓ Total unique candidate symbols discovered: %d\n", len(rawTickers))
+
+	var have []struct {
+		Symbol string `db:"symbol"`
+		known
+	}
+	if err := db.Select(&have, `SELECT symbol, first_trade_date, updated_at FROM universe`); err != nil {
+		return 0, fmt.Errorf("reading the symbols already stored: %w", err)
+	}
+	stored := make(map[string]known, len(have))
+	for _, h := range have {
+		stored[h.Symbol] = h.known
+	}
+	rawTickers, skippedKnown, skippedRecent := planVerification(rawTickers, stored, cfg.Refresh, cfg.RetryDays, time.Now().UTC())
+	fmt.Fprintf(out, "✓ %d to look up (skipped %d with a stored first trade date, %d tried within %d days)\n",
+		len(rawTickers), skippedKnown, skippedRecent, cfg.RetryDays)
 
 	if cfg.MaxChecks > 0 && len(rawTickers) > cfg.MaxChecks {
 		fmt.Fprintf(out, "⚠️ Limiting check to first %d symbols as requested by -max-checks\n", cfg.MaxChecks)

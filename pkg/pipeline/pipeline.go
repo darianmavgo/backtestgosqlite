@@ -37,19 +37,22 @@ type Config struct {
 	// the run uses every strategy row tied to Symbols and picks up the rows its
 	// own promote step adds.
 	Strategies []string
-	Park       string // symbol idle cash parks in for the stack steps, default SGOV
-	Bench      string // benchmark downloaded with the symbols, default VOO
+	Park       string // symbol idle cash parks in for the stack_eval step, default SGOV
 	Primary    string // primary of the stack steps, default streak-<sym>-down3-<sym>
-	Years      int    // years of bars to download, default 6
+	Years      int    // years of bars to download for what is missing, default 6
 	// RunID 0 starts a new run. N resumes run N.
 	RunID int
 	// Steps limits the run to these steps (see StepNames). Skip removes steps.
-	Steps []string
-	Skip  []string
+	Steps    []string
+	Skip     []string
+	explicit map[string]bool // steps named in Steps, which run even when their scope says there is nothing to do
 	// Redo runs steps again that already finished in a resumed run.
 	Redo bool
 	// SkipNetwork leaves out the steps that download data.
 	SkipNetwork bool
+	// Refresh downloads the whole window again for the symbols the run needs,
+	// instead of only the bars missing from the market database.
+	Refresh bool
 	// PolygonKey enables the option-bar download and the covered-call step.
 	PolygonKey string
 	// MarketDB and RefDB default to the standard files.
@@ -97,6 +100,7 @@ type runCtx struct {
 	strategies []string
 	primary    string
 	out        io.Writer
+	selected   map[string]bool // steps this run will try, by name
 }
 
 func (r *runCtx) ids() string { return strings.Join(r.strategies, ",") }
@@ -112,6 +116,10 @@ func (r *runCtx) printf(format string, args ...any) {
 // before any step: bad scope, a locked run folder, an unreadable database.
 func Run(ctx context.Context, cfg Config) (Result, error) {
 	cfg = withDefaults(cfg)
+	cfg.explicit = map[string]bool{}
+	for _, n := range cfg.Steps {
+		cfg.explicit[n] = true
+	}
 	if cfg.Out == nil {
 		cfg.Out = io.Discard
 	}
@@ -147,6 +155,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if err != nil {
 		return res, err
 	}
+	rc.selected = map[string]bool{}
+	for _, st := range selected {
+		rc.selected[st.name] = true
+	}
 	for i, st := range selected {
 		if err := ctx.Err(); err != nil {
 			return res, err
@@ -164,9 +176,6 @@ func withDefaults(cfg Config) Config {
 	if cfg.Park == "" {
 		cfg.Park = "SGOV"
 	}
-	if cfg.Bench == "" {
-		cfg.Bench = "VOO"
-	}
 	if cfg.Years == 0 {
 		cfg.Years = 6
 	}
@@ -177,7 +186,6 @@ func withDefaults(cfg Config) Config {
 		cfg.RefDB = appenv.RefDB()
 	}
 	cfg.Park = strings.ToUpper(strings.TrimSpace(cfg.Park))
-	cfg.Bench = strings.ToUpper(strings.TrimSpace(cfg.Bench))
 	return cfg
 }
 
@@ -234,7 +242,7 @@ func (r *runCtx) scope(resumed bool) error {
 			return err
 		}
 		r.symbols, r.strategies, r.primary = syms, strategies, stored.PrimaryID
-		r.cfg.Park, r.cfg.Bench = stored.Park, stored.Bench
+		r.cfg.Park = stored.Park
 		return nil
 	}
 
@@ -268,7 +276,7 @@ func (r *runCtx) scope(resumed bool) error {
 	if r.primary == "" {
 		r.primary = defaultPrimary(symbols, strategies)
 	}
-	if err := saveRun(r.state, runRow{RunID: r.runID, Park: r.cfg.Park, Bench: r.cfg.Bench, PrimaryID: r.primary, Explicit: explicit}); err != nil {
+	if err := saveRun(r.state, runRow{RunID: r.runID, Park: r.cfg.Park, Bench: "", PrimaryID: r.primary, Explicit: explicit}); err != nil {
 		return err
 	}
 	if _, err := addScope(r.state, "symbol", symbols); err != nil {

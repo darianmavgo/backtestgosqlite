@@ -1,9 +1,12 @@
 package markov_strategy
 
 import (
+	"context"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
@@ -11,6 +14,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/train"
 )
 
 const pipelineDir = "sql/strategies/markov_model"
@@ -53,9 +57,39 @@ func (s *Strategy) RequiredSymbols() []string {
 	return []string{sig, tr}
 }
 
-// MinHistoryBars is 100 for the Markov Model lookback (assuming ~100 is enough to establish initial states, can be tuned).
+// MinHistoryBars is about five and a half years of sessions. The live scan downloads this much
+// history so the model trained from it has seen enough transitions to match the backtest.
 func (s *Strategy) MinHistoryBars() int {
-	return 100
+	return 1300
+}
+
+// Prepare trains the model for the signal symbol through the latest bar in the market database,
+// unless the saved model is already that current. A live scan calls it each session, because the
+// model holds one prediction per date and has none for a session it was not trained through.
+func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
+	sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
+	last, err := storage.SymbolLastDate(marketDB, sym)
+	if err != nil {
+		return fmt.Errorf("last bar of %s in %s: %w", sym, marketDB, err)
+	}
+	if last == "" {
+		return fmt.Errorf("no daily bars for %s in %s", sym, marketDB)
+	}
+	modelDB := appenv.MarkovDB()
+	if trained, ok := modelLastDate(modelDB, sym); ok && trained >= last {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(modelDB), 0o755); err != nil {
+		return err
+	}
+	res, err := train.TrainMarkov(ctx, train.MarkovConfig{MarketDB: marketDB, ModelDB: modelDB, Symbols: []string{sym}})
+	if err != nil {
+		return fmt.Errorf("train markov %s: %w", sym, err)
+	}
+	if res.Trained == 0 {
+		return fmt.Errorf("train markov %s trained no model (fewer than 21 bars?)", sym)
+	}
+	return nil
 }
 
 // DefaultConfig maps every execution column.

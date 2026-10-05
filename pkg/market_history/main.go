@@ -415,6 +415,9 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		if cov.BarCount == 0 {
 			fmt.Fprintf(out, "[%d/%d] %-6s : 📥 Not in DB. Pulled %d bars (%s ➔ %s) from %s ➔ %s\n",
 				idx+1, len(symbols), sym, symNewBars, reqStartStr, reqEndStr, primarySource.Name(), filepath.Base(cfg.DB))
+		} else if symNewBars > 0 && cfg.Force {
+			fmt.Fprintf(out, "[%d/%d] %-6s : 🔄 Found %d bars in DB (%s ➔ %s). Refreshed the whole window (%d bars) from %s ➔ %s\n",
+				idx+1, len(symbols), sym, cov.BarCount, cov.MinDate, cov.MaxDate, symNewBars, primarySource.Name(), filepath.Base(cfg.DB))
 		} else if symNewBars > 0 {
 			fmt.Fprintf(out, "[%d/%d] %-6s : 🔄 Found %d bars in DB (%s ➔ %s). Pulled %d missing bars from %s ➔ %s\n",
 				idx+1, len(symbols), sym, cov.BarCount, cov.MinDate, cov.MaxDate, symNewBars, primarySource.Name(), filepath.Base(cfg.DB))

@@ -429,15 +429,18 @@ Runs every stage for a set of stocks as one controlled run: download the bars, t
 
 **State.** `pipeline.db` in the run folder has `pipeline_run`, `pipeline_scope` and `pipeline_step` (name, status, times, error). A failed step is recorded and the run goes on. The exit code is 1 if any step failed, and `pipeline -run-id N` retries the failed ones.
 
+**Downloads.** The pipeline downloads only what the scope reads: the run's symbols, every symbol its strategies declare, and each strategy's benchmark (the same `runner.RequiredSymbolsFor` the backtest uses), plus the park symbol when `stack_eval` is going to run. A symbol already in the market database is topped up with the bars it is missing, and one that is current is not fetched at all. Option history is downloaded only for the underlyings of covered-call strategies in scope, which no GOOGL strategy is. Steps with nothing to do for the scope are skipped with the reason printed: `market_history_options` (no covered-call strategy), `study` (no `markov_hmm` strategy), `train` (no markov or tree strategy), and `covered_call`, which only runs when you name it. Naming a step in `-steps` always runs it.
+
 **Steps**, in order, each named like its command: `market_history`, `market_history_options` (needs `POLYGON_API_KEY`), `study` (`hmm_regime`), `train` (markov and tree), `backtest`, `gridsearch_params`, `gridsearch`, `gridsearch_promote`, `gridsearch_apply`, `validate`, `strateval`, `stack`, `stack_eval`, `covered_call` (needs option bars), `park_sweep`, `scoreboard`, `stale`. `-steps` and `-skip` choose some of them.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `-symbol` | GOOGL (a resumed run keeps its own) | stocks the run may touch |
 | `-strategy` | every strategy tied to the symbols | fixed strategy list |
-| `-park`, `-bench` | SGOV, VOO | park symbol of the stack steps, benchmark downloaded with the symbols |
+| `-park` | SGOV | park symbol of the `stack_eval` step, downloaded only when that step runs |
 | `-primary` | `streak-<symbol>-down3-<symbol>` | primary of the stack steps |
-| `-years` | 6 | years of bars to download |
+| `-years` | 6 | years of bars to download for a symbol that has none yet |
+| `-refresh` | off | download the whole window again for the symbols the run needs, not only the missing bars |
 | `-run-id` | 0 (new run) | resume this run |
 | `-steps`, `-skip`, `-redo` | all steps | which steps run, and rerun finished ones |
 | `-skip-network` | off | leave out the downloading steps |
@@ -468,16 +471,32 @@ Verdict gates: `-min-oos-trades 8`, `-trial-cutoff 20`, `-decay 0.25`. A streak 
 
 ## universe
 
-Discover US stocks and ETFs from Polygon and classify them (leverage, direction, category, first trade date, whether history reaches 2021).
+Discover US stocks and ETFs from Polygon and the Nasdaq lists, and classify them (leverage, direction, category, first trade date, whether history reaches 2021).
 
-**Writes:** `refdata/universe.db`, table `universe` (about 13,500 rows). Needs `POLYGON_API_KEY` or `-polygon-key`.
+**Writes:** `refdata/universe.db`, table `universe` (about 13,500 rows). Needs `POLYGON_API_KEY` or `-polygon-key` for the Polygon part.
 
 ```bash
 ./bin/universe
 ./bin/universe -etfs-only -max-checks 200
+./bin/universe -refresh               # look every symbol up again
 ```
 
-Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-etfs-only`, `-stocks-only`.
+Each run fetches the symbol lists, then looks up only the symbols it has not settled. A symbol with a stored first trade date is skipped, since that date never changes, and one that could not be verified is tried again after `-retry-days` (7). A run with nothing new makes no Yahoo requests. `-refresh` looks up everything again.
+
+Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-etfs-only`, `-stocks-only`, `-refresh`, `-retry-days 7`.
+
+### universe avgvol
+
+Average daily share volume (ADTV) of every symbol in the market database, over one or more trailing windows of daily bars.
+
+```bash
+./bin/universe avgvol                 # 20-day window
+./bin/universe avgvol -days 20,60     # two windows
+```
+
+**Reads:** `data/market_history.db` (`-market-db`), table `backtest_start`, daily bars only.
+
+**Writes:** table `avg_volume` in `refdata/universe.db` (`-db`): `symbol`, `window_days`, `avg_volume`, `bars_used`, `first_date`, `last_date`, `computed_at`, one row per symbol and window. A symbol with fewer bars than the window is averaged over the bars it has and `bars_used` says how many. A rerun replaces the rows of the windows it computes and leaves other windows alone. The calculation is SQL (`sql/stages/avgvol`): a slice table `avgvol_window_bars` of each symbol's last N bars, then the average. Join to `universe` on `symbol` to filter by liquidity.
 
 ## train
 
@@ -525,6 +544,19 @@ Print every strategy that has its own `sql/strategies` pipeline, then a row coun
 ./bin/strategy
 ```
 
+### strategy export
+
+Write a small reference database holding only the rows of the named strategies, for a program that cannot carry the 65,000-row `refdata/strategies.db`.
+
+```bash
+./bin/strategy export -ids "streak-voo-buy-tecl+markov_model_amd+markov_model_lite+markov_model_mull" \
+  -out ../trade_orchestrator/pkg/strategies/deploy/strategies.db
+```
+
+`-ids` takes strategy ids and `a+b+c` stacks, comma-separated. Every id must be a row in `streak_strategy`, `tree_strategy`, `hold_strategy` or `markov_strategy`, or the command fails and names the ones that are not. `-src` chooses the full database. `trade_orchestrator` embeds the output and reads it where it has no reference database.
+
+A strategy that needs something built from the bars before it can signal implements `strategy.Preparer`, and a live scan (`livescan`, `runner.RunLiveScan`) calls it after refreshing the bars. `markov_strategy` trains its signal symbol through the latest bar when its saved model is behind, because the model holds one prediction per date and has none for a session it was not trained through. A failed `Prepare` stops the scan with `PREPARE_FAILED`, and a missing model never passes as "no signal".
+
 ## transaction_calc
 
 Turn an Interactive Brokers transaction-history CSV into the same performance report the backtester uses.
@@ -534,6 +566,17 @@ Turn an Interactive Brokers transaction-history CSV into the same performance re
 ```bash
 ./bin/transaction_calc -in data/U22262325.TRANSACTIONS.1Y.csv
 ```
+
+### transaction_calc account
+
+Rebuild the account day by day and measure it like a claimed performance table. Reads the statement, optionally a tab-separated claimed table (`Timeframe`, `Total`, `CAR`, `Max Drawdown`, `Calmar Ratio`, `Avg CAR`, `Avg MDD`, `Avg Trades/Year`), and the daily bars in the market database.
+
+```bash
+./bin/transaction_calc account -in data/U22262325.TRANSACTIONS.1Y.csv \
+  -claim "data/ibkr_claim_performance_nas100,TopTech&RUSS3000.txt" -db data/ibkr_2025oct_2026_oct.db
+```
+
+**Writes** to `-db`: `ibkr_transactions` (the statement rows), `claimed_performance`, and slice tables from `sql/stages/ibkr_account` in order: `ibkr_calendar`, `ibkr_cash_running`, `ibkr_position_daily`, `ibkr_equity_daily`, `ibkr_return_daily` (time-weighted, deposits and withdrawals are not returns), `ibkr_actual_performance` and `ibkr_claim_vs_actual`. Fills priced on an old split basis are put on the bars' basis, and a symbol with no bars is marked at its last fill. `-market-db` and `-calendar` (default VOO) choose the bars and the trading days. See [docs/OneYearComparison.md](docs/OneYearComparison.md) for the comparison it produced.
 
 ## markov_test
 

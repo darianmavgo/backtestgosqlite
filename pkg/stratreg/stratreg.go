@@ -18,6 +18,17 @@ func RegisterAll(root, db string) {
 	RegisterFamilies()
 }
 
+// RegisterFamiliesAt registers the row-backed families reading the reference
+// database at path, not the default. An embedding program that sets its
+// folder after start-up (trade_orchestrator) uses it to point at the file it
+// placed. Like RegisterFamilies it reads no rows.
+func RegisterFamiliesAt(path string) {
+	streak_strategy.RegisterFrom(path)
+	tree_strategy.RegisterFrom(path)
+	hold_strategy.RegisterFrom(path)
+	markov_strategy.RegisterFrom(path)
+}
+
 // RegisterFamilies registers the row-backed families (streak, tree, hold,
 // hold, markov). It reads no rows: a member is built when strategy.Get asks.
 func RegisterFamilies() {

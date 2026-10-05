@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 )
 
 // refWith writes a real reference database holding the given streak and hold rows.
@@ -238,4 +240,91 @@ func TestSelectStepsRefusesUnknownNames(t *testing.T) {
 	if err != nil || len(got) != 1 || got[0].name != "backtest" {
 		t.Fatalf("got %v %v", got, err)
 	}
+}
+
+// scopedCtx is a run context whose scope is every strategy of GOOGL in a real
+// temporary reference database, with those families registered from it.
+func scopedCtx(t *testing.T, extra ...string) *runCtx {
+	t.Helper()
+	ref := refWith(t)
+	streak_strategy.RegisterFrom(ref)
+	hold_strategy.RegisterFrom(ref)
+	rc := newCtx(t, withDefaults(Config{Symbols: []string{"GOOGL"}, RefDB: ref}))
+	if err := rc.scope(false); err != nil {
+		t.Fatal(err)
+	}
+	rc.strategies = append(rc.strategies, extra...)
+	rc.selected = map[string]bool{}
+	return rc
+}
+
+func TestOnlyWhatTheScopeReadsIsDownloaded(t *testing.T) {
+	rc := scopedCtx(t)
+	got := rc.neededSymbols()
+	has := map[string]bool{}
+	for _, s := range got {
+		has[s] = true
+	}
+	if !has["GOOGL"] {
+		t.Errorf("needed %v, want GOOGL", got)
+	}
+	if !has["VOO"] {
+		t.Errorf("needed %v, want VOO (googl-buy-hold benchmarks against it)", got)
+	}
+	for _, other := range []string{"AAPL", "TECL", "SGOV"} {
+		if has[other] {
+			t.Errorf("needed %v, but nothing in scope reads %s", got, other)
+		}
+	}
+	rc.selected["stack_eval"] = true
+	if !contains(rc.neededSymbols(), "SGOV") {
+		t.Errorf("the park symbol is needed once stack_eval runs: %v", rc.neededSymbols())
+	}
+}
+
+func TestOptionHistoryIsOnlyForCoveredCallStrategies(t *testing.T) {
+	rc := scopedCtx(t)
+	if why := whenCoveredCall(rc); why == "" {
+		t.Fatal("GOOGL has no covered-call strategy, so option history should be skipped")
+	}
+	if got := rc.coveredCallUnderlyings(); len(got) != 0 {
+		t.Fatalf("underlyings %v", got)
+	}
+	rc = scopedCtx(t, "schd-covered-call", "vym-covered-call-5pct")
+	if why := whenCoveredCall(rc); why != "" {
+		t.Fatalf("a covered-call strategy is in scope but the step is skipped: %s", why)
+	}
+	if got := rc.coveredCallUnderlyings(); !reflect.DeepEqual(got, []string{"SCHD", "VYM"}) {
+		t.Fatalf("underlyings %v, want SCHD and VYM", got)
+	}
+}
+
+func TestStepsWithNothingToDoAreSkippedUnlessNamed(t *testing.T) {
+	rc := scopedCtx(t)
+	opt := step{name: "market_history_options", when: whenCoveredCall, run: func(*runCtx) error { return nil }}
+	if why := opt.skipReason(rc); why == "" {
+		t.Error("options step should be skipped by default for GOOGL")
+	}
+	rc.cfg.explicit = map[string]bool{"market_history_options": true}
+	if why := opt.skipReason(rc); why != "" {
+		t.Errorf("a step named in -steps must run, got skip: %s", why)
+	}
+	for _, s := range []struct {
+		name string
+		when func(*runCtx) string
+	}{{"train", whenTrainable}, {"study", whenHMM}} {
+		rc.cfg.explicit = nil
+		if s.when(rc) == "" {
+			t.Errorf("%s should be skipped when no markov, tree or hmm strategy is in scope", s.name)
+		}
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }

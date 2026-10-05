@@ -169,6 +169,14 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 		return nil, err
 	}
 
+	for _, s := range opts.Strategies {
+		if p, ok := s.(strategy.Preparer); ok {
+			if err := p.Prepare(ctx, opts.MarketDB); err != nil {
+				return nil, fmt.Errorf("PREPARE_FAILED: %s: %w", s.ID(), err)
+			}
+		}
+	}
+
 	type scanOut struct {
 		row  SignalScanRow
 		sigs []SignalDetail

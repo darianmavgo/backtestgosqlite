@@ -106,3 +106,54 @@ func TestStaleModelWarns(t *testing.T) {
 		t.Fatalf("no staleness warning in log: %q", got)
 	}
 }
+
+// A live scan prepares each markov strategy: it trains the signal symbol through the
+// latest bar when the saved model is behind, and does nothing when it is current.
+func TestPrepareTrainsThroughTheLatestBarOnlyWhenBehind(t *testing.T) {
+	app := t.TempDir()
+	t.Setenv("APP_FOLDER", app)
+	market := realbars.Copy(t, "GOOGL")
+	s := &Strategy{Row: refdb.MarkovStrategy{
+		ID: "markov_model_googl", Name: "x", SignalSymbol: "GOOGL", TradeSymbol: "GOOGL",
+		Direction: "long", TargetState: "bull", HoldDays: 5, AllocationPct: 0.25,
+	}}
+	modelDB := filepath.Join(app, "data", "markov_models.db")
+	last, err := storage.SymbolLastDate(market, "GOOGL")
+	if err != nil || last == "" {
+		t.Fatalf("last bar %q %v", last, err)
+	}
+
+	if err := s.Prepare(context.Background(), market); err != nil {
+		t.Fatalf("first Prepare: %v", err)
+	}
+	trained, ok := modelLastDate(modelDB, "GOOGL")
+	if !ok || trained != last {
+		t.Fatalf("model trained through %q (found %v), want %s", trained, ok, last)
+	}
+	before, err := os.Stat(modelDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Prepare(context.Background(), market); err != nil {
+		t.Fatalf("second Prepare: %v", err)
+	}
+	after, _ := os.Stat(modelDB)
+	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Fatal("a current model was trained again")
+	}
+
+	// The model now has a prediction for the latest bar, so the strategy no longer logs a missing model.
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	defer log.SetOutput(os.Stderr)
+	s.SetDatabases(market, filepath.Join(t.TempDir(), "calc.db"))
+	s.GenerateSignals(nil)
+	if strings.Contains(logs.String(), "no trained model") || strings.Contains(logs.String(), "was trained through") {
+		t.Fatalf("model still reported missing or behind: %s", logs.String())
+	}
+
+	if err := (&Strategy{Row: refdb.MarkovStrategy{SignalSymbol: "NOSUCH"}}).Prepare(context.Background(), market); err == nil {
+		t.Fatal("a symbol with no bars must fail Prepare, not pass as a quiet day")
+	}
+}
