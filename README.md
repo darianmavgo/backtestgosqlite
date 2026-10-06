@@ -50,7 +50,7 @@ Every strategy is calculated in SQL and run by Go. `backtest -strategylist` prin
 | Source | Count | Defined in |
 |---|---|---|
 | Own pipeline | a handful (`voo-up3`, `price-action-reclaim`, `biggest-winner*`, `tsll-daily-one-share`, covered calls) | a small config in `pkg/strategy/` plus `sql/strategies/<id>/` |
-| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 (the old hold_bail rows were merged in when the DB was first opened) `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122 | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, each running one shared `sql/strategies/<family>/` |
+| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 (the old hold_bail rows were merged in when the DB was first opened) `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122, `rotation_strategy` 5 (ranks a liquid universe on momentum and holds the top few) | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, `pkg/rotation_strategy`, each running one shared `sql/strategies/<family>/` |
 
 Most streak rows are a generic "drop 3 days, buy the rebound" rule, one per symbol. A few were promoted from sweeps (`source_strategy` `voo-up3`, `gld-decline`, `universe-screen`, `manual`). `streak-voo-buy-tecl` is now `streak-voo-buy-tecl`. `park-<symbol>` resolves for any ticker without registration (see below). The older `streak-voo-buy-tecl`, `gld-decline` and `googl-hop` strategies are no longer registered; their SQL folders remain in `sql/strategies/`.
 
@@ -118,7 +118,7 @@ Default files:
 | Role | Path |
 |---|---|
 | Market bars | `data/market_history.db`, table `backtest_start` |
-| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`) |
+| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`, `rotation_strategy`) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
 | Backtest results | one folder per run, `data/reports/<run_id>/`, numbered 1, 2, 3, … Inside it one database per strategy family (`markov.db`, `tree.db`, `streak.db`, `hold.db`, `builtin.db` for Go-defined strategies, `stack.db` for stacks), the HTML report as `report.html`, and the held-out pass in `oos/` with the same file names |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |

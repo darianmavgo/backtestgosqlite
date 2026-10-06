@@ -1,5 +1,5 @@
 // Package refdb is the reference database (refdata/strategies.db): strategy
-// configs live in SQLite tables (streak, tree, markov, hold).
+// configs live in SQLite tables (streak, tree, markov, hold, rotation).
 package refdb
 
 import (
@@ -80,6 +80,25 @@ CREATE TABLE IF NOT EXISTS markov_strategy (
 	source_label     TEXT,
 	win_rate         REAL,
 	total_trades     INTEGER
+);
+
+-- One rotation strategy per row (pkg/rotation_strategy): rank the liquid
+-- universe on momentum each session and hold the top few. symbols is a comma
+-- separated candidate list, empty for every symbol in the market database.
+-- regime_sma = 0 turns the market gate off.
+CREATE TABLE IF NOT EXISTS rotation_strategy (
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	symbols          TEXT NOT NULL DEFAULT '',
+	universe_size    INTEGER NOT NULL,
+	top_k            INTEGER NOT NULL,
+	exit_buffer      INTEGER NOT NULL,
+	max_weight_pct   REAL NOT NULL,
+	regime_symbol    TEXT NOT NULL DEFAULT 'QQQ',
+	regime_sma       INTEGER NOT NULL DEFAULT 0,
+	allocation_pct   REAL NOT NULL,
+	cash_yield       REAL NOT NULL,
+	slippage_pct     REAL NOT NULL
 );
 `
 
@@ -516,10 +535,50 @@ func holdStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HoldStrategy
 	return out, err
 }
 
+// RotationStrategy is one row of rotation_strategy.
+type RotationStrategy struct {
+	ID            string  `db:"id"`
+	Name          string  `db:"name"`
+	Symbols       string  `db:"symbols"`
+	UniverseSize  int     `db:"universe_size"`
+	TopK          int     `db:"top_k"`
+	ExitBuffer    int     `db:"exit_buffer"`
+	MaxWeightPct  float64 `db:"max_weight_pct"`
+	RegimeSymbol  string  `db:"regime_symbol"`
+	RegimeSMA     int     `db:"regime_sma"`
+	AllocationPct float64 `db:"allocation_pct"`
+	CashYield     float64 `db:"cash_yield"`
+	SlippagePct   float64 `db:"slippage_pct"`
+}
+
+// RotationStrategies returns every rotation_strategy row, ordered by id.
+func RotationStrategies(db *sqlx.DB) ([]RotationStrategy, error) {
+	return rotationStrategiesWhere(db, "")
+}
+
+// RotationStrategyByID returns the row whose id is exactly id.
+func RotationStrategyByID(db *sqlx.DB, id string) (RotationStrategy, bool, error) {
+	rows, err := rotationStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return RotationStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func rotationStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]RotationStrategy, error) {
+	var out []RotationStrategy
+	err := db.Select(&out, `
+		SELECT id, name, symbols, universe_size, top_k, exit_buffer, max_weight_pct,
+		       regime_symbol, regime_sma, allocation_pct, cash_yield, slippage_pct
+		FROM rotation_strategy`+where+` ORDER BY id`, args...)
+	return out, err
+}
+
 // strategyTables are the tables CanonicalID and IDs accept.
 var strategyTables = map[string]bool{
 	"streak_strategy": true, "hold_strategy": true,
 	"tree_strategy": true, "markov_strategy": true,
+	"rotation_strategy": true,
 }
 
 // ExactID returns the stored id equal to id in table. It is an indexed lookup.

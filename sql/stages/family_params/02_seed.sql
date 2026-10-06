@@ -62,4 +62,16 @@ INSERT OR REPLACE INTO strategy_family_param (family, param, kind, role, gridsea
 ('hold', 'cash_yield', 'real', 'cost', 0, NULL, 'an account setting, not a strategy parameter'),
 ('hold', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter'),
 ('hold', 'trailing_stop_pct', 'real', 'exit', 0, NULL, 'gridsearch has no hold signal stage for a changed trailing stop yet. 0 never bails'),
-('hold', 'sma_reentry_period', 'int', 'entry', 0, NULL, 'gridsearch has no hold signal stage for a changed re-entry period yet. 0 never re-enters');
+('hold', 'sma_reentry_period', 'int', 'entry', 0, NULL, 'gridsearch has no hold signal stage for a changed re-entry period yet. 0 never re-enters'),
+('rotation', 'id', 'text', 'identity', 0, NULL, 'the row key'),
+('rotation', 'name', 'text', 'label', 0, NULL, 'a label'),
+('rotation', 'symbols', 'text', 'symbol', 0, NULL, 'the candidate list defines the strategy. Empty means every symbol in the market database'),
+('rotation', 'universe_size', 'int', 'entry', 0, NULL, 'gridsearch has no rotation signal stage yet. A search needs the whole ranking rerun per value'),
+('rotation', 'top_k', 'int', 'entry', 0, NULL, 'gridsearch has no rotation signal stage yet. A search needs the whole ranking rerun per value'),
+('rotation', 'exit_buffer', 'int', 'exit', 0, NULL, 'gridsearch has no rotation signal stage yet. A search needs the whole ranking rerun per value'),
+('rotation', 'max_weight_pct', 'real', 'sizing', 0, NULL, 'a cap on one name, applied with allocation_pct / top_k'),
+('rotation', 'regime_symbol', 'symbol', 'entry', 0, NULL, 'the gate symbol defines the strategy'),
+('rotation', 'regime_sma', 'int', 'entry', 0, NULL, 'gridsearch has no rotation signal stage yet. 0 turns the gate off'),
+('rotation', 'allocation_pct', 'real', 'sizing', 0, NULL, 'sizing, set by the -alloc flag for the whole run'),
+('rotation', 'cash_yield', 'real', 'cost', 0, NULL, 'an account setting, not a strategy parameter'),
+('rotation', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter');

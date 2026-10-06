@@ -5,6 +5,7 @@ package stratreg
 import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/rotation_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/tree_strategy"
@@ -27,13 +28,15 @@ func RegisterFamiliesAt(path string) {
 	tree_strategy.RegisterFrom(path)
 	hold_strategy.RegisterFrom(path)
 	markov_strategy.RegisterFrom(path)
+	rotation_strategy.RegisterFrom(path)
 }
 
 // RegisterFamilies registers the row-backed families (streak, tree, hold,
-// hold, markov). It reads no rows: a member is built when strategy.Get asks.
+// markov, rotation). It reads no rows: a member is built when strategy.Get asks.
 func RegisterFamilies() {
 	streak_strategy.Register()
 	tree_strategy.Register()
 	hold_strategy.Register()
 	markov_strategy.Register()
+	rotation_strategy.Register()
 }
