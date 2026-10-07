@@ -13,7 +13,7 @@ INSERT OR REPLACE INTO strategy_family_param (family, param, kind, role, gridsea
 ('streak', 'allocation_pct', 'real', 'sizing', 0, NULL, 'sizing, set by the -alloc flag for the whole run'),
 ('streak', 'cash_yield', 'real', 'cost', 0, NULL, 'an account setting, not a strategy parameter'),
 ('streak', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter'),
-('streak', 'next_day_limit', 'int', 'entry', 0, NULL, 'an execution switch, not searched'),
+('streak', 'next_day_limit', 'int', 'legacy', 0, NULL, 'unused: every streak row buys at the next session open (StrategyConfig.NextDayOpenEntry), whatever this says'),
 ('streak', 'source_strategy', 'text', 'label', 0, NULL, 'provenance of a promoted row'),
 ('streak', 'source_label', 'text', 'label', 0, NULL, 'provenance of a promoted row'),
 ('streak', 'win_rate', 'real', 'stat', 0, NULL, 'a result written by promote, not an input'),

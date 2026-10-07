@@ -91,25 +91,27 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		stop = 1 - s.Row.StopLossPct
 	}
 	return strategy.StrategyConfig{
-		ID:                s.ID(),
-		Name:              s.Name(),
-		Description:       s.Description(),
-		Benchmark:         sig,
-		TradeSymbol:       tr,
-		StreakDirection:   s.Row.Direction,
-		Regime:            strings.TrimSpace(s.Row.Regime),
-		Timeframe:         "1d",
-		PositionSizing:    "fixed_pct",
-		AllocationPct:     s.Row.AllocationPct,
-		TargetPct:         target,
-		TakeProfitPct:     tp,
-		StopLossPct:       stop,
-		HoldingWindow:     s.Row.HoldDays,
-		PositionCap:       1,
-		CashYieldAnnual:   s.Row.CashYield,
-		SlippagePct:       s.Row.SlippagePct,
-		NextDayLimitEntry: s.Row.NextDayLimit != 0,
-		DeclineDays:       s.Row.SignalDays,
+		ID:              s.ID(),
+		Name:            s.Name(),
+		Description:     s.Description(),
+		Benchmark:       sig,
+		TradeSymbol:     tr,
+		StreakDirection: s.Row.Direction,
+		Regime:          strings.TrimSpace(s.Row.Regime),
+		Timeframe:       "1d",
+		PositionSizing:  "fixed_pct",
+		AllocationPct:   s.Row.AllocationPct,
+		TargetPct:       target,
+		TakeProfitPct:   tp,
+		StopLossPct:     stop,
+		HoldingWindow:   s.Row.HoldDays,
+		PositionCap:     1,
+		CashYieldAnnual: s.Row.CashYield,
+		SlippagePct:     s.Row.SlippagePct,
+		// Every streak row buys at the next session's open, with the take-profit
+		// measured from that fill. The row's next_day_limit column is not read.
+		NextDayOpenEntry: true,
+		DeclineDays:      s.Row.SignalDays,
 	}
 }
 
@@ -169,7 +171,7 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	if dir == "" {
 		dir = pipelineDir
 	}
-	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }
 
 // ValidateRow reports why a streak_strategy row cannot be registered or promoted.

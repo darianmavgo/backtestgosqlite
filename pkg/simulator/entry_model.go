@@ -27,6 +27,8 @@ const CrisisStopFraction = 0.80
 //     fill), exactly as the staged bracket order is. A strategy with no stop
 //     gets the live crisis stop.
 //
+// A strategy with NextDayOpenEntry buys at the next open instead (openEntry).
+//
 // Known simplification, shared with the legacy model: a position is not
 // exited on its entry day, so a stop or target touched on the fill day itself
 // is not seen. Strategies with the flag off pass through unchanged.
@@ -38,6 +40,12 @@ func ApplyLiveEntryModel(
 	out := make([]models.Signal, 0, len(signals))
 	for _, sig := range signals {
 		cfg := cfgFor(sig)
+		if cfg.NextDayOpenEntry {
+			if open, ok := openEntry(sig, cfg, barsBySymbol[sig.Symbol]); ok {
+				out = append(out, open)
+			}
+			continue
+		}
 		if !cfg.NextDayLimitEntry {
 			out = append(out, sig)
 			continue
@@ -81,6 +89,40 @@ func ApplyLiveEntryModel(
 		out = append(out, sig)
 	}
 	return out
+}
+
+// openEntry moves a signal on day D to a market buy at the open of the next
+// session. The fill is that open, so take-profit (the row's percent, or an
+// absolute price the signal carries) is measured from the fill and not from the
+// signal bar's close. The stop is left as the signal set it, or, with none, the
+// config's multiplier or the live crisis stop, both from the fill. A signal with
+// no next session in the data, or a next bar with no open, is dropped.
+func openEntry(sig models.Signal, cfg strategy.StrategyConfig, bars []models.Bar) (models.Signal, bool) {
+	next, ok := nextBarAfter(bars, sig.Date)
+	if !ok || next.Open <= 0 {
+		return sig, false
+	}
+	fill := next.Open
+	if sig.TakeProfit <= 0 {
+		switch {
+		case cfg.TakeProfitPct > 0:
+			sig.TakeProfit = fill * (1 + cfg.TakeProfitPct)
+		case cfg.TargetPct > 1:
+			sig.TakeProfit = fill * cfg.TargetPct
+		}
+	}
+	if sig.StopLoss <= 0 {
+		if cfg.StopLossPct > 0 && cfg.StopLossPct < 1 {
+			sig.StopLoss = fill * cfg.StopLossPct
+		} else {
+			sig.StopLoss = fill * CrisisStopFraction
+		}
+	}
+	sig.Date = next.Date
+	sig.Close = fill
+	sig.BuyLimit = fill
+	sig.OrderType = "market"
+	return sig, true
 }
 
 // nextBarAfter returns the first bar dated strictly after date.

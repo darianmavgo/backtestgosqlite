@@ -138,6 +138,12 @@ type StrategyConfig struct {
 	// Take-profit and stop are anchored to the limit price, as the live bracket
 	// order is. Off = the legacy model of filling at the signal bar's close.
 	NextDayLimitEntry  bool    `json:"next_day_limit_entry,omitempty"`
+	// NextDayOpenEntry enters at the next session's market open: the signal is
+	// known after the close, so a market order sent the next morning fills at
+	// that bar's open whatever the price is (no limit, so it is never dropped
+	// for gapping up). Take-profit and stop are measured from that fill. It wins
+	// over NextDayLimitEntry when both are set.
+	NextDayOpenEntry   bool    `json:"next_day_open_entry,omitempty"`
 	PositionCap        int     `json:"position_cap"`           // Max concurrent open positions (e.g. 5)
 	AllocationPct      float64 `json:"allocation_pct"`         // Portfolio equity allocation per trade (e.g. 0.20 for 20%)
 	FixedShares        int     `json:"fixed_shares,omitempty"` // Shares per position if PositionSizing == "fixed_shares"

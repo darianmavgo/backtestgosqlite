@@ -1,6 +1,10 @@
 -- Buy the trade symbol when the watch symbol's streak is long enough.
 -- __STREAK_COL__ is down_streak or up_streak. __REGIME_PREDICATE__ is
 -- applied to the watch bar (alias v), not the trade bar.
+-- take_profit and stop_loss are 0 on purpose: the simulator then measures the
+-- row's take_profit_pct and stop_loss_pct from the real entry price (the next
+-- session's open), not from this bar's close. A row with no stop gets the
+-- simulator's crisis stop.
 INSERT INTO streak_strategy_signals (
     idx, symbol, date, open, high, low, close, volume, buylimit, entry,
     direction, regime, hold_days_override, take_profit, stop_loss
@@ -19,8 +23,8 @@ SELECT
     'LONG' AS direction,
     '__REGIME_LABEL__' AS regime,
     __HOLD_DAYS__ AS hold_days_override,
-    t.close * __TAKE_PROFIT_MULT__ AS take_profit,
-    t.close * __STOP_LOSS_MULT__ AS stop_loss
+    0.0 AS take_profit,
+    0.0 AS stop_loss
 FROM streak_strategy_slice v
 JOIN backtest_start t
   ON t.Date = v.date
