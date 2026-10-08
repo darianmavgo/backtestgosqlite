@@ -303,14 +303,9 @@ func stepGridsearchParams(r *runCtx) error {
 }
 
 func stepGridsearch(r *runCtx) error {
-	cutoff, err := cutoffFor(r.cfg.MarketDB, r.symbols)
-	if err != nil {
-		return err
-	}
-	gs := gridConfig(r)
+	gs := gridConfig(r) // End stays empty: gridsearch holds out the same months backtest does
 	gs.Strategy = r.ids()
 	gs.Force = true
-	gs.End = cutoff
 	return gridsearch.Run(gs)
 }
 

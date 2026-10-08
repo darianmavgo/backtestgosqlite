@@ -80,7 +80,7 @@ Every command in this repo, in the order you use them to take one idea from raw 
 | 6 | Pick a list | `./bin/stratlist sql/lists/<file>.sql` | Turns a SELECT on `strategies.db` into ids, for example every strategy whose signal symbol is GOOGL. Feed it to `backtest -strategy "$(...)"`. | reads `refdata/strategies.db` |
 | 7 | First backtest | `./bin/backtest -strategy streak-googl-down3,googl_tree,markov_model_googl` | Runs each idea alone: an IN-SAMPLE pass, then one OUT-OF-SAMPLE pass on the last 12 months. Tune on the in-sample numbers only. | writes `data/reports/<run_id>/` (`streak.db`, `tree.db`, `markov.db`, `report.html`, `oos/`) |
 | 8 | Look at the grid | `./bin/gridsearch params streak-googl-down3` | Prints the hold, take-profit, stop and regime grid with no simulation. | none |
-| 9 | Sweep parameters | `./bin/gridsearch -strategy streak-googl-down3 -end <cutoff> -top 20` | Sweeps hold, target, stop and regime. `-end` stops the sweep before the held-out months so they do not tune the result. | writes `data/reports/gridsearch.db`, `<strategy>_gridsearch.html` |
+| 9 | Sweep parameters | `./bin/gridsearch -strategy streak-googl-down3 -top 20` | Sweeps hold, target, stop and regime. The sweep stops before the held-out months (`-holdout-months`, default 12) so they do not tune the result. | writes `data/reports/gridsearch.db`, `<strategy>_gridsearch.html` |
 | 10 | Promote winners | `./bin/gridsearch promote -strategy streak-googl-down3 -min-win-rate 0.6 -min-trades 30 -top 5` | Copies the best sweep rows into `streak_strategy` as new ids such as `streak-googl-down3-googl`. | writes `refdata/strategies.db` |
 | 11 | Re-run tuned | `./bin/gridsearch apply -run-id <N> -strategy streak-googl-down3` | Re-runs with the highest-resilience sweep row. Compare to step 7. | reads `gridsearch.db` |
 | 12 | Walk-forward | `./bin/validate walk -keep-going -strategy streak-googl-down3-googl,googl_tree` | Rolling 24 month train / 6 month test folds, one strategy at a time. | writes `data/reports/walk_forward.db` |
@@ -270,7 +270,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-end <date>` stops the sweep at that date, so the held-out months do not tune the parameters. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+**Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-holdout-months` (default 12, the same window `backtest` holds out) stops the sweep at the in-sample cutoff, so the held-out months do not tune the parameters; `-end <date>` sets the stop date directly and `-holdout-months 0` sweeps all history. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -418,6 +418,7 @@ Runs every stage for a set of stocks as one controlled run: download the bars, t
 ./bin/pipeline -symbol GOOGL                      # every stage for GOOGL, in a new run
 ./bin/pipeline -symbol GOOGL,AAPL -skip-network   # two stocks, no downloads
 ./bin/pipeline -symbol GOOGL -strategy streak-googl-down3,googl_tree
+./bin/pipeline -family streak -limit 50 -skip-network -skip park_sweep   # the first 50 streak rows
 ./bin/pipeline -run-id 17                         # resume run 17 and skip the steps it finished
 ./bin/pipeline -steps backtest,validate -run-id 17 -redo
 ./bin/pipeline -list-steps
@@ -437,6 +438,8 @@ Runs every stage for a set of stocks as one controlled run: download the bars, t
 |---|---|---|
 | `-symbol` | GOOGL (a resumed run keeps its own) | stocks the run may touch |
 | `-strategy` | every strategy tied to the symbols | fixed strategy list |
+| `-family` | none | scope to the rows of one strategy family (`streak`) instead of `-symbol`; the symbols are the ones the rows read and trade, the list is fixed, and with no primary the stack steps skip |
+| `-limit` | 0 (every row) | with `-family`: only the first N rows by id |
 | `-park` | SGOV | park symbol of the `stack_eval` step, downloaded only when that step runs |
 | `-primary` | `streak-<symbol>-down3-<symbol>` | primary of the stack steps |
 | `-years` | 6 | years of bars to download for a symbol that has none yet |
@@ -446,6 +449,19 @@ Runs every stage for a set of stocks as one controlled run: download the bars, t
 | `-skip-network` | off | leave out the downloading steps |
 
 `scripts/googl_pipeline.sh` is a one-line wrapper for `pipeline -symbol GOOGL`. Not yet in the pipeline: `markov_test` (its logic is still in `cmd/`) and `universe`, `transaction_calc` and `livescan`, which are not part of building a strategy. `hmm_regime.db` is still written to `data/reports/` and shared between runs, because the `markov_hmm` strategies read it from there. `park_sweep` uses its own configured park symbol (GOOGL).
+
+## runview
+
+A local, read-only browser for a run folder: the pipeline steps with their status and timings, every result database with its tables (sort, per-column filter, search across all columns, paging, CSV export), the HTML reports, and a SQL box. The newest run opens first, and a run still in progress refreshes its steps every few seconds.
+
+```bash
+./bin/runview                      # opens http://127.0.0.1:8765 on the newest run
+./bin/runview -root data/reports -addr 127.0.0.1:9000 -open=false
+```
+
+Databases are opened with `mode=ro` and `query_only`, and the SQL box accepts only `SELECT`, `WITH` and `EXPLAIN`, so a run in progress is never touched. It reads only the numbered folders under `-root` and refuses any path outside the run folder. It has no login: keep `-addr` on `127.0.0.1`. The page address holds the run, file and table (`#22/scoreboard.db/scoreboard`), so a view can be bookmarked. **Strategy view.** Click any `strategy_id` cell, or type an id in the header box, to see one strategy's whole story: its definition from `refdata/strategies.db` (`-ref`), the current definition against any swept config side by side with the changed parameters highlighted (click a row of the sweep table to compare it), every parameter combination the sweep tried, the optimizer's `params_json` with in/out-of-sample results, and every other table that holds the id. The bar-level tables (`trades`, `equity_curve`, `signals`) open filtered to the strategy.
+
+Keys: `/` jumps to search, Ctrl/Cmd+Enter runs the SQL, double-click a cell to copy it.
 
 ## validate
 

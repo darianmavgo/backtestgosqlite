@@ -108,6 +108,7 @@ func formatPercents(vals []float64) []string {
 type Config struct {
 	Start         string          // -start
 	End           string          // -end
+	HoldoutMonths int             // -holdout-months
 	Db            string          // -db
 	Strategy      string          // -strategy
 	Strat         string          // -strat
@@ -140,6 +141,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		Start:         storage.DefaultStartDate,
+		HoldoutMonths: storage.DefaultHoldoutMonths,
 		Db:            appenv.MarketDB(),
 		Strategy:      "",
 		List:          false,
@@ -179,6 +181,7 @@ func Main() {
 	conf := DefaultConfig()
 	d := conf
 	flag.StringVar(&conf.End, "end", d.End, "Latest bar date (YYYY-MM-DD) to sweep. Set it to the end of the in-sample window so the held-out months do not tune the parameters. Empty = latest bar")
+	flag.IntVar(&conf.HoldoutMonths, "holdout-months", d.HoldoutMonths, "Months at the end of history kept out of the sweep, the same window backtest holds out, so parameters are tuned in-sample only. 0 sweeps all history. An explicit -end wins")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to sweep; earlier bars only warm up SMAs. Empty = full history")
 	flag.StringVar(&conf.Db, "db", d.Db, "Path to SQLite database")
 	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "Strategy ID (comma-separated list, or 'all') to assess and optimize")
@@ -327,6 +330,17 @@ func Run(conf Config) error {
 		}
 		printPromoteReport(rep)
 		return nil
+	}
+
+	if conf.End == "" {
+		end, ok, err := storage.InSampleEnd(conf.Db, "backtest_start", conf.Start, "", conf.HoldoutMonths)
+		if err != nil {
+			return fmt.Errorf("gridsearch: holdout window: %w", err)
+		}
+		if ok {
+			conf.End = end
+			fmt.Printf("Sweeping the in-sample window %s → %s (last %d months held out)\n", conf.Start, end, conf.HoldoutMonths)
+		}
 	}
 
 	sweepOpts := sweepOptions{

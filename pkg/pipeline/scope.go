@@ -74,30 +74,44 @@ func checkRegistered(ids []string) error {
 	return nil
 }
 
-// cutoffFor is the date 12 months before the last daily bar of the symbols, where
-// a parameter sweep stops so the held-out months do not tune it. It reads
-// sql/stages/pipeline_scope/02_cutoff.sql.
-func cutoffFor(marketDB string, symbols []string) (string, error) {
-	text, err := sqlfiles.Stages.ReadFile("stages/pipeline_scope/02_cutoff.sql")
-	if err != nil {
-		return "", err
+// familyStages maps a -family value to the stage that lists its rows.
+var familyStages = map[string]string{"streak": "stages/pipeline_scope/02_family_streak.sql"}
+
+// strategiesForFamily returns the ids of the first limit rows of a strategy
+// family (limit <= 0 means every row) and the symbols those rows read or trade,
+// by sql/stages/pipeline_scope/02_family_*.sql.
+func strategiesForFamily(refDB, family string, limit int) (ids, symbols []string, err error) {
+	file, ok := familyStages[family]
+	if !ok {
+		return nil, nil, fmt.Errorf("pipeline: unknown family %q (families: streak)", family)
 	}
-	quoted := make([]string, len(symbols))
-	for i, s := range symbols {
-		quoted[i] = "'" + s + "'"
-	}
-	q := strings.ReplaceAll(string(text), "__SYMBOL_LIST__", strings.Join(quoted, ","))
-	db, err := storage.OpenSQLiteReadOnly(marketDB)
+	text, err := sqlfiles.Stages.ReadFile(file)
 	if err != nil {
-		return "", err
+		return nil, nil, err
+	}
+	n := -1
+	if limit > 0 {
+		n = limit
+	}
+	q := strings.ReplaceAll(string(text), "__LIMIT__", fmt.Sprint(n))
+	db, err := storage.OpenSQLiteReadOnly(refDB)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer db.Close()
-	var cutoff *string
-	if err := db.Get(&cutoff, q); err != nil {
-		return "", err
+	var rows []struct {
+		ID           string `db:"id"`
+		SignalSymbol string `db:"signal_symbol"`
+		TradeSymbol  string `db:"trade_symbol"`
 	}
-	if cutoff == nil || *cutoff == "" {
-		return "", fmt.Errorf("pipeline: no daily bars for %v in %s", symbols, marketDB)
+	if err := db.Select(&rows, q); err != nil {
+		return nil, nil, fmt.Errorf("pipeline: %s family: %w", family, err)
 	}
-	return *cutoff, nil
+	var syms []string
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+		syms = append(syms, r.SignalSymbol, r.TradeSymbol)
+	}
+	symbols, err = cleanSymbols(syms)
+	return ids, symbols, err
 }

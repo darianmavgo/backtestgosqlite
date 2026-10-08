@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	sqlfiles "github.com/darianmavgo/backtestgosqlite/sql"
@@ -1147,4 +1148,45 @@ func SymbolLastDate(path, symbol string) (string, error) {
 		return "", err
 	}
 	return last.String, nil
+}
+
+// DefaultHoldoutMonths is how much of the end of history is kept out of
+// selection, ranking and tuning. backtest and gridsearch share it, so a sweep
+// tunes on exactly the in-sample window the backtest reports.
+const DefaultHoldoutMonths = 12
+
+// minInSampleDays is the shortest in-sample window worth reporting.
+const minInSampleDays = 365
+
+// InSampleEnd returns the last in-sample date for a holdout of months before
+// the newest daily bar (or before last, when non-empty). ok is false when the
+// history from start is too short to split, in which case the caller uses all
+// of it.
+func InSampleEnd(dbPath, table, start, last string, months int) (end string, ok bool, err error) {
+	if months <= 0 {
+		return "", false, nil
+	}
+	if last == "" {
+		db, err := OpenSQLite(dbPath)
+		if err != nil {
+			return "", false, err
+		}
+		defer db.Close()
+		if err := ValidateTableName(table); err != nil {
+			return "", false, err
+		}
+		q := fmt.Sprintf("SELECT COALESCE(MAX(substr(Date,1,10)),'') FROM %s WHERE length(Date) = 10", table)
+		if err := db.Get(&last, q); err != nil {
+			return "", false, err
+		}
+	}
+	lastT, perr := time.Parse("2006-01-02", last)
+	if perr != nil {
+		return "", false, nil
+	}
+	cut := lastT.AddDate(0, -months, 0)
+	if startT, perr := time.Parse("2006-01-02", start); start != "" && perr == nil && cut.Sub(startT) < minInSampleDays*24*time.Hour {
+		return "", false, nil
+	}
+	return cut.Format("2006-01-02"), true, nil
 }

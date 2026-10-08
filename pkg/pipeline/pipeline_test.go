@@ -10,6 +10,7 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/hold_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
 )
 
@@ -327,4 +328,29 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestStrategiesForFamilyStreak(t *testing.T) {
+	ref := filepath.Join(t.TempDir(), "strategies.db")
+	db, err := storage.OpenSQLite(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE streak_strategy (id TEXT, signal_symbol TEXT, trade_symbol TEXT);
+		INSERT INTO streak_strategy VALUES ('streak-a', 'voo', 'tecl'), ('streak-b', 'googl', 'googl'), ('streak-c', 'aapl', 'aapl')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	ids, syms, err := strategiesForFamily(ref, "streak", 0)
+	if err != nil || strings.Join(ids, ",") != "streak-a,streak-b,streak-c" || strings.Join(syms, ",") != "AAPL,GOOGL,TECL,VOO" {
+		t.Fatalf("all rows: %v %v %v", ids, syms, err)
+	}
+	ids, syms, err = strategiesForFamily(ref, "streak", 2)
+	if err != nil || strings.Join(ids, ",") != "streak-a,streak-b" || strings.Join(syms, ",") != "GOOGL,TECL,VOO" {
+		t.Fatalf("limit 2: %v %v %v", ids, syms, err)
+	}
+	if _, _, err := strategiesForFamily(ref, "nope", 0); err == nil {
+		t.Fatal("unknown family must fail")
+	}
 }

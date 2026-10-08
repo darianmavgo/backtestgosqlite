@@ -34,6 +34,8 @@ func RunArgs(args []string, stdout, stderr io.Writer) int {
 	)
 	fs.StringVar(&symbols, "symbol", "", "stocks the run may touch, comma-separated (default GOOGL on a new run, the stored ones on a resumed run)")
 	fs.StringVar(&strategies, "strategy", "", "only these strategy ids (default: every strategy tied to the symbols)")
+	fs.StringVar(&cfg.Family, "family", "", "scope the run to every row of a strategy family (streak) instead of -symbol; no primary, so the stack steps skip")
+	fs.IntVar(&cfg.Limit, "limit", 0, "with -family: only the first N rows by id (0 = every row)")
 	fs.StringVar(&cfg.Park, "park", "SGOV", "symbol idle cash parks in for the stack_eval step (downloaded only when that step runs)")
 	fs.StringVar(&cfg.Primary, "primary", "", "primary strategy of the stack steps (default streak-<symbol>-down3-<symbol>)")
 	fs.IntVar(&cfg.Years, "years", 6, "years of bars to download for symbols that are missing bars")

@@ -16,11 +16,7 @@ import (
 // stack-eval keeps out of the main pass. Selection, ranking and tuning see
 // only the earlier data; the held-out months are run once, afterwards, with
 // the strategy or stack that pass produced.
-const DefaultHoldoutMonths = 12
-
-// minInSampleDays is the shortest in-sample window worth reporting. With less
-// history than this plus the holdout, the run uses all history.
-const minInSampleDays = 365
+const DefaultHoldoutMonths = storage.DefaultHoldoutMonths
 
 // stackEvalOutcome is what stack-eval found, for the out-of-sample pass.
 type stackEvalOutcome struct {
@@ -35,43 +31,15 @@ func holdoutApplies(conf Config) bool {
 	return conf.Mode == "" || conf.Mode == "stack-eval"
 }
 
-// lastBarDate returns the newest daily bar date in the market DB.
-func lastBarDate(conf Config) (string, error) {
-	db, err := storage.OpenSQLite(conf.Db)
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-	if err := storage.ValidateTableName(conf.Table); err != nil {
-		return "", err
-	}
-	var last string
-	q := fmt.Sprintf("SELECT COALESCE(MAX(substr(Date,1,10)),'') FROM %s WHERE length(Date) = 10", conf.Table)
-	if err := db.Get(&last, q); err != nil {
-		return "", err
-	}
-	return last, nil
-}
-
 // holdoutSplit returns the last in-sample date and the first out-of-sample
 // date. ok is false when history is too short to split.
 func holdoutSplit(conf Config) (inEnd, oosStart string, ok bool, err error) {
-	last := conf.End
-	if last == "" {
-		if last, err = lastBarDate(conf); err != nil {
-			return "", "", false, err
-		}
+	inEnd, ok, err = storage.InSampleEnd(conf.Db, conf.Table, conf.Start, conf.End, conf.HoldoutMonths)
+	if err != nil || !ok {
+		return "", "", false, err
 	}
-	lastT, perr := time.Parse("2006-01-02", last)
-	if perr != nil {
-		return "", "", false, nil
-	}
-	cut := lastT.AddDate(0, -conf.HoldoutMonths, 0)
-	startT, perr := time.Parse("2006-01-02", conf.Start)
-	if conf.Start != "" && perr == nil && cut.Sub(startT) < minInSampleDays*24*time.Hour {
-		return "", "", false, nil
-	}
-	return cut.Format("2006-01-02"), cut.AddDate(0, 0, 1).Format("2006-01-02"), true, nil
+	cut, _ := time.Parse("2006-01-02", inEnd)
+	return inEnd, cut.AddDate(0, 0, 1).Format("2006-01-02"), true, nil
 }
 
 // oosPath puts an output file beside the original with an _oos suffix.

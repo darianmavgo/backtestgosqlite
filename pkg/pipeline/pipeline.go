@@ -37,9 +37,16 @@ type Config struct {
 	// the run uses every strategy row tied to Symbols and picks up the rows its
 	// own promote step adds.
 	Strategies []string
-	Park       string // symbol idle cash parks in for the stack_eval step, default SGOV
-	Primary    string // primary of the stack steps, default streak-<sym>-down3-<sym>
-	Years      int    // years of bars to download for what is missing, default 6
+	// Family, when set, scopes the run to the rows of one strategy family
+	// ("streak") instead of the rows tied to Symbols. The symbols are the ones
+	// those rows read and trade, the list is fixed like Strategies, and no
+	// primary is chosen unless Primary is set, so the stack steps skip.
+	Family string
+	// Limit caps a Family run to its first N rows by id. 0 means every row.
+	Limit   int
+	Park    string // symbol idle cash parks in for the stack_eval step, default SGOV
+	Primary string // primary of the stack steps, default streak-<sym>-down3-<sym>
+	Years   int    // years of bars to download for what is missing, default 6
 	// RunID 0 starts a new run. N resumes run N.
 	RunID int
 	// Steps limits the run to these steps (see StepNames). Skip removes steps.
@@ -247,24 +254,35 @@ func (r *runCtx) scope(resumed bool) error {
 	}
 
 	symbols := r.cfg.Symbols
-	if len(symbols) == 0 {
-		symbols = []string{"GOOGL"}
-	}
-	symbols, err = cleanSymbols(symbols)
-	if err != nil {
-		return err
-	}
 	var strategies []string
 	explicit := 0
-	if len(r.cfg.Strategies) > 0 {
+	if r.cfg.Family != "" {
+		if len(r.cfg.Strategies) > 0 || len(symbols) > 0 {
+			return fmt.Errorf("pipeline: -family takes its symbols and strategies from the family; drop -symbol and -strategy")
+		}
+		explicit = 1
+		strategies, symbols, err = strategiesForFamily(r.cfg.RefDB, r.cfg.Family, r.cfg.Limit)
+		if err != nil {
+			return err
+		}
+	} else {
+		if len(symbols) == 0 {
+			symbols = []string{"GOOGL"}
+		}
+		if symbols, err = cleanSymbols(symbols); err != nil {
+			return err
+		}
+	}
+	switch {
+	case r.cfg.Family != "": // set above
+	case len(r.cfg.Strategies) > 0:
 		explicit = 1
 		strategies = dedupe(r.cfg.Strategies)
 		if err := checkRegistered(strategies); err != nil {
 			return err
 		}
-	} else {
-		strategies, err = strategiesFor(r.cfg.RefDB, symbols)
-		if err != nil {
+	default:
+		if strategies, err = strategiesFor(r.cfg.RefDB, symbols); err != nil {
 			return err
 		}
 	}
@@ -273,7 +291,7 @@ func (r *runCtx) scope(resumed bool) error {
 	}
 	r.symbols, r.strategies = symbols, strategies
 	r.primary = r.cfg.Primary
-	if r.primary == "" {
+	if r.primary == "" && r.cfg.Family == "" {
 		r.primary = defaultPrimary(symbols, strategies)
 	}
 	if err := saveRun(r.state, runRow{RunID: r.runID, Park: r.cfg.Park, Bench: "", PrimaryID: r.primary, Explicit: explicit}); err != nil {
