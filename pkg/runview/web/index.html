@@ -109,7 +109,7 @@ const fmtDur=s=>s<60?s.toFixed(0)+'s':s<3600?(s/60).toFixed(1)+'m':(s/3600).toFi
 function dur(a,b){if(!a||!b)return'';return fmtDur((new Date(b)-new Date(a))/1000)}
 
 // ---- routing: #run/file/table or #run/overview ----
-function setHash(){const v=S.view;let h='#'+S.run;if(v.kind==='table')h+='/'+encodeURIComponent(v.file)+'/'+encodeURIComponent(v.table);else if(v.kind==='sql')h+='/'+encodeURIComponent(v.file)+'/sql';else if(v.kind==='report')h+='/'+encodeURIComponent(v.file)+'/report';else if(v.kind==='strategy')h+='/~strategy/'+encodeURIComponent(v.id);history.replaceState(null,'',h)}
+function setHash(){const v=S.view;let h='#'+S.run;if(v.kind==='table')h+='/'+encodeURIComponent(v.file)+'/'+encodeURIComponent(v.table);else if(v.kind==='sql')h+='/'+encodeURIComponent(v.file)+'/sql';else if(v.kind==='report')h+='/'+encodeURIComponent(v.file)+'/report';else if(v.kind==='strategy')h+='/~strategy/'+encodeURIComponent(v.id);else if(v.kind==='etfs')h+='/~etfs';else if(v.kind==='symbol')h+='/~symbol/'+encodeURIComponent(v.sym);history.replaceState(null,'',h)}
 function readHash(){const p=location.hash.slice(1).split('/').map(decodeURIComponent);return{run:p[0],file:p[1],what:p[2]}}
 
 async function loadRuns(){
@@ -135,6 +135,7 @@ async function loadDB(file){
 function renderSide(){
   const side=$('#side');side.replaceChildren();
   side.append(el('div',{class:'item'+(S.view.kind==='overview'?' sel':''),onclick:()=>go({kind:'overview'})},el('span',{},'📋 Overview')));
+  side.append(el('div',{class:'item'+(['etfs','symbol'].includes(S.view.kind)?' sel':''),onclick:()=>go({kind:'etfs'})},el('span',{},'📈 Top ETFs')));
   const dbs=S.info.files.filter(f=>f.kind==='db'&&!f.path.endsWith('-wal')&&!f.path.endsWith('-shm')), html=S.info.files.filter(f=>f.kind==='html');
   side.append(el('h3',{},'Databases'));
   for(const f of dbs){
@@ -165,7 +166,7 @@ function go(v){
 
 // ---- main views ----
 function render(){const m=$('#main');m.replaceChildren();
-  ({overview:renderOverview,table:renderTable,sql:renderSQL,report:renderReport,strategy:renderStrategy})[S.view.kind](m)}
+  ({overview:renderOverview,table:renderTable,sql:renderSQL,report:renderReport,strategy:renderStrategy,etfs:renderETFs,symbol:renderSymbol})[S.view.kind](m)}
 
 function renderOverview(m){
   const i=S.info,steps=i.steps||[];
@@ -334,6 +335,48 @@ async function renderStrategy(m){
   if(heavy.length)m.append(el('div',{class:'card'},el('h2',{},'Row-level data (opens filtered to this strategy)'),
     heavy.map(t=>el('button',{style:'margin:3px',onclick:()=>go({kind:'table',file:t.file,table:t.table,f:{strategy_id:v.id}})},`${t.table} · ${t.file}`))));
 }
+const S_ETF={n:100,lev:false,withStrat:false,inRun:false,q:''};
+const fmtUSD=n=>n>=1e9?'$'+(n/1e9).toFixed(2)+'B':n>=1e6?'$'+(n/1e6).toFixed(0)+'M':'$'+n.toLocaleString();
+async function renderETFs(m){
+  const f=S_ETF;
+  const sel=el('select',{onchange:e=>{f.n=+e.target.value;load()}},[50,100,200,300].map(n=>el('option',{value:n,selected:n===f.n},'Top '+n)));
+  const chk=(label,key,reload)=>el('label',{style:'display:flex;gap:5px;align-items:center;cursor:pointer'},el('input',{type:'checkbox',checked:f[key]||null,onchange:e=>{f[key]=e.target.checked;reload?load():draw()}}),label);
+  const search=el('input',{class:'grow',placeholder:'Filter symbol, name or category…',value:f.q,oninput:e=>{f.q=e.target.value;draw()}});
+  const wrap=el('div',{class:'gridwrap'}),note=el('div',{class:'hint'});
+  m.append(el('div',{class:'toolbar'},el('span',{class:'title'},'Largest ETFs'),sel,chk('include leveraged','lev',true),chk('has strategies','withStrat'),chk('in this run','inRun'),search),note,wrap);
+  let rows=[];
+  async function load(){
+    wrap.replaceChildren(el('div',{class:'empty'},'ranking by dollar volume…'));
+    try{rows=await api('/api/etfs',{run:S.run,n:f.n,leveraged:f.lev?1:0})}catch(e){wrap.replaceChildren(el('div',{class:'err',style:'padding:14px'},e.message));return}
+    draw()}
+  function draw(){
+    const q=f.q.toLowerCase();
+    const list=rows.filter(r=>(!f.withStrat||r.strategies)&&(!f.inRun||r.in_run)&&(!q||(r.symbol+' '+r.name+' '+r.category).toLowerCase().includes(q)));
+    note.textContent=`${list.length} of ${rows.length} shown · ranked by average daily dollar volume over the last 90 days (a size proxy: the repo has no AUM data) · click a row for its strategies`;
+    const th=t=>el('th',{style:'cursor:default'},t);
+    wrap.replaceChildren(el('table',{},el('thead',{},el('tr',{},['#','Symbol','Name','Category','Lev','$ volume / day','Strategies','Streak','In run'].map(th))),
+      el('tbody',{},list.map(r=>el('tr',{class:'click',onclick:()=>go({kind:'symbol',sym:r.symbol})},
+        el('td',{class:'rn'},r.rank),el('td',{},el('a',{},r.symbol)),el('td',{},r.name),el('td',{},r.category),el('td',{},r.leverage==='none'?'':r.leverage),
+        el('td',{class:'num'},fmtUSD(r.dollar_volume)),el('td',{class:'num'+(r.strategies?'':' null')},r.strategies||'–'),el('td',{class:'num'+(r.streak?'':' null')},r.streak||'–'),el('td',{class:'num'+(r.in_run?'':' null')},r.in_run||'–'))))));
+    if(!list.length)wrap.append(el('div',{class:'empty'},'No ETFs match'));
+  }
+  load();
+}
+async function renderSymbol(m){
+  const v=S.view;
+  m.append(el('div',{class:'toolbar'},el('span',{class:'title'},v.sym),el('span',{class:'hint'},'strategies tied to this symbol'),el('span',{style:'flex:1'}),el('button',{onclick:()=>go({kind:'etfs'})},'← Top ETFs')),el('div',{class:'hint'},'loading…'));
+  let list;try{list=await api('/api/symbol',{run:S.run,sym:v.sym})}catch(e){m.replaceChildren(el('div',{class:'err'},e.message));return}
+  if(S.view!==v)return;
+  m.replaceChildren(el('div',{class:'toolbar'},el('span',{class:'title'},v.sym),el('span',{class:'hint'},`${list.length} strateg${list.length===1?'y':'ies'} · ${list.filter(x=>x.in_run).length} in run #${S.run}`),el('span',{style:'flex:1'}),el('button',{onclick:()=>go({kind:'etfs'})},'← Top ETFs')));
+  if(!list.length){m.append(el('div',{class:'empty'},'No strategy in the reference database reads or trades this symbol.'));return}
+  const pct=x=>x==null?'–':(x*100).toFixed(1)+'%',n=x=>x==null?'–':String(+(+x).toPrecision(4));
+  const th=t=>el('th',{style:'cursor:default'},t);
+  m.append(el('div',{class:'gridwrap'},el('table',{},el('thead',{},el('tr',{},['Strategy','Family','Name','In run','CAGR','Sharpe','Max DD','Trades','Win rate'].map(th))),
+    el('tbody',{},list.map(x=>{const p=x.perf||{};return el('tr',{class:'click',onclick:()=>go({kind:'strategy',id:x.id})},
+      el('td',{},el('a',{},x.id)),el('td',{},el('span',{class:'pill'},x.family)),el('td',{},x.name),el('td',{},x.in_run?'●':''),
+      el('td',{class:'num'+(p.cagr<0?' neg':'')},pct(p.cagr)),el('td',{class:'num'},n(p.sharpe)),el('td',{class:'num'},p.max_dd==null?'–':n(p.max_dd)),el('td',{class:'num'},n(p.trades)),el('td',{class:'num'},pct(p.win_rate)))})))));
+  m.append(el('div',{class:'hint'},'Results appear for strategies this run backtested. Others show only their definition when opened.'));
+}
 function renderReport(m){
   const v=S.view;
   m.append(el('div',{class:'toolbar'},el('span',{class:'title'},v.file),el('span',{style:'flex:1'}),el('a',{href:`/file/${S.run}/${v.file}`,target:'_blank'},'open in new tab ↗')),
@@ -355,6 +398,8 @@ $('#refresh').onclick=async()=>{await loadRuns();await loadRun(S.run,true)};
     const h=readHash(),want=S.runs.find(r=>String(r.id)===h.run)?h.run:S.runs[0].id;
     await loadRun(want);
     if(h.file==='~strategy'&&h.what&&String(want)===h.run)go({kind:'strategy',id:h.what});
+    else if(h.file==='~etfs'&&String(want)===h.run)go({kind:'etfs'});
+    else if(h.file==='~symbol'&&h.what&&String(want)===h.run)go({kind:'symbol',sym:h.what});
     else if(h.file&&String(want)===h.run){
       if(h.what==='sql')go({kind:'sql',file:h.file});
       else if(h.what==='report')go({kind:'report',file:h.file});

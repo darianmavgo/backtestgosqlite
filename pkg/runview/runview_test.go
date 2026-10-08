@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
@@ -152,5 +153,64 @@ func TestStrategyGathersDefinitionAndResults(t *testing.T) {
 	}
 	if code, _ := get(t, h, "GET", "/api/strategy?run=7&id="+url.QueryEscape("x' OR 1=1"), nil); code == http.StatusOK {
 		t.Fatal("odd ids must be refused")
+	}
+}
+
+func TestETFRankingByDollarVolume(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name, schema string) string {
+		p := filepath.Join(dir, name)
+		db, err := storage.OpenSQLite(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(schema); err != nil {
+			t.Fatal(err)
+		}
+		db.Close()
+		return p
+	}
+	// BIG trades more dollars than SMALL; LEV is leveraged; STK is a stock mislabelled as an ETF.
+	bars := ""
+	for i := 1; i <= 25; i++ {
+		d := time.Date(2026, 9, i, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		bars += "('" + d + "','BIG',100,1000),('" + d + "','SMALL',10,1000),('" + d + "','LEV',500,1000),('" + d + "','STK',900,1000),"
+	}
+	market := mk("market.db", `CREATE TABLE backtest_start (Date TEXT, symbol TEXT, close REAL, volume REAL);
+		INSERT INTO backtest_start VALUES `+strings.TrimSuffix(bars, ","))
+	uni := mk("universe.db", `CREATE TABLE universe (symbol TEXT, name TEXT, asset_type TEXT, is_etf INT, leverage TEXT, category TEXT, active INT);
+		INSERT INTO universe VALUES ('BIG','Big','ETF',1,'none','x',1),('SMALL','Small','ETF',1,'none','x',1),
+		('LEV','Lev','ETF',1,'3x','x',1),('STK','Stock','CS',1,'none','x',1)`)
+	ref := mk("strategies.db", `CREATE TABLE streak_strategy (id TEXT, name TEXT, signal_symbol TEXT, trade_symbol TEXT);
+		CREATE TABLE tree_strategy (id TEXT, name TEXT, signal_symbol TEXT, trade_symbol TEXT);
+		CREATE TABLE markov_strategy (id TEXT, name TEXT, signal_symbol TEXT, trade_symbol TEXT);
+		CREATE TABLE hold_strategy (id TEXT, name TEXT, symbol TEXT);
+		INSERT INTO streak_strategy VALUES ('streak-big-down3','n','BIG','BIG'), ('streak-small-big','n','SMALL','BIG')`)
+
+	s := &server{root: newRoot(t), refDB: ref, marketDB: market, universeDB: uni}
+	h := s.routes()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/etfs?run=7&n=10", nil))
+	var rows []etfRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body.String())
+	}
+	if len(rows) != 2 || rows[0].Symbol != "BIG" || rows[1].Symbol != "SMALL" {
+		t.Fatalf("want BIG, SMALL (no leveraged, no stock): %+v", rows)
+	}
+	if rows[0].Strategies != 2 || rows[0].Streak != 2 || rows[1].Strategies != 1 {
+		t.Fatalf("strategy counts: %+v", rows)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/etfs?run=7&n=10&leveraged=1", nil))
+	_ = json.Unmarshal(rec.Body.Bytes(), &rows)
+	if len(rows) != 3 || rows[0].Symbol != "LEV" {
+		t.Fatalf("leveraged included: %+v", rows)
+	}
+	_, _ = get(t, h, "GET", "/api/symbol?run=7&sym=BIG", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/symbol?run=7&sym=BIG", nil))
+	if !strings.Contains(rec.Body.String(), "streak-small-big") {
+		t.Fatalf("symbol view should list strategies that trade BIG: %s", rec.Body.String())
 	}
 }

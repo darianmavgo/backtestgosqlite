@@ -34,15 +34,17 @@ var webFS embed.FS
 
 // Config holds the settings of a run.
 type Config struct {
-	Root string // -root, the reports folder
-	Addr string // -addr
-	Open bool   // -open
-	Ref  string // -ref, the strategy reference database
+	Root     string // -root, the reports folder
+	Addr     string // -addr
+	Open     bool   // -open
+	Ref      string // -ref, the strategy reference database
+	DB       string // -db, the market database
+	Universe string // -universe
 }
 
 // DefaultConfig returns the CLI defaults.
 func DefaultConfig() Config {
-	return Config{Root: appenv.Reports(), Addr: "127.0.0.1:8765", Open: true, Ref: appenv.RefDB()}
+	return Config{Root: appenv.Reports(), Addr: "127.0.0.1:8765", Open: true, Ref: appenv.RefDB(), DB: appenv.MarketDB(), Universe: appenv.UniverseDB()}
 }
 
 // Main is the CLI entry point.
@@ -51,6 +53,8 @@ func Main() {
 	flag.StringVar(&conf.Root, "root", conf.Root, "reports folder that holds the numbered run folders")
 	flag.StringVar(&conf.Addr, "addr", conf.Addr, "listen address (keep it on 127.0.0.1: the viewer has no login)")
 	flag.StringVar(&conf.Ref, "ref", conf.Ref, "strategy reference database (strategies.db), read for strategy definitions; empty to skip")
+	flag.StringVar(&conf.DB, "db", conf.DB, "market database, read to rank ETFs by dollar volume")
+	flag.StringVar(&conf.Universe, "universe", conf.Universe, "universe database (which symbols are ETFs)")
 	flag.BoolVar(&conf.Open, "open", conf.Open, "open the browser")
 	flag.Parse()
 	if err := Run(conf); err != nil {
@@ -60,7 +64,7 @@ func Main() {
 
 // Run serves the viewer until the process stops.
 func Run(conf Config) error {
-	s := &server{root: conf.Root, refDB: conf.Ref}
+	s := &server{root: conf.Root, refDB: conf.Ref, marketDB: conf.DB, universeDB: conf.Universe}
 	ln, err := net.Listen("tcp", conf.Addr)
 	if err != nil {
 		return err
@@ -82,8 +86,11 @@ func openBrowser(u string) {
 }
 
 type server struct {
-	root  string
-	refDB string // refdata/strategies.db, may be empty
+	root       string
+	refDB      string // refdata/strategies.db, may be empty
+	marketDB   string
+	universeDB string
+	etf        etfCache
 }
 
 func (s *server) routes() http.Handler {
@@ -95,6 +102,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("/api/db", s.handle(s.dbInfo))
 	mux.HandleFunc("/api/table", s.handle(s.table))
 	mux.HandleFunc("/api/strategy", s.handle(s.strategy))
+	mux.HandleFunc("/api/etfs", s.handle(s.etfs))
+	mux.HandleFunc("/api/symbol", s.handle(s.symbol))
 	mux.HandleFunc("/api/find", s.handle(s.find))
 	mux.HandleFunc("/api/query", s.handle(s.query))
 	mux.HandleFunc("/file/", s.file)
