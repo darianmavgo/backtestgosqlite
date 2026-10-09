@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/darianmavgo/backtestgosqlite/pkg/calendar"
 )
 
-// LastCompletedEquitySession is the most recent weekday session date at or
-// before now in America/New_York. Before the regular close (16:00 ET), the
-// prior weekday is treated as last completed. Weekends walk backward.
-// Exchange holidays are treated as sessions (same simplification as
-// trade_orchestrator).
+// LastCompletedEquitySession is the most recent session date at or before now
+// in America/New_York. Before the regular close (16:00 ET), the prior day is
+// treated as last completed. Weekends and exchange holidays walk backward.
 func LastCompletedEquitySession(now time.Time) time.Time {
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -20,17 +20,20 @@ func LastCompletedEquitySession(now time.Time) time.Time {
 	if et.Hour() < 16 {
 		et = et.AddDate(0, 0, -1)
 	}
-	for et.Weekday() == time.Saturday || et.Weekday() == time.Sunday {
-		et = et.AddDate(0, 0, -1)
+	day := time.Date(et.Year(), et.Month(), et.Day(), 0, 0, 0, 0, time.UTC)
+	for !calendar.IsSession(day) {
+		day = day.AddDate(0, 0, -1)
 	}
-	return time.Date(et.Year(), et.Month(), et.Day(), 0, 0, 0, 0, time.UTC)
+	return day
 }
 
-// NextEquitySession returns the next weekday after last completed (the
-// session live entries are typically aimed at after the tip close).
+// NextEquitySession returns the next session after last completed (the
+// session live entries are aimed at after the tip close), skipping weekends and
+// exchange holidays.
 func NextEquitySession(lastCompleted time.Time) time.Time {
 	d := lastCompleted.UTC().AddDate(0, 0, 1)
-	for d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+	d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+	for !calendar.IsSession(d) {
 		d = d.AddDate(0, 0, 1)
 	}
 	return d

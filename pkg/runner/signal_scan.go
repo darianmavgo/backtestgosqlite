@@ -265,7 +265,32 @@ func allStrategiesDeclareSymbols(strategies []strategy.Strategy) bool {
 	return true
 }
 
+// liveLimitEntry prices the order a strategy with EntryLimitPct sends for the next
+// session. The backtest enters on a session with a buy limit at that fraction of the
+// previous session's close, so the live order, placed after the as-of close for the
+// next session, is a limit at that fraction of the as-of close. Take-profit and stop
+// are absolute prices anchored to the limit, as the staged bracket order is (the
+// simulator measures them from the fill, which is the limit or, on a gap down, lower).
+// A target or stop the signal already carries is kept.
+func liveLimitEntry(sig models.Signal, cfg strategy.StrategyConfig) (buyLimit, takeProfit, stopLoss float64) {
+	buyLimit = sig.Close * cfg.EntryLimitPct
+	takeProfit, stopLoss = sig.TakeProfit, sig.StopLoss
+	if takeProfit <= 0 {
+		switch {
+		case cfg.TakeProfitPct > 0:
+			takeProfit = buyLimit * (1 + cfg.TakeProfitPct)
+		case cfg.TargetPct > 1:
+			takeProfit = buyLimit * cfg.TargetPct
+		}
+	}
+	if stopLoss <= 0 && cfg.StopLossPct > 0 && cfg.StopLossPct < 1 {
+		stopLoss = buyLimit * cfg.StopLossPct
+	}
+	return buyLimit, takeProfit, stopLoss
+}
+
 func buildSignalScanRow(strat strategy.Strategy, signals []models.Signal, asOf string) (SignalScanRow, []SignalDetail) {
+	cfg := strat.DefaultConfig()
 	seen := map[string]bool{}
 	var parts []string
 	var details []SignalDetail
@@ -294,16 +319,21 @@ func buildSignalScanRow(strat strategy.Strategy, signals []models.Signal, asOf s
 		if price <= 0 {
 			price = sig.Close
 		}
+		buyLimit, takeProfit, stopLoss := sig.BuyLimit, sig.TakeProfit, sig.StopLoss
+		if cfg.EntryLimitPct > 0 && sig.Close > 0 {
+			buyLimit, takeProfit, stopLoss = liveLimitEntry(sig, cfg)
+			price = buyLimit
+		}
 		details = append(details, SignalDetail{
 			StrategyID: strat.ID(),
 			Symbol:     sym,
 			Direction:  dir,
 			Date:       asOf,
 			Price:      price,
-			BuyLimit:   sig.BuyLimit,
+			BuyLimit:   buyLimit,
 			Close:      sig.Close,
-			TakeProfit: sig.TakeProfit,
-			StopLoss:   sig.StopLoss,
+			TakeProfit: takeProfit,
+			StopLoss:   stopLoss,
 		})
 	}
 	status := "NO_SIGNAL"
