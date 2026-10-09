@@ -1,15 +1,19 @@
 package hold_strategy
 
 import (
+	"context"
 	"fmt"
 	"github.com/jmoiron/sqlx"
+	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
@@ -37,10 +41,36 @@ func (s *Strategy) Description() string {
 			desc += fmt.Sprintf(" Hops back in when Close > SMA%d.", s.Row.SMAReentryPeriod)
 		}
 	}
+	if exits := s.exitsText(); exits != "" {
+		desc += " Exits: " + exits + "."
+	}
+	if sym := s.regimeSymbol(); sym != "" {
+		desc = fmt.Sprintf("Holds %s except while the %s Markov state is bear: sells on a bear bar, buys back on the first sideways or bull bar.", s.Row.Symbol, sym)
+	}
 	if s.Row.TotalReturn > 0 {
 		desc += " Simulated on dividend-adjusted prices (total return)."
 	}
 	return desc
+}
+
+// exitsText lists the exits the row sets, "" when it sets none.
+func (s *Strategy) exitsText() string {
+	var parts []string
+	if s.Row.TakeProfitPct > 0 {
+		parts = append(parts, fmt.Sprintf("take profit +%.1f%%", s.Row.TakeProfitPct*100))
+	}
+	if s.Row.StopLossPct > 0 {
+		parts = append(parts, fmt.Sprintf("stop loss -%.1f%%", s.Row.StopLossPct*100))
+	}
+	if h := s.Row.HoldDays; h > 0 && h < strategy.NoHoldLimit {
+		parts = append(parts, fmt.Sprintf("sell after %d days", h))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// regimeSymbol is the upper-cased symbol whose Markov state gates the hold, "" for none.
+func (s *Strategy) regimeSymbol() string {
+	return strings.ToUpper(strings.TrimSpace(s.Row.RegimeSymbol))
 }
 
 func (s *Strategy) RequiredSymbols() []string { return []string{s.Row.Symbol} }
@@ -72,6 +102,23 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		cfg.TrailingStopPct = s.Row.TrailingStopPct
 		cfg.ReentryCooldownDays = 1 // a 1-day breath after an exit prevents a same-day re-whipsaw
 	}
+	return s.applyExits(cfg)
+}
+
+// applyExits writes the row's take-profit, stop-loss and hold into cfg. A value
+// of 0 (hold: 0 or 99999) is not set and leaves the hold's own never-exit
+// setting alone, so a row without exits behaves as it always did.
+func (s *Strategy) applyExits(cfg strategy.StrategyConfig) strategy.StrategyConfig {
+	if tp := s.Row.TakeProfitPct; tp > 0 {
+		cfg.TargetPct = 1 + tp
+		cfg.TakeProfitPct = tp
+	}
+	if sl := s.Row.StopLossPct; sl > 0 {
+		cfg.StopLossPct = 1 - sl
+	}
+	if h := s.Row.HoldDays; h > 0 && h < strategy.NoHoldLimit {
+		cfg.HoldingWindow = h
+	}
 	return cfg
 }
 
@@ -79,7 +126,18 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 // signals; `backtest stale` compares its newest file to a result's time.
 func (s *Strategy) PipelineDir() string { return filepath.Join(appenv.Folder(), pipelineDir) }
 
-func (s *Strategy) Validate() error { return strategy.ValidateConfig(s.DefaultConfig()) }
+func (s *Strategy) Validate() error {
+	r := s.Row
+	switch {
+	case r.TakeProfitPct < 0:
+		return fmt.Errorf("take_profit_pct must not be negative, got %v", r.TakeProfitPct)
+	case r.StopLossPct < 0 || r.StopLossPct >= 1:
+		return fmt.Errorf("stop_loss_pct must be in [0, 1), got %v", r.StopLossPct)
+	case r.HoldDays < 0:
+		return fmt.Errorf("hold_days must not be negative, got %d", r.HoldDays)
+	}
+	return strategy.ValidateConfig(s.DefaultConfig())
+}
 
 func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 	s.marketDBPath = marketDBPath
@@ -92,12 +150,40 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	cfg := s.DefaultConfig()
 	period := max(s.Row.SMAReentryPeriod, 0)
+	regime := s.regimeSymbol()
+	regimeDB, regimeOn := ":memory:", "0"
+	if regime != "" {
+		trained, ok := markov_strategy.ModelLastDate(appenv.MarkovDB(), regime)
+		if !ok {
+			log.Printf("hold_strategy %s: no trained Markov model for %s in %s; run `train markov -symbols %s`", s.ID(), regime, appenv.MarkovDB(), regime)
+			return nil
+		}
+		if market, err := storage.SymbolLastDate(s.marketDBPath, regime); err == nil && market > trained {
+			log.Printf("hold_strategy %s: the model for %s was trained through %s but the market data runs to %s; run `train markov -symbols %s`", s.ID(), regime, trained, market, regime)
+		}
+		regimeDB, regimeOn = appenv.MarkovDB(), "1"
+		period = 0 // the regime decides every entry
+	}
 	cfg.SQLParams = map[string]string{
 		"TOTAL_RETURN":  totalReturnFlag(s.Row.TotalReturn > 0 && s.reinvest),
 		"SMA_PERIOD":    strconv.Itoa(period),
 		"SMA_PRECEDING": strconv.Itoa(max(period-1, 0)),
+		"REGIME_ON":     regimeOn,
+		"REGIME_SYMBOL": regime,
+		"REGIME_DB":     regimeDB,
 	}
 	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), pipelineDir, cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
+}
+
+// Prepare trains the regime symbol's Markov model through the latest bar when the
+// saved one is behind, as a markov strategy does before a live scan. A row with
+// no regime has nothing to prepare.
+func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
+	sym := s.regimeSymbol()
+	if sym == "" {
+		return nil
+	}
+	return (&markov_strategy.Strategy{Row: refdb.MarkovStrategy{SignalSymbol: sym}}).Prepare(ctx, marketDB)
 }
 
 // SetReinvestDividends is called by the runner before GenerateSignals: a total
@@ -111,10 +197,17 @@ func totalReturnFlag(on bool) string {
 	return "0"
 }
 
-// ParameterSpace is the single point of the row. No hold column is gridsearchable
-// (see strategy_family_param), so a sweep runs the row once.
+// ParameterSpace is the exit grid: take-profit, stop-loss and hold from
+// strategy_family_param, with the row's own values on each axis so the row is a
+// grid point. The entries are fixed, so only exits are searched. A regime row
+// sets its own hold per entry, so its hold axis is the row's value alone.
 func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
-	cfg := s.DefaultConfig()
+	ax := strategy.LoadFamilyAxes("hold")
+	hold := strategy.HoldLimit(s.Row.HoldDays)
+	holdDays := strategy.UnionInts(ax.Ints("hold_days"), []int{hold})
+	if s.regimeSymbol() != "" {
+		holdDays = []int{hold}
+	}
 	return strategy.ParameterSpace{
 		StrategyID:   s.ID(),
 		StrategyName: s.Name(),
@@ -124,14 +217,16 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Direction:    "long",
 		FixedEntries: true,
 		SignalDays:   []int{1},
-		HoldDays:     []int{cfg.HoldingWindow},
-		TakeProfits:  []float64{0},
-		StopLosses:   []float64{0},
+		HoldDays:     holdDays,
+		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
+		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
 		Regimes:      []string{"All Regimes"},
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
-			HoldDays:   cfg.HoldingWindow,
+			HoldDays:   hold,
+			TakeProfit: s.Row.TakeProfitPct,
+			StopLoss:   s.Row.StopLossPct,
 			Allocation: s.Row.AllocationPct,
 		},
 	}

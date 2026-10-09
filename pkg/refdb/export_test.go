@@ -128,3 +128,43 @@ func b2(bundle string) (int64, error) {
 		 VALUES ('markov_b','x','QQQ','QQQ','long','bull',15,0.05,0,0.25,0,0,1)`)
 	return 0, err
 }
+
+// A rotation row that names a symbol list is exported with that list, so the
+// bundle resolves it the same way the full database does.
+func TestExportCarriesTheSymbolListARowNames(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "full.db")
+	db, err := Open(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE IF NOT EXISTS hold_strategy (id TEXT PRIMARY KEY, name TEXT, symbol TEXT, total_return INTEGER NOT NULL DEFAULT 0,
+		   allocation_pct REAL, cash_yield REAL, slippage_pct REAL, trailing_stop_pct REAL NOT NULL DEFAULT 0, sma_reentry_period INTEGER NOT NULL DEFAULT 0)`,
+		`INSERT INTO symbol_lists (symbol_list_id, list) VALUES ('etfs', 'SPY,QQQ'), ('unused', 'AAA')`,
+		`INSERT INTO rotation_strategy (id, name, symbols, universe_size, top_k, exit_buffer, max_weight_pct, allocation_pct, cash_yield, slippage_pct)
+		 VALUES ('rot-a', 'n', 'etfs', 1, 1, 0, 1, 1, 0, 0)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+
+	dst := filepath.Join(t.TempDir(), "bundle.db")
+	if _, err := Export(src, dst, []string{"rot-a"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	row, ok, err := RotationStrategyByID(b, "rot-a")
+	if err != nil || !ok || row.Symbols != "SPY,QQQ" {
+		t.Fatalf("rot-a: %+v ok=%v err=%v", row, ok, err)
+	}
+	var n int
+	if err := b.Get(&n, `SELECT COUNT(*) FROM symbol_lists`); err != nil || n != 1 {
+		t.Fatalf("bundle should carry only the named list, has %d (err %v)", n, err)
+	}
+}

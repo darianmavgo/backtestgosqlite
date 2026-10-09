@@ -3,6 +3,8 @@
 package refdb
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"os"
@@ -84,8 +86,19 @@ CREATE TABLE IF NOT EXISTS markov_strategy (
 
 -- One rotation strategy per row (pkg/rotation_strategy): rank the liquid
 -- universe on momentum each session and hold the top few. symbols is a comma
--- separated candidate list, empty for every symbol in the market database.
--- regime_sma = 0 turns the market gate off.
+-- separated candidate list, or a symbol_lists.symbol_list_id to use that list,
+-- or empty for every symbol in the market database.
+-- regime_sma = 0 turns the market gate off. period is empty for that daily
+-- momentum ranking, or 1d, 1w, 1m, 1q, 1y for the period winner rule: at the
+-- start of each calendar period hold the top_k names by the previous period's
+-- return until that period's last session. side is long, short or inverse (the
+-- matched inverse ETF of each pick); it only applies to a period row. pick is winner
+-- (best previous period return) or loser (worst). entry_limit_pct above 0 buys on
+-- the entry session with a limit at that fraction of the previous close (0.9 is 10%
+-- under) and skips the period if the low never reaches it. take_profit_pct above 0
+-- sells at that gain over the entry, also on the entry session if the high gets there.
+-- hold_days above 0 sells at the close that many sessions after the entry session, if the
+-- period has not ended first.
 CREATE TABLE IF NOT EXISTS rotation_strategy (
 	id               TEXT PRIMARY KEY,
 	name             TEXT NOT NULL,
@@ -98,7 +111,30 @@ CREATE TABLE IF NOT EXISTS rotation_strategy (
 	regime_sma       INTEGER NOT NULL DEFAULT 0,
 	allocation_pct   REAL NOT NULL,
 	cash_yield       REAL NOT NULL,
-	slippage_pct     REAL NOT NULL
+	slippage_pct     REAL NOT NULL,
+	period           TEXT NOT NULL DEFAULT '',
+	side             TEXT NOT NULL DEFAULT 'long',
+	pick             TEXT NOT NULL DEFAULT 'winner',
+	entry_limit_pct  REAL NOT NULL DEFAULT 0,
+	take_profit_pct  REAL NOT NULL DEFAULT 0,
+	hold_days        INTEGER NOT NULL DEFAULT 0,
+	stop_loss_pct    REAL NOT NULL DEFAULT 0
+);
+
+-- Named symbol lists a strategy or a command can take as its basket. list is the
+-- tickers, upper case, comma separated, sorted. sql/seed/symbol_lists.sql fills it.
+CREATE TABLE IF NOT EXISTS symbol_lists (
+	symbol_list_id TEXT PRIMARY KEY,
+	list         TEXT NOT NULL
+);
+
+-- Named stacks. name is the friendly label people type; id is the stack's
+-- members joined with "+" (strategy.StackID), the key every result DB uses.
+-- sql/seed/stack.sql fills it.
+CREATE TABLE IF NOT EXISTS stack (
+	name         TEXT PRIMARY KEY,
+	id           TEXT NOT NULL UNIQUE,
+	note         TEXT NOT NULL DEFAULT ''
 );
 `
 
@@ -112,6 +148,10 @@ func Open(path string) (*sqlx.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("refdb schema: %w", err)
 	}
+	if err := upgradeRotation(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("refdb rotation upgrade: %w", err)
+	}
 	if err := upgradeHold(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("refdb hold upgrade: %w", err)
@@ -122,6 +162,50 @@ func Open(path string) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("refdb family params: %w", err)
 	}
 	return db, nil
+}
+
+// upgradeRotation adds period ('' = daily momentum ranking) and side ('long')
+// and pick ('winner') to a rotation_strategy table made before they existed.
+func upgradeRotation(db *sqlx.DB) error {
+	var cols []string
+	if err := db.Select(&cols, `SELECT name FROM pragma_table_info('rotation_strategy')`); err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	for _, c := range cols {
+		have[c] = true
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	if !have["period"] {
+		if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN period TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !have["side"] {
+		if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN side TEXT NOT NULL DEFAULT 'long'`); err != nil {
+			return err
+		}
+	}
+	if !have["pick"] {
+		if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN pick TEXT NOT NULL DEFAULT 'winner'`); err != nil {
+			return err
+		}
+	}
+	if !have["hold_days"] {
+		if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN hold_days INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	for _, c := range []string{"entry_limit_pct", "take_profit_pct", "stop_loss_pct"} {
+		if !have[c] {
+			if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN ` + c + ` REAL NOT NULL DEFAULT 0`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // upgradeHold brings an older hold_strategy table up to date on open. It adds
@@ -140,6 +224,20 @@ func upgradeHold(db *sqlx.DB) error {
 	}
 	if !have["trailing_stop_pct"] {
 		if _, err := db.Exec(`ALTER TABLE hold_strategy ADD COLUMN trailing_stop_pct REAL NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	// The three exits every family has. 0 is no take-profit or stop, and a hold of
+	// 0 or 99999 is no time limit. 99999 is the default so existing rows do not move.
+	for col, def := range map[string]string{"take_profit_pct": "REAL NOT NULL DEFAULT 0", "stop_loss_pct": "REAL NOT NULL DEFAULT 0", "hold_days": "INTEGER NOT NULL DEFAULT 99999"} {
+		if !have[col] {
+			if _, err := db.Exec(`ALTER TABLE hold_strategy ADD COLUMN ` + col + ` ` + def); err != nil {
+				return err
+			}
+		}
+	}
+	if !have["regime_symbol"] {
+		if _, err := db.Exec(`ALTER TABLE hold_strategy ADD COLUMN regime_symbol TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}
@@ -512,6 +610,16 @@ type HoldStrategy struct {
 	// above it re-enters after a bail; 0 never re-enters.
 	TrailingStopPct  float64 `db:"trailing_stop_pct"`
 	SMAReentryPeriod int     `db:"sma_reentry_period"`
+	// RegimeSymbol, when set, makes the row long unless the trained Markov state
+	// of that symbol is bear: it sells on a bear bar and buys back on the first
+	// sideways or bull bar. "" holds without a regime.
+	RegimeSymbol string `db:"regime_symbol"`
+	// The family's exits, as every other family has them. TakeProfitPct and
+	// StopLossPct are fractional offsets (0.08 = 8%), 0 is not set. HoldDays of 0
+	// or 99999 is no time limit.
+	TakeProfitPct float64 `db:"take_profit_pct"`
+	StopLossPct   float64 `db:"stop_loss_pct"`
+	HoldDays      int     `db:"hold_days"`
 }
 
 // HoldStrategies returns every hold_strategy row, ordered by id.
@@ -530,7 +638,8 @@ func holdStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HoldStrategy
 	var out []HoldStrategy
 	err := db.Select(&out, `
 		SELECT id, name, symbol, total_return, allocation_pct, cash_yield, slippage_pct,
-		       trailing_stop_pct, sma_reentry_period
+		       trailing_stop_pct, sma_reentry_period, regime_symbol,
+		       take_profit_pct, stop_loss_pct, hold_days
 		FROM hold_strategy` + where + ` ORDER BY id`, args...)
 	return out, err
 }
@@ -549,6 +658,13 @@ type RotationStrategy struct {
 	AllocationPct float64 `db:"allocation_pct"`
 	CashYield     float64 `db:"cash_yield"`
 	SlippagePct   float64 `db:"slippage_pct"`
+	Period        string  `db:"period"`
+	Side          string  `db:"side"`
+	Pick          string  `db:"pick"`
+	EntryLimitPct float64 `db:"entry_limit_pct"`
+	TakeProfitPct float64 `db:"take_profit_pct"`
+	HoldDays      int     `db:"hold_days"`
+	StopLossPct   float64 `db:"stop_loss_pct"`
 }
 
 // RotationStrategies returns every rotation_strategy row, ordered by id.
@@ -569,9 +685,38 @@ func rotationStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]Rotation
 	var out []RotationStrategy
 	err := db.Select(&out, `
 		SELECT id, name, symbols, universe_size, top_k, exit_buffer, max_weight_pct,
-		       regime_symbol, regime_sma, allocation_pct, cash_yield, slippage_pct
+		       regime_symbol, regime_sma, allocation_pct, cash_yield, slippage_pct,
+		       period, side, pick, entry_limit_pct, take_profit_pct, hold_days, stop_loss_pct
 		FROM rotation_strategy`+where+` ORDER BY id`, args...)
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	resolveSymbolLists(db, out)
+	return out, nil
+}
+
+// resolveSymbolLists replaces a row's symbols with the list of the symbol_lists
+// row whose symbol_list_id it equals (ignoring case and surrounding spaces), so
+// `symbols = 'etf-pre-2021'` means that list's tickers. Any other value is a
+// literal ticker list and is left alone. A database without symbol_lists, or
+// with none, changes nothing.
+func resolveSymbolLists(db *sqlx.DB, rows []RotationStrategy) {
+	var lists []struct {
+		ID   string `db:"symbol_list_id"`
+		List string `db:"list"`
+	}
+	if err := db.Select(&lists, `SELECT symbol_list_id, list FROM symbol_lists`); err != nil || len(lists) == 0 {
+		return
+	}
+	byID := make(map[string]string, len(lists))
+	for _, l := range lists {
+		byID[strings.ToLower(strings.TrimSpace(l.ID))] = l.List
+	}
+	for i := range rows {
+		if list, ok := byID[strings.ToLower(strings.TrimSpace(rows[i].Symbols))]; ok {
+			rows[i].Symbols = list
+		}
+	}
 }
 
 // strategyTables are the tables CanonicalID and IDs accept.
@@ -640,5 +785,52 @@ func FamilyParams(db *sqlx.DB, family string) ([]FamilyParam, error) {
 	var out []FamilyParam
 	err := db.Select(&out, `SELECT family, param, kind, role, gridsearchable, grid_values, why_not
 		FROM strategy_family_param WHERE family = ? ORDER BY param`, family)
+	return out, err
+}
+
+// SymbolList returns the tickers of the symbol_lists row symbolListID, in the
+// order stored, and whether the row exists.
+func SymbolList(db *sqlx.DB, symbolListID string) ([]string, bool, error) {
+	var list string
+	if err := db.Get(&list, `SELECT list FROM symbol_lists WHERE symbol_list_id = ?`, symbolListID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	var out []string
+	for sym := range strings.SplitSeq(list, ",") {
+		if sym = strings.ToUpper(strings.TrimSpace(sym)); sym != "" {
+			out = append(out, sym)
+		}
+	}
+	return out, true, nil
+}
+
+// Stack is a named strategy stack. Name is the friendly label, ID the members
+// joined with "+".
+type Stack struct {
+	Name string `db:"name"`
+	ID   string `db:"id"`
+	Note string `db:"note"`
+}
+
+// StackByName finds a stack by its name or its id, ignoring case, "-", "_" and
+// spaces in the name.
+func StackByName(db *sqlx.DB, key string) (Stack, bool, error) {
+	var st Stack
+	norm := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(key))
+	err := db.Get(&st, "SELECT name, id, note FROM stack WHERE id = ? OR "+
+		"replace(replace(replace(lower(name),'-',''),'_',''),' ','') = ? ORDER BY name LIMIT 1", key, norm)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Stack{}, false, nil
+	}
+	return st, err == nil, err
+}
+
+// Stacks returns every named stack, ordered by name.
+func Stacks(db *sqlx.DB) ([]Stack, error) {
+	var out []Stack
+	err := db.Select(&out, "SELECT name, id, note FROM stack ORDER BY name")
 	return out, err
 }

@@ -303,6 +303,13 @@
             border-top: 1px solid var(--border-color);
             padding-top: 1.5rem;
         }
+        .params-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 18px; margin: 0 0 20px; }
+        .params-card > summary { cursor: pointer; font-weight: 700; }
+        .params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 12px; }
+        .params-group h4 { margin: 0 0 6px; font-size: 0.85rem; color: #c4b5fd; }
+        .params-group table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .params-group td { padding: 3px 0; vertical-align: top; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .params-group td:first-child { opacity: 0.7; padding-right: 12px; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -328,6 +335,8 @@
                 </div>
             </div>
         </header>
+
+        <details class="params-card" id="run-params" open hidden><summary>⚙️ Run Parameters</summary><div class="params-grid" id="run-params-grid"></div></details>
 
         <!-- KPI Banner -->
         <div class="kpi-grid">
@@ -465,6 +474,16 @@
 
     <script>
         const reportData = {{JSON_DATA}};
+        (function renderRunParams() {
+            const groups = reportData.params || [];
+            if (!groups.length) return;
+            const esc = v => String(v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+            document.getElementById('run-params-grid').innerHTML = groups.map(g =>
+                '<div class="params-group"><h4>' + esc(g.title) + '</h4><table>' +
+                (g.rows || []).map(r => '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.value) + '</td></tr>').join('') +
+                '</table></div>').join('');
+            document.getElementById('run-params').hidden = false;
+        })();
 
         // Initialize KPIs based on best performer
         let bestProfit = -Infinity;
@@ -485,7 +504,11 @@
             document.getElementById('kpi-mdd-val').innerText = (bestStrat.report.max_drawdown_pct * 100).toFixed(2) + '%';
             document.getElementById('kpi-mdd-sub').innerText = '-$' + bestStrat.report.max_drawdown_dollars.toLocaleString('en-US', {minimumFractionDigits: 2}) + ' (' + bestStrat.report.max_drawdown_days + 'd recovery)';
 
-            document.getElementById('kpi-profit-val').innerText = '+$' + bestStrat.report.net_profit.toLocaleString('en-US', {minimumFractionDigits: 2});
+            const profitEl = document.getElementById('kpi-profit-val');
+            const np = bestStrat.report.net_profit;
+            profitEl.innerText = (np < 0 ? '-$' : '+$') + Math.abs(np).toLocaleString('en-US', {minimumFractionDigits: 2});
+            profitEl.classList.toggle('text-green', np >= 0);
+            profitEl.classList.toggle('text-red', np < 0);
             document.getElementById('kpi-profit-sub').innerText = (bestStrat.report.total_return_pct * 100).toFixed(2) + '% Return (' + bestStrat.name + ')';
 
             document.getElementById('kpi-sharpe-val').innerText = bestStrat.report.sharpe_ratio.toFixed(2);

@@ -161,6 +161,105 @@ func SaveSymbols(db *sqlx.DB, records []SymbolRecord) error {
 	return tx.Commit()
 }
 
+var (
+	// A factor is a number then X that does not continue a longer number or word
+	// before it, so "2x Long", "-3X" and "2xMonthly Pay" match but "12X" does not.
+	lev3xRegex  = regexp.MustCompile(`(^|[^0-9A-Z.])3X|\bTRIPLE (LONG|SHORT)\b|ULTRAPRO`)
+	lev2xRegex  = regexp.MustCompile(`(^|[^0-9A-Z.])2X|\bDOUBLE (LONG|SHORT)\b`)
+	lev15xRegex = regexp.MustCompile(`(^|[^0-9A-Z.])1\.5X`)
+
+	// Phrases whose "short" is a maturity or a duration, not a bet against the market.
+	shortMaturityRegex = regexp.MustCompile(`ULTRA[- ]?SHORT|SHORT[- ](TERM|DURATION|MATURITY|DATED|HORIZON|TREASURY|GOVERNMENT|GOVT|CORPORATE|BOND|MUNI|CREDIT|INVESTMENT GRADE)`)
+	// ProShares names its leveraged funds "Ultra ..." and its inverse funds
+	// "Short ..." or "UltraShort ...", sometimes after "Trust" or "Trust II".
+	proSharesUltraRegex = regexp.MustCompile(`^PROSHARES( TRUST( II)?)? ULTRA`)
+	proSharesShortRegex = regexp.MustCompile(`^PROSHARES( TRUST( II)?)? (ULTRASHORT|SHORT )`)
+	shortTermRegex      = regexp.MustCompile(`SHORT[- ](TERM|DURATION|MATURITY|DATED|HORIZON)`)
+	shortWordRegex      = regexp.MustCompile(`\bSHORTS?\b`)
+)
+
+// classifyLeverage reads the fund's leverage factor from its upper-cased name:
+// "none", "1.5x", "2x" or "3x". ProShares "Ultra" is 2x and "UltraPro" 3x, while
+// "Ultra Short-Term Bond" and "DoubleLine" are not leveraged.
+func classifyLeverage(upperName string) string {
+	switch {
+	case lev3xRegex.MatchString(upperName):
+		return "3x"
+	case lev2xRegex.MatchString(upperName), proSharesUltraRegex.MatchString(upperName):
+		return "2x"
+	case lev15xRegex.MatchString(upperName):
+		return "1.5x"
+	}
+	return "none"
+}
+
+// classifyDirection is "inverse" for a fund that bets against its index (bear,
+// inverse, short, UltraShort) and "long" otherwise. A short maturity ("Short-Term
+// Treasury", "VIX Short-Term Futures") does not make a fund inverse.
+func classifyDirection(upperName string) string {
+	// ProShares names its inverse funds "Short ..." even on bonds (Short 20+ Year
+	// Treasury), where other sponsors use short for the maturity.
+	if proSharesShortRegex.MatchString(upperName) {
+		return "inverse"
+	}
+	// A leveraged fund that says short is a short bet, whatever follows ("-3x Short
+	// Investment Grade Corporate Bond").
+	if classifyLeverage(upperName) != "none" && shortWordRegex.MatchString(shortTermRegex.ReplaceAllString(upperName, " ")) {
+		return "inverse"
+	}
+	n := shortMaturityRegex.ReplaceAllString(upperName, " ")
+	if strings.Contains(n, "BEAR") || strings.Contains(n, "INVERSE") || shortWordRegex.MatchString(n) {
+		return "inverse"
+	}
+	return "long"
+}
+
+// Reclassify recomputes leverage and direction of every stored symbol from its
+// stored name and asset type, with the current classifier. It returns the rows
+// whose labels changed and, unless dryRun, saves them.
+func Reclassify(db *sqlx.DB, dryRun bool) ([]Reclassified, error) {
+	var rows []struct {
+		Symbol    string `db:"symbol"`
+		Name      string `db:"name"`
+		AssetType string `db:"asset_type"`
+		Leverage  string `db:"leverage"`
+		Direction string `db:"direction"`
+	}
+	if err := db.Select(&rows, `SELECT symbol, name, asset_type, leverage, direction FROM universe`); err != nil {
+		return nil, err
+	}
+	var changed []Reclassified
+	for _, r := range rows {
+		_, lev, dir, _ := ClassifyTicker(r.Symbol, r.Name, r.AssetType)
+		if lev == r.Leverage && dir == r.Direction {
+			continue
+		}
+		changed = append(changed, Reclassified{r.Symbol, r.Name, r.Leverage, r.Direction, lev, dir})
+	}
+	if dryRun || len(changed) == 0 {
+		return changed, nil
+	}
+	tx, err := db.Beginx()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for _, c := range changed {
+		if _, err := tx.Exec(`UPDATE universe SET leverage = ?, direction = ?, updated_at = CURRENT_TIMESTAMP WHERE symbol = ?`,
+			c.NewLeverage, c.NewDirection, c.Symbol); err != nil {
+			return nil, err
+		}
+	}
+	return changed, tx.Commit()
+}
+
+// Reclassified is one symbol whose leverage or direction label changed.
+type Reclassified struct {
+	Symbol, Name              string
+	OldLeverage, OldDirection string
+	NewLeverage, NewDirection string
+}
+
 // ClassifyTicker analyzes ticker symbol, name, and asset type to classify leverage, direction, and grouping facts.
 func ClassifyTicker(sym, name, assetType string) (isETF bool, leverage string, direction string, category string) {
 	upperName := strings.ToUpper(name)
@@ -172,27 +271,8 @@ func ClassifyTicker(sym, name, assetType string) (isETF bool, leverage string, d
 		strings.Contains(upperName, " ETF") || strings.Contains(upperName, " ETN") ||
 		strings.Contains(upperName, "INDEX FUND") || strings.Contains(upperName, "TRUST, SERIES")
 
-	// Determine Leverage
-	leverage = "none"
-	lev3xRegex := regexp.MustCompile(`\b3X\b|-3X\b`)
-	lev2xRegex := regexp.MustCompile(`\b2X\b|-2X\b`)
-	lev15xRegex := regexp.MustCompile(`\b1\.5X\b|-1\.5X\b`)
-
-	if lev3xRegex.MatchString(upperName) || strings.Contains(upperName, "ULTRAPRO") || strings.Contains(upperName, "3X ") {
-		leverage = "3x"
-	} else if lev2xRegex.MatchString(upperName) || strings.Contains(upperName, "2X ") ||
-		(strings.Contains(upperName, "ULTRA") && !strings.Contains(upperName, "ULTRAPRO")) {
-		leverage = "2x"
-	} else if lev15xRegex.MatchString(upperName) || strings.Contains(upperName, "1.5X ") {
-		leverage = "1.5x"
-	}
-
-	// Determine Direction (long vs inverse/short)
-	direction = "long"
-	if strings.Contains(upperName, "BEAR") || strings.Contains(upperName, "SHORT") ||
-		strings.Contains(upperName, "INVERSE") || strings.Contains(upperName, "ULTRASHORT") {
-		direction = "inverse"
-	}
+	leverage = classifyLeverage(upperName)
+	direction = classifyDirection(upperName)
 
 	// Category / Theme Grouping
 	if !isETF {
@@ -808,4 +888,25 @@ func Run(cfg Config) (int, error) {
 	fmt.Fprintf(out, "\n✨ Universe database populated successfully at: %s\n", cfg.DBPath)
 
 	return totalConfirmed, nil
+}
+
+// UnleveragedETFs returns the active ETFs with no leverage (inverse funds
+// included, 2x and 3x excluded), most traded first by the 20-day average volume
+// that `universe avgvol` stored, then by symbol. Without that table the order is
+// by symbol.
+func UnleveragedETFs(db *sqlx.DB) ([]string, error) {
+	const where = `u.is_etf = 1 AND u.leverage = 'none' AND u.active = 1`
+	var hasVol int
+	if err := db.Get(&hasVol, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'avg_volume'`); err != nil {
+		return nil, err
+	}
+	q := `SELECT u.symbol FROM universe u WHERE ` + where + ` ORDER BY u.symbol`
+	if hasVol > 0 {
+		q = `SELECT u.symbol FROM universe u
+			LEFT JOIN avg_volume v ON v.symbol = u.symbol AND v.window_days = 20
+			WHERE ` + where + ` ORDER BY coalesce(v.avg_volume, 0) DESC, u.symbol`
+	}
+	var syms []string
+	err := db.Select(&syms, q)
+	return syms, err
 }

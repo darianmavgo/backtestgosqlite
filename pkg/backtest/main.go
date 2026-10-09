@@ -126,6 +126,32 @@ func runOverride(conf Config) runner.ConfigOverride {
 	}
 }
 
+// runSettings collects the flags a report states up front. The window falls
+// back to the first and last loaded bar when -start / -end were not given.
+func runSettings(conf Config, command string, dates []string) runner.RunSettings {
+	start, end := conf.Start, conf.End
+	if len(dates) > 0 {
+		if start == "" {
+			start = dates[0]
+		}
+		if end == "" {
+			end = dates[len(dates)-1]
+		}
+	}
+	return runner.RunSettings{
+		Command:      command,
+		MarketDB:     conf.Db,
+		Table:        conf.Table,
+		Symbols:      conf.Symbol,
+		Start:        start,
+		End:          end,
+		HoldoutMonth: conf.HoldoutMonths,
+		Capital:      conf.Capital,
+		DefaultAsset: conf.DefaultAsset,
+		Override:     runOverride(conf),
+	}
+}
+
 // validateAlloc rejects values the sizer would silently rewrite. AllocationPct
 // is a fraction of equity: 10% per position is 0.10. A value above 1 (such as
 // 10) is not 10%; FixedPctSizer would replace it with 20%.
@@ -556,6 +582,8 @@ func runOnce(conf Config) error {
 				})
 			}
 
+			stackSettings := runSettings(conf, "backtest stack", sortedDates)
+			stackSettings.DefaultAsset = defaultAsset
 			htmlData := analytics.MultiStrategyHTMLData{
 				Title:          reportTitle,
 				GeneratedAt:    time.Now().Format("2006-01-02 15:04:05 MST"),
@@ -569,6 +597,7 @@ func runOnce(conf Config) error {
 				AllDates:       sortedDates,
 				EquityCurves:   eqCurves,
 				DrawdownCurves: ddCurves,
+				Params:         runner.DescribeRun(stackSettings, allStrats),
 			}
 
 			if err := analytics.GenerateComparisonHTML(conf.Html, htmlData); err != nil {
@@ -835,6 +864,7 @@ func runOnce(conf Config) error {
 			EquityCurves:   eqCurves,
 			DrawdownCurves: ddCurves,
 			CashFlows:      cashFlows,
+			Params:         runner.DescribeRun(runSettings(conf, "backtest", sortedDates), selectedStrategies),
 		}
 
 		err := analytics.GenerateComparisonHTML(conf.Html, htmlData)

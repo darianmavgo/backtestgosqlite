@@ -91,6 +91,30 @@ func UniverseDB() string { return filepath.Join(Ref(), "universe.db") }
 // MarketDB is the market history database.
 func MarketDB() string { return filepath.Join(Data(), "market_history.db") }
 
+// HourlyDB is the hourly bars (timeframe 1h); daily bars stay in MarketDB.
+func HourlyDB() string { return filepath.Join(Data(), "market_history_hourly.db") }
+
+// MinuteDB is the minute bars (1m, 5m, ...); daily bars stay in MarketDB.
+func MinuteDB() string { return filepath.Join(Data(), "market_history_minute.db") }
+
+// BarDB returns the database that holds bars of the timeframe, given the daily
+// market database path: the daily path itself for "1d" (or empty), otherwise
+// the hourly or minute database beside it ("market_history.db" ->
+// "market_history_hourly.db"), so a temp daily database gets temp siblings.
+func BarDB(marketDB, timeframe string) string {
+	suffix := ""
+	switch tf := strings.ToLower(strings.TrimSpace(timeframe)); {
+	case tf == "h" || strings.HasSuffix(tf, "h"):
+		suffix = "_hourly"
+	case strings.HasSuffix(tf, "m"):
+		suffix = "_minute"
+	default:
+		return marketDB
+	}
+	ext := filepath.Ext(marketDB)
+	return strings.TrimSuffix(marketDB, ext) + suffix + ext
+}
+
 // MarkovDB is the trained Markov models (written by train markov, read by backtest).
 func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
 

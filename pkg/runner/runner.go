@@ -446,6 +446,21 @@ func ExecuteStrategyWithDividends(
 	if tr != nil {
 		sim.Dividends = tr.divs
 	}
+	if cfg.EntryLimitPct > 0 {
+		// Limit entries are judged on hourly bars where the market DB has them.
+		seen := map[string]bool{}
+		var syms []string
+		for _, sg := range signals {
+			if !seen[sg.Symbol] {
+				seen[sg.Symbol] = true
+				syms = append(syms, sg.Symbol)
+			}
+		}
+		if sim.Intraday, err = LoadIntraday(marketDBPath, syms); err != nil {
+			log.Printf("Warning: no intraday bars for %s: %v", strat.ID(), err)
+			sim.Intraday = nil
+		}
+	}
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, scopedDates)
 
 	// 5. Persist the whole run in one transaction.

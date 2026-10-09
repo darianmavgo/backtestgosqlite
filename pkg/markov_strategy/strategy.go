@@ -76,7 +76,7 @@ func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 		return fmt.Errorf("no daily bars for %s in %s", sym, marketDB)
 	}
 	modelDB := appenv.MarkovDB()
-	if trained, ok := modelLastDate(modelDB, sym); ok && trained >= last {
+	if trained, ok := ModelLastDate(modelDB, sym); ok && trained >= last {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(modelDB), 0o755); err != nil {
@@ -118,7 +118,7 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		TargetPct:         target,
 		TakeProfitPct:     tp,
 		StopLossPct:       stop,
-		HoldingWindow:     s.Row.HoldDays,
+		HoldingWindow:     strategy.HoldLimit(s.Row.HoldDays),
 		PositionCap:       1,
 		CashYieldAnnual:   s.Row.CashYield,
 		SlippagePct:       s.Row.SlippagePct,
@@ -141,14 +141,14 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Direction:    s.Row.Direction,
 		FixedEntries: true,
 		SignalDays:   []int{1},
-		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{s.Row.HoldDays}),
+		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{strategy.HoldLimit(s.Row.HoldDays)}),
 		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
 		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
 		Regimes:      []string{"All Regimes"},
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
-			HoldDays:   s.Row.HoldDays,
+			HoldDays:   strategy.HoldLimit(s.Row.HoldDays),
 			TakeProfit: s.Row.TakeProfitPct,
 			StopLoss:   s.Row.StopLossPct,
 			Allocation: s.Row.AllocationPct,
@@ -179,7 +179,7 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	}
 	if dir == pipelineDir {
 		sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
-		trained, ok := modelLastDate(appenv.MarkovDB(), sym)
+		trained, ok := ModelLastDate(appenv.MarkovDB(), sym)
 		if !ok {
 			log.Printf("markov_strategy %s: no trained model for %s in %s; run `train markov -symbols %s`", s.ID(), sym, appenv.MarkovDB(), sym)
 			return nil
@@ -191,9 +191,9 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
 }
 
-// modelLastDate returns the last bar date the model for symbol was trained
+// ModelLastDate returns the last bar date the model for symbol was trained
 // through, and whether a model exists. The file is opened read-only and never created.
-func modelLastDate(path, symbol string) (string, bool) {
+func ModelLastDate(path, symbol string) (string, bool) {
 	db, err := storage.OpenSQLiteReadOnly(path)
 	if err != nil {
 		return "", false
@@ -226,7 +226,7 @@ func ValidateRow(row refdb.MarkovStrategy) error {
 	if strings.TrimSpace(row.TargetState) == "" {
 		return fmt.Errorf("target_state is empty")
 	}
-	if row.HoldDays < 1 {
+	if row.HoldDays < 0 {
 		return fmt.Errorf("hold_days %d", row.HoldDays)
 	}
 	if row.TakeProfitPct < 0 {

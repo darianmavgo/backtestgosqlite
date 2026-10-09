@@ -58,8 +58,10 @@ func printParamsCommand(targets []strategy.Strategy, opts sweepOptions) {
 	var flagged []string
 	for _, strat := range targets {
 		space := resolveParamSpace(strat, opts)
-		totalPerms := len(space.Symbols) * len(space.SignalDays) * len(space.HoldDays) *
-			len(space.TakeProfits) * len(space.StopLosses) * len(space.Regimes) * len(space.Allocations)
+		if len(opts.PeriodOverride) > 0 && len(space.Periods) > 0 {
+			space.Periods = opts.PeriodOverride
+		}
+		totalPerms := space.Perms()
 		ok, note := declineRelevance(space)
 		if !ok {
 			flagged = append(flagged, strat.ID())
@@ -68,6 +70,12 @@ func printParamsCommand(targets []strategy.Strategy, opts sweepOptions) {
 		fmt.Printf("\n• %-20s %s\n", strat.ID(), strat.Name())
 		fmt.Printf("    Signal Symbol / Tradable:  %s / %v   Direction: %s\n", space.SignalSymbol, space.Symbols, space.Direction)
 		fmt.Printf("    Decline/Rally Days:        %s\n", note)
+		if len(space.Periods) > 0 {
+			fmt.Printf("    Periods:                   %v\n", space.Periods)
+		}
+		if len(space.EntryLimits) > 0 {
+			fmt.Printf("    Buy Limit (of prev close): %v\n", formatPercents(space.EntryLimits))
+		}
 		fmt.Printf("    Holding Windows:           %v days\n", space.HoldDays)
 		fmt.Printf("    Take-Profit:               %v\n", formatPercents(space.TakeProfits))
 		fmt.Printf("    Stop-Loss:                 %v\n", formatPercents(space.StopLosses))

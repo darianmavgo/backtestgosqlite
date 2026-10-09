@@ -15,11 +15,15 @@ import (
 //	universe           discover symbols and look up the ones not yet known
 //	universe avgvol    average daily share volume of the symbols in the market database
 func Main() {
-	mode := cliutils.PopSubcommand(map[string]string{"avgvol": "avgvol"})
+	mode := cliutils.PopSubcommand(map[string]string{"avgvol": "avgvol", "reclassify": "reclassify"})
 	cfg := DefaultConfig()
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "Universe SQLite database path")
 	if mode == "avgvol" {
 		mainAvgVol(&cfg.DBPath)
+		return
+	}
+	if mode == "reclassify" {
+		mainReclassify(&cfg.DBPath)
 		return
 	}
 	flag.StringVar(&cfg.PolygonKey, "polygon-key", "", "Polygon.io API key (falls back to POLYGON_API_KEY / .env)")
@@ -41,6 +45,30 @@ func Main() {
 	if _, err := Run(cfg); err != nil {
 		log.Fatalf("Universe error: %v", err)
 	}
+}
+
+// mainReclassify is `universe reclassify`: relabel leverage and direction of the
+// stored symbols from their names with the current classifier.
+func mainReclassify(dbPath *string) {
+	dry := flag.Bool("dry-run", false, "list the symbols whose labels would change without saving")
+	flag.Parse()
+	db, err := Open(*dbPath)
+	if err != nil {
+		log.Fatalf("reclassify: %v", err)
+	}
+	defer db.Close()
+	changed, err := Reclassify(db, *dry)
+	if err != nil {
+		log.Fatalf("reclassify: %v", err)
+	}
+	for _, c := range changed {
+		fmt.Printf("%-8s %-3s/%-7s -> %-3s/%-7s  %s\n", c.Symbol, c.OldLeverage, c.OldDirection, c.NewLeverage, c.NewDirection, c.Name)
+	}
+	verb := "relabelled"
+	if *dry {
+		verb = "would relabel"
+	}
+	fmt.Printf("%s %d symbols\n", verb, len(changed))
 }
 
 func mainAvgVol(dbPath *string) {

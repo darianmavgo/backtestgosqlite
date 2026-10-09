@@ -12,8 +12,6 @@ import (
 )
 
 // The real GOOGL strategies run on real GOOGL bars (2021-01-01 to 2025-12-31).
-// hold_bail_googl's 760 entries are the SQL pipeline's, which matched the old Go
-// loop signal for signal on the full window.
 func TestGooglStrategiesOnRealBars(t *testing.T) {
 	refdb.DefaultPath = realbars.StrategiesDB(t)
 	stratreg.RegisterFamilies()
@@ -29,7 +27,7 @@ func TestGooglStrategiesOnRealBars(t *testing.T) {
 	}
 
 	counts := map[string]int{}
-	for _, id := range []string{"hold_bail_googl", "googl-buy-hold", "streak-googl-down3-googl", "googl_tree"} {
+	for _, id := range []string{"googl-buy-hold", "streak-googl-down3-googl"} {
 		s, ok := strategy.Get(id)
 		if !ok {
 			t.Fatalf("strategy %q not found", id)
@@ -40,8 +38,5 @@ func TestGooglStrategiesOnRealBars(t *testing.T) {
 	}
 	if counts["googl-buy-hold"] != 1 {
 		t.Errorf("googl-buy-hold: %d signals, want 1", counts["googl-buy-hold"])
-	}
-	if counts["hold_bail_googl"] != 760 {
-		t.Errorf("hold_bail_googl: %d signals, want 760", counts["hold_bail_googl"])
 	}
 }

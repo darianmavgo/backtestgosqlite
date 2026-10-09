@@ -20,7 +20,27 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
-const pipelineDir = "sql/strategies/rotation_strategy"
+const (
+	momentumDir = "sql/strategies/rotation_strategy"
+	periodDir   = "sql/strategies/rotation_period"
+)
+
+// Periods are the calendar periods a period row can use, with the SQL that
+// names the period of a session (`date` is the bar's YYYY-MM-DD). Keys sort in
+// time order. Weeks start on Monday.
+var Periods = map[string]string{
+	"1d": "date",
+	"1w": "date(date, '-' || ((CAST(strftime('%w', date) AS INTEGER) + 6) % 7) || ' days')",
+	"1m": "substr(date, 1, 7)",
+	"1q": "substr(date, 1, 4) || 'Q' || ((CAST(substr(date, 6, 2) AS INTEGER) + 2) / 3)",
+	"1y": "substr(date, 1, 4)",
+}
+
+// PeriodIDs lists Periods from shortest to longest.
+var PeriodIDs = []string{"1d", "1w", "1m", "1q", "1y"}
+
+// annualShortBorrow is the cash-secured short's yearly fee on market value.
+const annualShortBorrow = 0.01
 
 var safeSymbol = regexp.MustCompile(`^[A-Z0-9][A-Z0-9.\-]*$`)
 
@@ -38,13 +58,42 @@ func (s *Strategy) Family() string { return "rotation" }
 
 func (s *Strategy) Name() string { return s.Row.Name }
 
+// periodic reports whether the row is a period winner (period set) rather than
+// the daily momentum ranking.
+func (s *Strategy) periodic() bool { return s.Row.Period != "" }
+
 func (s *Strategy) Description() string {
+	if s.periodic() {
+		return s.periodDescription()
+	}
 	desc := fmt.Sprintf("Holds the top %d of %d liquid names by momentum, sold once ranked worse than %d.",
 		s.Row.TopK, s.Row.UniverseSize, s.Row.TopK+s.Row.ExitBuffer)
 	if s.Row.RegimeSMA > 0 {
 		desc += fmt.Sprintf(" Only while %s closes above its %d session average.", s.Row.RegimeSymbol, s.Row.RegimeSMA)
 	}
 	return desc
+}
+
+func (s *Strategy) periodDescription() string {
+	unit := map[string]string{"1d": "day", "1w": "week", "1m": "month", "1q": "quarter", "1y": "calendar year"}[s.Row.Period]
+	kind := "winner"
+	if s.Row.Pick == "loser" {
+		kind = "loser"
+	}
+	names := "the biggest " + kind
+	if s.Row.TopK > 1 {
+		names = fmt.Sprintf("the %d biggest %ss", s.Row.TopK, kind)
+	}
+	switch s.Row.Side {
+	case "short":
+		return fmt.Sprintf("Shorts %s of the previous %s and covers on the last session of the new %s. "+
+			"Cash-secured (collateral = notional) with a %.0f%% annual borrow fee on market value.",
+			names, unit, unit, annualShortBorrow*100)
+	case "inverse":
+		return fmt.Sprintf("Buys the matched-leverage inverse ETF of %s of the previous %s and sells it on the last session of the new %s. "+
+			"Skips a pick that has no inverse ETF in the bar history, or whose inverse did not trade on the entry date.", names, unit, unit)
+	}
+	return fmt.Sprintf("Buys %s of the previous %s and holds it for the new %s.", names, unit, unit)
 }
 
 // candidates is the row's symbol list, upper case. Validate has already refused an unsafe entry.
@@ -62,6 +111,9 @@ func (s *Strategy) candidates() []string {
 // ranking may pick, plus the regime symbol when the gate is on.
 func (s *Strategy) RequiredSymbols() []string {
 	out := s.candidates()
+	if len(out) == 0 {
+		return nil // every symbol in the market database
+	}
 	if s.Row.RegimeSMA > 0 {
 		out = append(out, strings.ToUpper(strings.TrimSpace(s.Row.RegimeSymbol)))
 	}
@@ -79,6 +131,33 @@ func (s *Strategy) weight() float64 {
 }
 
 func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
+	if s.periodic() {
+		cfg := strategy.StrategyConfig{
+			ID:                s.ID(),
+			Name:              s.Name(),
+			Description:       s.Description(),
+			TargetPct:         999.0,                                                                // never exit via profit target
+			StopLossPct:       0.0,                                                                  // 0 disables the stop loss
+			HoldingWindow:     map[bool]int{true: s.Row.HoldDays, false: 99999}[s.Row.HoldDays > 0], // else the period's last session is the exit
+			PositionCap:       max(s.Row.TopK, 1),
+			AllocationPct:     s.Row.AllocationPct,
+			CashYieldAnnual:   s.Row.CashYield,
+			SlippagePct:       s.Row.SlippagePct,
+			ShortBorrowAnnual: map[bool]float64{true: annualShortBorrow}[s.Row.Side == "short"],
+			EntryLimitPct:     s.Row.EntryLimitPct,
+		}
+		if s.Row.TakeProfitPct > 0 {
+			cfg.TargetPct = 0 // the simulator prefers TargetPct when it is above 1
+			cfg.TakeProfitPct = s.Row.TakeProfitPct
+		}
+		if s.Row.StopLossPct > 0 {
+			cfg.StopLossPct = 1 - s.Row.StopLossPct // the config holds the stop as a multiplier
+		}
+		// A limit order fills during the entry session, so its stop or target can be
+		// reached that same session. A close entry has no session left to judge.
+		cfg.SameDayExit = s.Row.EntryLimitPct > 0
+		return cfg
+	}
 	return strategy.StrategyConfig{
 		ID:                 s.ID(),
 		Name:               s.Name(),
@@ -95,7 +174,14 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 	}
 }
 
-func (s *Strategy) PipelineDir() string { return filepath.Join(appenv.Folder(), pipelineDir) }
+func (s *Strategy) pipelineDir() string {
+	if s.periodic() {
+		return periodDir
+	}
+	return momentumDir
+}
+
+func (s *Strategy) PipelineDir() string { return filepath.Join(appenv.Folder(), s.pipelineDir()) }
 
 func (s *Strategy) Validate() error {
 	r := s.Row
@@ -113,8 +199,40 @@ func (s *Strategy) Validate() error {
 	case r.RegimeSMA > 0 && !safeSymbol.MatchString(strings.ToUpper(strings.TrimSpace(r.RegimeSymbol))):
 		return fmt.Errorf("regime_symbol %q is not a symbol", r.RegimeSymbol)
 	}
+	if s.Row.Period != "" {
+		if _, ok := Periods[s.Row.Period]; !ok {
+			return fmt.Errorf("period %q is not one of %v", s.Row.Period, PeriodIDs)
+		}
+		switch s.Row.Side {
+		case "long", "short", "inverse":
+		default:
+			return fmt.Errorf("side %q is not long, short or inverse", s.Row.Side)
+		}
+		switch s.Row.Pick {
+		case "winner", "loser":
+		default:
+			return fmt.Errorf("pick %q is not winner or loser", s.Row.Pick)
+		}
+	} else if s.Row.Side != "" && s.Row.Side != "long" {
+		return fmt.Errorf("side %q needs a period: only a period row can be short or inverse", s.Row.Side)
+	}
+	if r.HoldDays < 0 {
+		return fmt.Errorf("hold_days must not be negative, got %d", r.HoldDays)
+	}
+	if r.EntryLimitPct != 0 || r.TakeProfitPct != 0 || r.StopLossPct != 0 || r.HoldDays != 0 {
+		switch {
+		case s.Row.Period == "" || s.Row.Side != "long":
+			return fmt.Errorf("entry_limit_pct, take_profit_pct, stop_loss_pct and hold_days need a long period row")
+		case r.StopLossPct < 0 || r.StopLossPct >= 1:
+			return fmt.Errorf("stop_loss_pct must be in [0, 1), got %v", r.StopLossPct)
+		case r.EntryLimitPct < 0 || r.EntryLimitPct > 1:
+			return fmt.Errorf("entry_limit_pct must be in [0, 1], got %v", r.EntryLimitPct)
+		case r.TakeProfitPct < 0:
+			return fmt.Errorf("take_profit_pct must not be negative, got %v", r.TakeProfitPct)
+		}
+	}
 	syms := s.candidates()
-	if len(syms) == 0 {
+	if len(syms) == 0 && !s.periodic() {
 		return fmt.Errorf("symbols is empty: the runner loads bars only for the listed candidates")
 	}
 	for _, sym := range syms {
@@ -132,6 +250,9 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 
 // SQLParams are the values the pipeline's __PLACEHOLDERS__ take for this row.
 func (s *Strategy) SQLParams() map[string]string {
+	if s.periodic() {
+		return s.periodSQLParams()
+	}
 	quoted := make([]string, 0, len(s.candidates()))
 	for _, sym := range s.candidates() {
 		quoted = append(quoted, "'"+sym+"'")
@@ -154,15 +275,68 @@ func (s *Strategy) SQLParams() map[string]string {
 	}
 }
 
+// periodSQLParams are the values the rotation_period pipeline takes for this row.
+func (s *Strategy) periodSQLParams() map[string]string {
+	quoted := make([]string, 0, len(s.candidates()))
+	for _, sym := range s.candidates() {
+		quoted = append(quoted, "'"+sym+"'")
+	}
+	useList := "1"
+	if len(quoted) == 0 {
+		useList, quoted = "0", []string{"''"}
+	}
+	return map[string]string{
+		"USE_LIST":   useList,
+		"SYMBOLS":    strings.Join(quoted, ","),
+		"TOP_K":      strconv.Itoa(max(s.Row.TopK, 1)),
+		"SIDE":       s.Row.Side,
+		"PICK_ORDER": map[bool]string{true: "ASC", false: "DESC"}[s.Row.Pick == "loser"],
+		"PERIOD_KEY": Periods[s.Row.Period],
+		"ALLOC":      strconv.FormatFloat(s.weight(), 'f', 6, 64),
+	}
+}
+
+// PeriodVariant returns the strategy over the same row with its period replaced
+// (gridsearch tries each period this way). The row's id is unchanged.
+func (s *Strategy) PeriodVariant(period string) strategy.Strategy {
+	c := *s
+	c.Row.Period = period
+	return &c
+}
+
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	cfg := s.DefaultConfig()
 	cfg.SQLParams = s.SQLParams()
-	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), pipelineDir, cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), s.pipelineDir(), cfg, s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }
 
 func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 	cfg := s.DefaultConfig()
+	var periods []string
+	var limits, takeProfits, stopLosses []float64
+	holdDays := []int{cfg.HoldingWindow}
+	baseHold := cfg.HoldingWindow
+	if s.periodic() {
+		axes := strategy.LoadFamilyAxes("rotation")
+		periods = strategy.UnionStrings(axes.Strs["period"], []string{s.Row.Period})
+		if s.Row.Side == "long" {
+			// The row's own values stay on each axis so the baseline is a grid point.
+			limits = strategy.UnionFloats(axes.Nums["entry_limit_pct"], []float64{s.Row.EntryLimitPct})
+			takeProfits = strategy.UnionFloats(axes.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct})
+			stopLosses = strategy.UnionFloats(axes.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct})
+			holdDays = strategy.UnionInts(axes.Ints("hold_days"), []int{s.Row.HoldDays})
+			baseHold = s.Row.HoldDays // 0 is no hold limit, a grid point like the rest
+		}
+	}
+	if takeProfits == nil {
+		takeProfits = []float64{0}
+	}
+	if stopLosses == nil {
+		stopLosses = []float64{0}
+	}
 	return strategy.ParameterSpace{
+		Periods:      periods,
+		EntryLimits:  limits,
 		StrategyID:   s.ID(),
 		StrategyName: s.Name(),
 		Description:  s.Description(),
@@ -170,14 +344,18 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Direction:    "long",
 		FixedEntries: true,
 		SignalDays:   []int{1},
-		HoldDays:     []int{cfg.HoldingWindow},
-		TakeProfits:  []float64{0},
-		StopLosses:   []float64{0},
+		HoldDays:     holdDays,
+		TakeProfits:  takeProfits,
+		StopLosses:   stopLosses,
 		Regimes:      []string{"All Regimes"},
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
-			HoldDays:   cfg.HoldingWindow,
+			Period:     s.Row.Period,
+			EntryLimit: s.Row.EntryLimitPct,
+			TakeProfit: s.Row.TakeProfitPct,
+			StopLoss:   s.Row.StopLossPct,
+			HoldDays:   baseHold,
 			Allocation: s.Row.AllocationPct,
 		},
 	}

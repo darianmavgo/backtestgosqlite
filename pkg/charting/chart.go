@@ -67,6 +67,8 @@ type ReportView struct {
 	Trades          []models.Trade
 	ComparisonTable *ComparisonTable
 	ChartDataJSON   template.JS
+	// Params are the settings of the run that made this report, shown up front.
+	Params []models.ParamGroup
 }
 
 // GenerateHTML renders the Chart.js report and saves it to outputPath.
@@ -110,13 +112,13 @@ func FromPerformanceReport(
 		{
 			Label: "Final Account Value",
 			Value: fmt.Sprintf("$%.2f", report.FinalEquity),
-			Sub:   fmt.Sprintf("+$%.2f Net Profit", report.NetProfit),
-			Color: "#10b981",
+			Sub:   signedMoney(report.NetProfit) + " Net Profit",
+			Color: profitColor(report.NetProfit),
 		},
 		{
 			Label: "Annualized CAGR",
 			Value: fmt.Sprintf("%.2f%% / yr", report.CAGR*100),
-			Sub:   fmt.Sprintf("+%.2f%% Total Return", report.TotalReturnPct),
+			Sub:   fmt.Sprintf("%+.2f%% Total Return", report.TotalReturnPct),
 			Color: "#38bdf8",
 		},
 		{
@@ -187,8 +189,8 @@ func FromEquityCurve(
 	initialCapital float64,
 ) ReportView {
 	kpis := []KPICard{
-		{Label: "Final Account Value", Value: fmt.Sprintf("$%.2f", report.FinalEquity), Sub: fmt.Sprintf("+$%.2f Net Profit", report.NetProfit), Color: "#10b981"},
-		{Label: "Annualized CAGR", Value: fmt.Sprintf("%.2f%% / yr", report.CAGR*100), Sub: fmt.Sprintf("+%.2f%% Total Return", report.TotalReturnPct), Color: "#38bdf8"},
+		{Label: "Final Account Value", Value: fmt.Sprintf("$%.2f", report.FinalEquity), Sub: signedMoney(report.NetProfit) + " Net Profit", Color: profitColor(report.NetProfit)},
+		{Label: "Annualized CAGR", Value: fmt.Sprintf("%.2f%% / yr", report.CAGR*100), Sub: fmt.Sprintf("%+.2f%% Total Return", report.TotalReturnPct), Color: "#38bdf8"},
 		{Label: "Max Drawdown", Value: fmt.Sprintf("%.2f%%", report.MaxDrawdownPct*100), Sub: fmt.Sprintf("Calmar Ratio: %.2f", report.CalmarRatio), Color: "#38bdf8"},
 		{Label: "Win Rate & Trades", Value: fmt.Sprintf("%.1f%%", report.WinRate*100), Sub: fmt.Sprintf("%d Trades (%dW / %dL) | %.1fd Avg Hold", report.TotalTrades, report.WinningTrades, report.LosingTrades, report.AvgHoldingDays), Color: "#f59e0b"},
 	}
@@ -207,7 +209,7 @@ func FromEquityCurve(
 		Label:       "Strategy",
 		Equity:      stratEq,
 		Drawdown:    stratDD,
-		Color:       "#10b981",
+		Color:       profitColor(report.NetProfit),
 		BorderWidth: 2.8,
 	}}
 
@@ -328,7 +330,7 @@ func FromMultiReports(title, subtitle string, results []MultiResult, benchmarkBa
 			fmt.Sprintf("#%d", i+1),
 			r.Label,
 			fmt.Sprintf("$%.2f", r.Report.FinalEquity),
-			fmt.Sprintf("+$%.2f", r.Report.NetProfit),
+			signedMoney(r.Report.NetProfit),
 			fmt.Sprintf("%.2f%% / yr", r.Report.CAGR*100),
 			fmt.Sprintf("-%.2f%%", r.Report.MaxDrawdownPct*100),
 			fmt.Sprintf("⭐ %.2f", r.Report.CalmarRatio),
@@ -344,4 +346,20 @@ func FromMultiReports(title, subtitle string, results []MultiResult, benchmarkBa
 		ComparisonTable: &ComparisonTable{Headers: tableHeaders, Rows: tableRows},
 		ChartDataJSON:   template.JS(string(jsonData)),
 	}
+}
+
+// signedMoney formats a dollar amount with its sign: +$1.00 or -$1.00.
+func signedMoney(v float64) string {
+	if v < 0 {
+		return fmt.Sprintf("-$%.2f", -v)
+	}
+	return fmt.Sprintf("+$%.2f", v)
+}
+
+// profitColor is green for a profit and red for a loss.
+func profitColor(v float64) string {
+	if v < 0 {
+		return "#ef4444"
+	}
+	return "#10b981"
 }

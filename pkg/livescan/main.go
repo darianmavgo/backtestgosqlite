@@ -10,8 +10,9 @@
 //
 // Usage:
 //
-//	go run ./cmd/livescan -strategy bb-capitulation
-//	go run ./cmd/livescan -strategy gld-decline,sig-voo-buy-tecl
+//	go run ./cmd/livescan -strategy <strategy id>
+//	go run ./cmd/livescan -strategy <id>,<id>
+//	go run ./cmd/livescan -strategy "<stack name>"
 //	go run ./cmd/livescan all
 //	go run ./cmd/livescan -list
 package livescan
@@ -29,6 +30,7 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
+	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
@@ -39,7 +41,7 @@ import (
 type Config struct {
 	DB            string // market DB
 	Table         string
-	Strategy      string // ID, comma-separated IDs, or "all"; empty = bb-capitulation
+	Strategy      string // ID, comma-separated IDs, a stack name, or "all"; required
 	Symbol        string // optional comma-separated symbol filter
 	OutDir        string // directory for livescan.db
 	AutoDownload  bool
@@ -77,7 +79,15 @@ func Run(ctx context.Context, cfg Config) (*runner.SignalScanResult, error) {
 
 	// "a+b+c" is backtest's shared-account stack syntax; a signal scan just
 	// needs each component's signals, so treat "+" like ",".
-	selected, err := runner.ResolveStrategies(strings.ReplaceAll(cfg.Strategy, "+", ","), "bb-capitulation")
+	// A stack's friendly name (refdata stack table) stands for its members.
+	spec := cfg.Strategy
+	if db, err := refdb.OpenExisting(refdb.DefaultPath); err == nil && db != nil {
+		if st, ok, _ := refdb.StackByName(db, strings.TrimSpace(spec)); ok {
+			spec = st.ID
+		}
+		db.Close()
+	}
+	selected, err := runner.ResolveStrategies(strings.ReplaceAll(spec, "+", ","), "")
 	if err != nil {
 		return nil, fmt.Errorf("%w. Run with -list to view available strategies", err)
 	}

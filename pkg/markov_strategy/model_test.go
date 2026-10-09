@@ -126,7 +126,7 @@ func TestPrepareTrainsThroughTheLatestBarOnlyWhenBehind(t *testing.T) {
 	if err := s.Prepare(context.Background(), market); err != nil {
 		t.Fatalf("first Prepare: %v", err)
 	}
-	trained, ok := modelLastDate(modelDB, "GOOGL")
+	trained, ok := ModelLastDate(modelDB, "GOOGL")
 	if !ok || trained != last {
 		t.Fatalf("model trained through %q (found %v), want %s", trained, ok, last)
 	}

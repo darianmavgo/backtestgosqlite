@@ -106,6 +106,10 @@ func ensureGridSearchSchema(gdb *sqlx.DB) error {
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN signal_symbol TEXT;`)
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN allocation_pct REAL;`)
 	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN idle_days INTEGER;`)
+	// The calendar period of a period sweep (rotation period rows), NULL otherwise.
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN period TEXT;`)
+	// The buy limit of a period sweep as a fraction of the previous close, NULL otherwise.
+	_, _ = gdb.Exec(`ALTER TABLE gridsearch_results ADD COLUMN entry_limit_pct REAL;`)
 	return nil
 }
 
@@ -224,8 +228,8 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 			strategy_id, label, is_baseline, net_profit, cagr, max_drawdown_pct,
 			max_drawdown_days, calmar_ratio, resilience_score, total_trades, win_rate,
 			symbol, signal_days, hold_days, take_profit_pct, stop_loss_pct, regime,
-			signal_symbol, allocation_pct, idle_days
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			signal_symbol, allocation_pct, idle_days, period, entry_limit_pct
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		log.Printf("Warning: failed to prepare results insert for %s: %v", strat.ID(), err)
@@ -245,7 +249,7 @@ func recordRun(gdb *sqlx.DB, strat strategy.Strategy, outcome sweepOutcome, runE
 			strat.ID(), r.Label, isBaseline, r.Report.NetProfit, r.Report.CAGR, r.Report.MaxDrawdownPct,
 			r.Report.MaxDrawdownDuration, r.Report.CalmarRatio, resilienceScore(r.Report), r.Report.TotalTrades, r.Report.WinRate,
 			r.Symbol, r.SignalDays, r.HoldDays, r.TakeProfit, r.StopLoss, r.Regime,
-			r.SignalSymbol, r.Allocation, idleDays,
+			r.SignalSymbol, r.Allocation, idleDays, nullIfEmpty(r.Period), nullIfZero(r.EntryLimit),
 		); err != nil {
 			log.Printf("Warning: failed to insert result row for %s: %v", strat.ID(), err)
 		}
@@ -436,7 +440,7 @@ func runBatchSweep(db, gdb *sqlx.DB, targets []strategy.Strategy, opts sweepOpti
 
 					if len(outcome.Results) > 0 && !noHTML {
 						reportFile := defaultReportPath(st.strat, "", filepath.Dir(gridDBPath))
-						if err := exportSweepHTML(st.strat, outcome, reportFile, opts.Capital); err != nil {
+						if err := exportSweepHTML(st.strat, outcome, reportFile, opts.Capital, opts); err != nil {
 							log.Printf("Warning: HTML export failed for %s: %v", st.strat.ID(), err)
 						}
 					}
@@ -496,4 +500,18 @@ func printBatchSummary(gdb *sqlx.DB, targets []strategy.Strategy) {
 	for i, r := range rows[:n] {
 		fmt.Printf("  #%2d  %-20s  Score=%.4f  Calmar=%.2f  %s\n", i+1, r.StrategyID, r.BestResScore, r.BestCalmar, r.BestResLabel)
 	}
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func nullIfZero(v float64) any {
+	if v == 0 {
+		return nil
+	}
+	return v
 }

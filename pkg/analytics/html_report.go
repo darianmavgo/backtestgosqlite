@@ -28,6 +28,8 @@ type MultiStrategyHTMLData struct {
 	EquityCurves   map[string][]float64            `json:"equity_curves"`
 	DrawdownCurves map[string][]float64            `json:"drawdown_curves"`
 	CashFlows      map[string][]CashFlowPointEntry `json:"cash_flows,omitempty"`
+	// Params are the settings of the run that made this report, shown up front.
+	Params []models.ParamGroup `json:"params,omitempty"`
 }
 
 type CashFlowPointEntry struct {
@@ -60,13 +62,14 @@ func GenerateComparisonHTML(outputPath string, data MultiStrategyHTMLData) error
 	}
 
 	replacements := map[string]string{
-		"{{TITLE}}":       data.Title,
-		"{{START_DATE}}":  data.StartDate,
-		"{{END_DATE}}":    data.EndDate,
-		"{{TOTAL_YEARS}}": fmt.Sprintf("%.1f", data.TotalYears),
-		"{{TOTAL_DAYS}}":  fmt.Sprintf("%d", data.TotalDays),
-		"{{INITIAL_CAP}}": fmt.Sprintf("%.2f", data.InitialCap),
-		"{{JSON_DATA}}":   string(jsonBytes),
+		"{{TITLE}}":        data.Title,
+		"{{GENERATED_AT}}": data.GeneratedAt,
+		"{{START_DATE}}":   data.StartDate,
+		"{{END_DATE}}":     data.EndDate,
+		"{{TOTAL_YEARS}}":  fmt.Sprintf("%.1f", data.TotalYears),
+		"{{TOTAL_DAYS}}":   fmt.Sprintf("%d", data.TotalDays),
+		"{{INITIAL_CAP}}":  fmt.Sprintf("%.2f", data.InitialCap),
+		"{{JSON_DATA}}":    string(jsonBytes),
 	}
 
 	outputContent := reportTemplateHTML

@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -49,6 +50,43 @@ type PolygonDataSource struct {
 	APIKey     string
 	BaseURL    string
 	HTTPClient *http.Client
+
+	// MinInterval spaces every request (pages included) at least this far
+	// apart; zero means no spacing. 12s keeps the free tier's 5 calls a minute.
+	MinInterval time.Duration
+	// RetryWait is how long to sleep after an HTTP 429 before asking again
+	// (default 65s, a full minute window). A 429 is retried up to 5 times.
+	RetryWait time.Duration
+
+	mu   sync.Mutex
+	last time.Time
+}
+
+// SetRate spaces requests to at most perMinute calls a minute (0 = unthrottled).
+func (p *PolygonDataSource) SetRate(perMinute int) {
+	if perMinute <= 0 {
+		p.MinInterval = 0
+		return
+	}
+	p.MinInterval = time.Minute / time.Duration(perMinute)
+}
+
+// wait blocks until the next request may go out.
+func (p *PolygonDataSource) wait(ctx context.Context) error {
+	if p.MinInterval <= 0 {
+		return ctx.Err()
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if d := p.MinInterval - time.Since(p.last); d > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d):
+		}
+	}
+	p.last = time.Now()
+	return nil
 }
 
 // NewPolygonDataSource creates a Polygon.io data source.
@@ -112,36 +150,56 @@ func (p *PolygonDataSource) Fetch(ctx context.Context, req FetchRequest) ([]mode
 	currentURL := endpointURL
 
 	for currentURL != "" {
-		httpReq, err := http.NewRequestWithContext(ctx, "GET", currentURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build polygon request: %w", err)
-		}
+		var body []byte
+		for attempt := 0; ; attempt++ {
+			if err := p.wait(ctx); err != nil {
+				return nil, err
+			}
+			httpReq, err := http.NewRequestWithContext(ctx, "GET", currentURL, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build polygon request: %w", err)
+			}
 
-		httpReq.Header.Set("Authorization", "Bearer "+p.APIKey)
-		httpReq.Header.Set("User-Agent", "BacktestGoSQLite/1.0")
+			httpReq.Header.Set("Authorization", "Bearer "+p.APIKey)
+			httpReq.Header.Set("User-Agent", "BacktestGoSQLite/1.0")
 
-		resp, err := p.HTTPClient.Do(httpReq)
-		if err != nil {
-			return nil, fmt.Errorf("polygon request failed for %s: %w", sym, err)
-		}
+			resp, err := p.HTTPClient.Do(httpReq)
+			if err != nil {
+				return nil, fmt.Errorf("polygon request failed for %s: %w", sym, err)
+			}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read polygon response body: %w", err)
-		}
+			body, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read polygon response body: %w", err)
+			}
 
-		switch resp.StatusCode {
-		case http.StatusOK:
-			// Success, proceed to parse
-		case http.StatusUnauthorized:
-			return nil, fmt.Errorf("polygon API authentication failed (HTTP 401): invalid or unauthorized POLYGON_API_KEY")
-		case http.StatusForbidden:
-			return nil, fmt.Errorf("polygon API access forbidden (HTTP 403): check plan entitlements for %s or timeframe", sym)
-		case http.StatusTooManyRequests:
-			return nil, fmt.Errorf("polygon API rate limit exceeded (HTTP 429): free tier limits to 5 requests per minute")
-		default:
-			return nil, fmt.Errorf("polygon API HTTP %d for %s: %s", resp.StatusCode, sym, string(body))
+			if resp.StatusCode == http.StatusTooManyRequests && p.MinInterval > 0 && attempt < 5 {
+				pause := p.RetryWait
+				if pause <= 0 {
+					pause = 65 * time.Second
+				}
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(pause):
+				}
+				continue
+			}
+
+			switch resp.StatusCode {
+			case http.StatusOK:
+				// Success, proceed to parse
+			case http.StatusUnauthorized:
+				return nil, fmt.Errorf("polygon API authentication failed (HTTP 401): invalid or unauthorized POLYGON_API_KEY")
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("polygon API access forbidden (HTTP 403): check plan entitlements for %s or timeframe", sym)
+			case http.StatusTooManyRequests:
+				return nil, fmt.Errorf("polygon API rate limit exceeded (HTTP 429): free tier limits to 5 requests per minute")
+			default:
+				return nil, fmt.Errorf("polygon API HTTP %d for %s: %s", resp.StatusCode, sym, string(body))
+			}
+			break
 		}
 
 		var aggsResp PolygonAggsResponse

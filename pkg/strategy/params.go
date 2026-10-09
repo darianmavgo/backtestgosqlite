@@ -67,6 +67,8 @@ type BaselineParams struct {
 	StopLoss   float64 `json:"stop_loss"`
 	Allocation float64 `json:"allocation"`
 	Regime     string  `json:"regime"`
+	Period     string  `json:"period,omitempty"` // period sweeps: the row's own period
+	EntryLimit float64 `json:"entry_limit,omitempty"` // period sweeps: the row's own buy limit fraction (0 = none)
 }
 
 // ParameterSpace defines the parameter dimensions and search bounds for a strategy during grid search.
@@ -89,6 +91,31 @@ type ParameterSpace struct {
 	// and only the exits (hold, take-profit, stop) are searched. The strategy
 	// then runs once and its signals are repriced per grid point.
 	FixedEntries bool `json:"fixed_entries,omitempty"`
+	// Periods are calendar periods (1d, 1w, 1m, 1q, 1y) the strategy's
+	// own pipeline is rerun for, one result set each. Only a strategy that
+	// implements PeriodVariants sets it. The strategy trades the whole market
+	// (or its candidate list), so Symbols is not an axis.
+	Periods []string `json:"periods,omitempty"`
+	// EntryLimits are buy-limit fractions of the previous close (1.0 is the close,
+	// 0.9 is 10% under; 0 is no limit) a period strategy is repriced for. Only a
+	// strategy with period variants sets it.
+	EntryLimits []float64 `json:"entry_limits,omitempty"`
+}
+
+// Perms is the number of grid points: the product of the axes. A period sweep
+// has no per-symbol or per-signal-day axis.
+func (p ParameterSpace) Perms() int {
+	n := len(p.HoldDays) * len(p.TakeProfits) * len(p.StopLosses) * len(p.Regimes) * len(p.Allocations)
+	if len(p.Periods) > 0 {
+		return n * len(p.Periods) * max(len(p.EntryLimits), 1)
+	}
+	return n * len(p.Symbols) * len(p.SignalDays)
+}
+
+// PeriodVariants is implemented by a strategy whose signals depend on a calendar
+// period, so gridsearch can run the same strategy over each period.
+type PeriodVariants interface {
+	PeriodVariant(period string) Strategy
 }
 
 // EntriesFixed reports whether a search varies exits only (see FixedEntries).
@@ -244,4 +271,29 @@ func UnionInts(base, extra []int) []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+// UnionStrings returns base followed by the values of extra it lacks, in order.
+func UnionStrings(base, extra []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, v := range append(append([]string(nil), base...), extra...) {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// NoHoldLimit is the hold_days value that means no time limit. A row's 0 means
+// the same, and HoldLimit maps it to this so the config always has a window.
+const NoHoldLimit = 99999
+
+// HoldLimit is the holding window for a row's hold_days: 0 (or less) is no limit.
+func HoldLimit(days int) int {
+	if days <= 0 {
+		return NoHoldLimit
+	}
+	return days
 }

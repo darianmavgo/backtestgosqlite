@@ -2,7 +2,7 @@
 -- bear: that would be a different trade, not the inverse of the original one.
 -- Single-name leveraged ETFs are left out because their inverses are not in the
 -- bar history. Each pair is listed both ways.
-INSERT INTO aw_inverse (symbol, inverse) VALUES
+INSERT INTO rp_inverse (symbol, inverse) VALUES
     ('TQQQ', 'SQQQ'),
     ('SQQQ', 'TQQQ'),
     ('QLD', 'QID'),

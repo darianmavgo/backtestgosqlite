@@ -49,8 +49,8 @@ Every strategy is calculated in SQL and run by Go. `backtest -strategylist` prin
 
 | Source | Count | Defined in |
 |---|---|---|
-| Own pipeline | a handful (`voo-up3`, `price-action-reclaim`, `biggest-winner*`, `tsll-daily-one-share`, covered calls) | a small config in `pkg/strategy/` plus `sql/strategies/<id>/` |
-| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 (the old hold_bail rows were merged in when the DB was first opened) `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122, `rotation_strategy` 5 (ranks a liquid universe on momentum and holds the top few) | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, `pkg/rotation_strategy`, each running one shared `sql/strategies/<family>/` |
+| Own pipeline | a handful (`voo-up3`, `price-action-reclaim`, `tsll-daily-one-share`, covered calls) | a small config in `pkg/strategy/` plus `sql/strategies/<id>/` |
+| Rows in `refdata/strategies.db` | `streak_strategy` 13,136, `hold_strategy` 26,242 (the old hold_bail rows were merged in when the DB was first opened) `tree_strategy` 13,121 (ids `<symbol>_tree`), `markov_strategy` 13,122, `rotation_strategy` 8 (five rank a liquid universe on momentum and hold the top few. `biggest-winner`, `-short` and `-inverse` are period rows: at the start of each calendar `period` (`1d`, `1w`, `1m`, `1q`, `1y`) hold the top `top_k` names by the previous period's return, `side` long, short or the matched inverse ETF; seeded by `sql/seed/rotation_period.sql`) | `pkg/streak_strategy`, `pkg/hold_strategy`, `pkg/tree_strategy`, `pkg/markov_strategy`, `pkg/rotation_strategy`, each running one shared `sql/strategies/<family>/` |
 
 Most streak rows are a generic "drop 3 days, buy the rebound" rule, one per symbol. A few were promoted from sweeps (`source_strategy` `voo-up3`, `gld-decline`, `universe-screen`, `manual`). `streak-voo-buy-tecl` is now `streak-voo-buy-tecl`. `park-<symbol>` resolves for any ticker without registration (see below). The older `streak-voo-buy-tecl`, `gld-decline` and `googl-hop` strategies are no longer registered; their SQL folders remain in `sql/strategies/`.
 
@@ -118,7 +118,9 @@ Default files:
 | Role | Path |
 |---|---|
 | Market bars | `data/market_history.db`, table `backtest_start` |
-| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`, `rotation_strategy`) |
+| Hourly bars (1h) | `data/market_history_hourly.db`, table `backtest_start` (`appenv.HourlyDB`) |
+| Minute bars (1m, 5m, ...) | `data/market_history_minute.db`, table `backtest_start` (`appenv.MinuteDB`; not created until minute bars are downloaded) |
+| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`, `rotation_strategy`, and `symbol_lists`: `symbol_list_id`, `list` = comma separated tickers. `etf-pre-2021` is every ETF in `universe.db` first traded before 2021-01-01, from `sql/seed/symbol_lists.sql`. A `rotation_strategy` row whose `symbols` equals a `symbol_list_id` (case and surrounding spaces ignored) uses that list; any other value is a literal ticker list. `strategy export` carries the lists a row names) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
 | Backtest results | one folder per run, `data/reports/<run_id>/`, numbered 1, 2, 3, … Inside it one database per strategy family (`markov.db`, `tree.db`, `streak.db`, `hold.db`, `builtin.db` for Go-defined strategies, `stack.db` for stacks), the HTML report as `report.html`, and the held-out pass in `oos/` with the same file names |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
@@ -136,7 +138,7 @@ Daily simulations load rows with `length(Date) = 10`. Minute bars stay in the sa
 
 Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Polygon is opt-in.
 
-**Reads:** `refdata/strategies.db` when no tickers are passed (table `leveraged_etf`, limit 50) or when `-list` names an `etf_universe` list (`all`, `6yr`, `sweep`). Both tables are empty today and no command fills them, so pass tickers explicitly.
+**Reads:** `refdata/strategies.db`. A name in `-symbols` (or a bare argument) that is a `symbol_lists` id, such as `etf-pre-2021-unleveraged`, is replaced by that list's tickers; the other names are tickers. With no symbols at all it reads table `leveraged_etf` (limit 50), which is empty today, so pass tickers or a list id.
 
 **Writes:** `data/market_history.db`, table `backtest_start`. Option history uses the same DB, tables `option_contracts`, `option_bars`, `option_expiry_scan`. Missing dates are filled; `-force` replaces the range.
 
@@ -151,15 +153,22 @@ Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Poly
 | `-table` | `leveraged_etf` (settings DB symbol table) |
 | `-limit` | `50` (only the settings-table fallback) |
 | `-otm` | `0,2,5` (polygon-options, percent OTM) |
-| `-rate` | `5` API calls/minute (polygon-options) |
+| `-rate` | `5` API calls/minute (polygon and polygon-options; a 429 waits a minute and retries; `0` = unthrottled) |
+| `-unleveraged-etfs` | off. Symbols = every active ETF with leverage `none` in `refdata/universe.db`, most traded first (20-day average volume). `-years` defaults to 2 with it |
+| `-status` | off. Downloads nothing: prints how many of the symbols are already pulled, partly pulled or not pulled in the target database, the requests left and the time they take at `-rate` |
+| `-universe-db` | `refdata/universe.db` (read by `-unleveraged-etfs`) |
 
 ```bash
 ./bin/market_history VOO IEF GLD
 ./bin/market_history -symbols PDD -years 6
-./bin/market_history -list 6yr -years 6
+./bin/market_history -symbols etf-pre-2021-unleveraged -timeframe 1h -years 2 -source polygon -concurrency 1
 ./bin/market_history -source polygon -symbols VOO -timeframe 1m -polygon-key "$POLYGON_API_KEY"
 ./bin/market_history -source polygon-options -symbols VOO
+./bin/market_history -source polygon -timeframe 1h -unleveraged-etfs -concurrency 1   # hours of runtime at 5 calls/min
+./bin/market_history -source polygon -timeframe 1h -unleveraged-etfs -status       # what is pulled, what is left
 ```
+
+Hourly and minute bars go to `data/market_history_hourly.db` / `data/market_history_minute.db`, and coverage is checked there first, so a rerun asks Polygon only for the missing days. Hourly pulls never fall back to Yahoo.
 
 `-start YYYY-MM-DD` overrides `-years`. `-end` defaults to today.
 
@@ -270,7 +279,7 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
-**Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-holdout-months` (default 12, the same window `backtest` holds out) stops the sweep at the in-sample cutoff, so the held-out months do not tune the parameters; `-end <date>` sets the stop date directly and `-holdout-months 0` sweeps all history. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+**Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-holdout-months` (default 12, the same window `backtest` holds out) stops the sweep at the in-sample cutoff, so the held-out months do not tune the parameters; `-end <date>` sets the stop date directly and `-holdout-months 0` sweeps all history. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing. rotation period rows: the calendar period, below). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
 ```bash
 ./bin/gridsearch -list
@@ -280,6 +289,8 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 ```
 
 `-force` redoes a strategy already marked done in `gridsearch_runs`.
+
+`-period 1d,1w,1m,1q,1y` (any subset, default all five from `strategy_family_param`) sets the calendar periods a rotation period row such as `biggest-winner` is swept over. Each period reruns the row's SQL pipeline once and the results are labelled `Period-<p>/...` (column `period` of `gridsearch_results`). Example: `./bin/gridsearch -strategy biggest-winner -period 1m,1q,1y`. It has no effect on other strategies.
 
 ### gridsearch params
 
@@ -502,6 +513,15 @@ Discover US stocks and ETFs from Polygon and the Nasdaq lists, and classify them
 Each run fetches the symbol lists, then looks up only the symbols it has not settled. A symbol with a stored first trade date is skipped, since that date never changes, and one that could not be verified is tried again after `-retry-days` (7). A run with nothing new makes no Yahoo requests. `-refresh` looks up everything again.
 
 Flags: `-db`, `-polygon-key`, `-workers 16`, `-limit 1000`, `-max-checks 0`, `-etfs-only`, `-stocks-only`, `-refresh`, `-retry-days 7`.
+
+### universe reclassify
+
+Relabels `leverage` and `direction` of every stored symbol from its stored name with the current classifier, with no network calls. `-dry-run` lists the changes without saving. Run it after the name rules in `pkg/universe` change; `universe` itself only classifies the symbols it looks up.
+
+```bash
+./bin/universe reclassify -dry-run
+./bin/universe reclassify
+```
 
 ### universe avgvol
 

@@ -24,6 +24,9 @@ type PortfolioSimulator struct {
 	// price bars to model "take dividends as cash".
 	Dividends            map[string]map[string]float64
 	DividendCash         float64 // total dividends received during Run
+	// Intraday, when set, lets an EntryLimitPct entry fill and take its same-day
+	// exit on hourly bars instead of the daily high and low.
+	Intraday Intraday
 	Sizer                PositionSizer
 	tradeIDCounter       int
 	dailyCashYieldRate   float64 // pre-computed daily compound factor from CashYieldAnnual
@@ -86,7 +89,7 @@ func (s *PortfolioSimulator) Run(
 	barsBySymbol map[string][]models.Bar,
 	sortedDates []string,
 ) (models.PerformanceReport, []models.Trade, []models.DailyEquityPoint) {
-	signals = ApplyLiveEntryModel(signals, barsBySymbol, func(models.Signal) strategy.StrategyConfig { return s.Config })
+	signals = ApplyLiveEntryModelIntraday(signals, barsBySymbol, s.Intraday, func(models.Signal) strategy.StrategyConfig { return s.Config })
 
 	// Index signals by date for O(1) daily lookup
 	signalsByDate := make(map[string][]models.Signal)
@@ -376,6 +379,13 @@ func (s *PortfolioSimulator) Run(
 					MinLowSince:       entryPrice,
 					MaxHighSince:      entryPrice,
 					HoldDaysOverride:  sig.HoldDaysOverride,
+				}
+				if s.Config.SameDayExit {
+					if bar, ok := barsBySymbolDate[sig.Symbol][date]; ok {
+						if px, reason, hit := sameDayExit(s.Positions[sig.Symbol], bar, s.Config.SlippagePct, sig.AfterFill); hit {
+							s.closePosition(sig.Symbol, date, px, reason, currentDayIdx)
+						}
+					}
 				}
 			}
 		}

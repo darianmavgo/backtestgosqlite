@@ -66,7 +66,7 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		TargetPct:         target,
 		TakeProfitPct:     tp,
 		StopLossPct:       stop,
-		HoldingWindow:     s.Row.HoldDays,
+		HoldingWindow:     strategy.HoldLimit(s.Row.HoldDays),
 		PositionCap:       1,
 		CashYieldAnnual:   s.Row.CashYield,
 		SlippagePct:       s.Row.SlippagePct,
@@ -94,14 +94,14 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		Direction:    s.Row.Direction,
 		FixedEntries: true,
 		SignalDays:   []int{1},
-		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{s.Row.HoldDays}),
+		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{strategy.HoldLimit(s.Row.HoldDays)}),
 		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
 		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
 		Regimes:      []string{"All Regimes"},
 		Allocations:  []float64{s.Row.AllocationPct},
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
-			HoldDays:   s.Row.HoldDays,
+			HoldDays:   strategy.HoldLimit(s.Row.HoldDays),
 			TakeProfit: s.Row.TakeProfitPct,
 			StopLoss:   s.Row.StopLossPct,
 			Allocation: s.Row.AllocationPct,
@@ -167,7 +167,7 @@ func ValidateRow(row refdb.TreeStrategy) error {
 	if strings.TrimSpace(row.ID) == "" {
 		return fmt.Errorf("id is empty")
 	}
-	if row.HoldDays < 1 {
+	if row.HoldDays < 0 {
 		return fmt.Errorf("hold_days %d", row.HoldDays)
 	}
 	return nil

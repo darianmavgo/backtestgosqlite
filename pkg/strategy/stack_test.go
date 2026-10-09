@@ -6,11 +6,11 @@ import (
 )
 
 func TestStackRoundTrip(t *testing.T) {
-	id := StackID("sig-voo-buy-tecl", "mara_tree", "pdd_tree")
-	if id != "sig-voo-buy-tecl+mara_tree+pdd_tree" || !IsStack(id) {
+	id := StackID("streak-voo-buy-tecl", "mara_tree", "pdd_tree")
+	if id != "streak-voo-buy-tecl+mara_tree+pdd_tree" || !IsStack(id) {
 		t.Fatalf("StackID = %q", id)
 	}
-	if got := ParseStack(id); !reflect.DeepEqual(got, []string{"sig-voo-buy-tecl", "mara_tree", "pdd_tree"}) {
+	if got := ParseStack(id); !reflect.DeepEqual(got, []string{"streak-voo-buy-tecl", "mara_tree", "pdd_tree"}) {
 		t.Fatalf("ParseStack = %v", got)
 	}
 	if got := ParseStack(" a + +b+a "); !reflect.DeepEqual(got, []string{"a", "b"}) {

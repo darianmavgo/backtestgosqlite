@@ -42,6 +42,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/charting"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/rotation_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
@@ -67,6 +68,8 @@ type gridResult struct {
 	StopLoss     float64 // fractional offset, e.g. 0.05 for -5% (0 = no-SL)
 	Regime       string
 	Allocation   float64
+	Period       string  // calendar period of a period sweep ("1d".."1y"), else ""
+	EntryLimit   float64 // buy limit as a fraction of the previous close in a period sweep, 0 = none
 }
 
 // sweepOutcome is everything produced by running a full parameter sweep for one
@@ -132,6 +135,7 @@ type Config struct {
 	GridsearchDb  string          // -gridsearch-db (empty = gridsearch.db in the run folder)
 	RunID         int             // -run-id
 	MaxPerms      int             // -max-perms
+	Period        string          // -period: comma-separated calendar periods (1d,1w,1m,1q,1y) to sweep
 	Subcommand    string          // "params", "stale", "promote", or empty
 	Passed        map[string]bool // flags set explicitly on the command line (nil = none)
 	Args          []string        // positional arguments
@@ -188,6 +192,7 @@ func Main() {
 	flag.BoolVar(&conf.List, "list", d.List, "List registered strategies with baked-in parameters")
 	flag.StringVar(&conf.Signal, "signal", d.Signal, "Signal generation symbol override (single-strategy mode only)")
 	flag.StringVar(&conf.Symbol, "symbol", d.Symbol, "Trade symbol override; comma-separated list allowed (single-strategy mode only)")
+	flag.StringVar(&conf.Period, "period", d.Period, "Calendar periods to sweep for a period strategy (rotation period rows), comma separated from 1d,1w,1m,1q,1y. Default: the strategy_family_param axis")
 	flag.StringVar(&conf.SymbolsFrom, "symbols-from", d.SymbolsFrom, "Study report DB (e.g. data/reports/voo_up3_etf.db) whose etf_compare view supplies the trade symbols, ranked by rank_cagr (use with -top-cagr)")
 	flag.IntVar(&conf.TopCagr, "top-cagr", d.TopCagr, "With -symbols-from: how many of the best rank_cagr symbols to sweep")
 	flag.Float64Var(&conf.Capital, "capital", d.Capital, "Starting cash ($)")
@@ -376,8 +381,17 @@ func Run(conf Config) error {
 		fmt.Printf("📄 Sweeping top %d rank_cagr symbols from %s: %v\n", len(syms), conf.SymbolsFrom, syms)
 		sweepOpts.SymbolOverride = syms
 	}
-	if conf.Passed["signal"] && conf.Signal != "" {
+	if conf.Signal != "" && conf.Passed["signal"] {
 		sweepOpts.SignalOverride = conf.Signal
+	}
+	if conf.Period != "" {
+		for _, p := range strings.Split(conf.Period, ",") {
+			p = strings.ToLower(strings.TrimSpace(p))
+			if _, ok := rotation_strategy.Periods[p]; !ok {
+				return fmt.Errorf("-period %q: not one of %v", p, rotation_strategy.PeriodIDs)
+			}
+			sweepOpts.PeriodOverride = append(sweepOpts.PeriodOverride, p)
+		}
 	}
 
 	// `params` subcommand: just print the resolved parameter grid for each
@@ -433,7 +447,7 @@ func Run(conf Config) error {
 
 		if !conf.NoHtml {
 			reportFile := defaultReportPath(strat, conf.Html, filepath.Dir(conf.GridsearchDb))
-			if err := exportSweepHTML(strat, outcome, reportFile, conf.Capital); err != nil {
+			if err := exportSweepHTML(strat, outcome, reportFile, conf.Capital, sweepOpts); err != nil {
 				log.Printf("Warning: Failed to save HTML report: %v", err)
 			} else {
 				fmt.Printf("\n✨ Interactive Grid Search Chart saved to: %s\n\n", reportFile)
@@ -462,8 +476,10 @@ func printSweepHeader(strat strategy.Strategy, opts sweepOptions) {
 	if opts.AllocOverride != nil {
 		paramSpace.Allocations = []float64{*opts.AllocOverride}
 	}
-	totalPerms := len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
-		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
+	if len(opts.PeriodOverride) > 0 && len(paramSpace.Periods) > 0 {
+		paramSpace.Periods = opts.PeriodOverride
+	}
+	totalPerms := paramSpace.Perms()
 
 	fmt.Printf("\n=======================================================================================================================\n")
 	fmt.Printf("⚡ STRATEGY GRID SEARCH OPTIMIZER\n")
@@ -478,6 +494,9 @@ func printSweepHeader(strat strategy.Strategy, opts sweepOptions) {
 	fmt.Printf("   • Stop-Loss Limit:    %.2f%%\n", paramSpace.Baseline.StopLoss*100)
 	fmt.Printf("   • Allocation / APY:   %.1f%% capital | %.1f%% idle APY\n\n", paramSpace.Allocations[0]*100, paramSpace.CashYield*100)
 	fmt.Printf("🎯 Evaluated Parameter Grid (%d Permutations):\n", totalPerms)
+	if len(paramSpace.Periods) > 0 {
+		fmt.Printf("   • Periods:            %v\n", paramSpace.Periods)
+	}
 	fmt.Printf("   • Tradable Assets:    %v\n", paramSpace.Symbols)
 	fmt.Printf("   • Consecutive Days:   %v\n", paramSpace.SignalDays)
 	fmt.Printf("   • Holding Windows:    %v days\n", paramSpace.HoldDays)
@@ -536,7 +555,7 @@ func printSweepReport(strat strategy.Strategy, outcome sweepOutcome) {
 	}
 }
 
-func exportSweepHTML(strat strategy.Strategy, outcome sweepOutcome, reportFile string, capital float64) error {
+func exportSweepHTML(strat strategy.Strategy, outcome sweepOutcome, reportFile string, capital float64, opts sweepOptions) error {
 	var multiResults []charting.MultiResult
 	if outcome.BaselineRes != nil {
 		multiResults = append(multiResults, charting.MultiResult{
@@ -565,7 +584,86 @@ func exportSweepHTML(strat strategy.Strategy, outcome sweepOutcome, reportFile s
 		fmt.Sprintf("Parameter sweep centered on baked-in defaults — top %d by Resilience Score, top %d by Calmar Ratio", len(outcome.TopResilience), len(outcome.TopCalmar)),
 		multiResults, outcome.SignalBars, capital,
 	)
+	view.Params = sweepParams(strat, outcome.ParamSpace, capital, opts)
 	return charting.GenerateHTML(reportFile, view)
+}
+
+// sweepParams states what was searched and what was held fixed: the symbol
+// list, every grid axis (hold, take-profit, stop, allocation, ...), and the
+// baseline the sweep is centred on.
+func sweepParams(strat strategy.Strategy, ps strategy.ParameterSpace, capital float64, opts sweepOptions) []models.ParamGroup {
+	pct := func(v []float64) string {
+		out := make([]string, len(v))
+		for i, x := range v {
+			out[i] = fmt.Sprintf("%.2f%%", x*100)
+		}
+		return strings.Join(out, ", ")
+	}
+	ints := func(v []int) string {
+		out := make([]string, len(v))
+		for i, x := range v {
+			out[i] = fmt.Sprintf("%d", x)
+		}
+		return strings.Join(out, ", ")
+	}
+	orNone := func(v string) string {
+		if v == "" {
+			return "none"
+		}
+		return v
+	}
+
+	run := &models.ParamGroup{Title: "Run"}
+	run.Add("Strategy", strat.ID())
+	run.Add("Symbols (trade list)", orNone(strings.Join(ps.Symbols, ", ")))
+	if ps.SignalSymbol != "" {
+		run.Add("Signal symbol", ps.SignalSymbol+" ("+ps.Direction+")")
+	}
+	run.Add("Window", orNone(opts.StartDate)+" to "+orNone(opts.EndDate))
+	run.Add("Starting capital", fmt.Sprintf("$%.2f", capital))
+	run.Add("Minimum trades", fmt.Sprintf("%d", opts.MinTrades))
+	run.Add("Grid points", fmt.Sprintf("%d", ps.Perms()))
+	if ps.EntriesFixed() {
+		run.Add("Entries", "fixed by the strategy's own pipeline; only exits searched")
+	}
+
+	axes := &models.ParamGroup{Title: "Grid search axes (searched)"}
+	if len(ps.Periods) > 0 {
+		axes.Add("Period", strings.Join(ps.Periods, ", "))
+	}
+	if !ps.EntriesFixed() && len(ps.SignalDays) > 0 {
+		axes.Add("Signal days", ints(ps.SignalDays))
+	}
+	if len(ps.Regimes) > 0 {
+		axes.Add("Regime", strings.Join(ps.Regimes, ", "))
+	}
+	if len(ps.EntryLimits) > 0 {
+		axes.Add("Buy limit (of previous close)", pct(ps.EntryLimits))
+	}
+	axes.Add("Hold days", ints(ps.HoldDays))
+	axes.Add("Profit taker", pct(ps.TakeProfits))
+	axes.Add("Stop loss", pct(ps.StopLosses))
+	axes.Add("Allocation", pct(ps.Allocations))
+
+	b := ps.Baseline
+	base := &models.ParamGroup{Title: "Baseline (strategy defaults)"}
+	base.Add("Hold days", fmt.Sprintf("%d", b.HoldDays))
+	base.Add("Profit taker", fmt.Sprintf("%.2f%%", b.TakeProfit*100))
+	base.Add("Stop loss", fmt.Sprintf("%.2f%%", b.StopLoss*100))
+	if !ps.EntriesFixed() {
+		base.Add("Signal days", fmt.Sprintf("%d", b.SignalDays))
+		base.Add("Regime", orNone(b.Regime))
+	}
+	if ps.CashYield > 0 {
+		base.Add("Cash yield (annual)", fmt.Sprintf("%.2f%%", ps.CashYield*100))
+	}
+	if opts.AllocOverride != nil {
+		run.Add("Allocation override", fmt.Sprintf("%.2f%%", *opts.AllocOverride*100))
+	}
+	if opts.CashYieldOverride != nil {
+		run.Add("Cash yield override", fmt.Sprintf("%.2f%%", *opts.CashYieldOverride*100))
+	}
+	return []models.ParamGroup{*run, *axes, *base}
 }
 
 // fileURL returns a file:// URL for path (absolute when resolvable).

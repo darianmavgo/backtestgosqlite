@@ -37,9 +37,27 @@ func ApplyLiveEntryModel(
 	barsBySymbol map[string][]models.Bar,
 	cfgFor func(models.Signal) strategy.StrategyConfig,
 ) []models.Signal {
+	return ApplyLiveEntryModelIntraday(signals, barsBySymbol, nil, cfgFor)
+}
+
+// ApplyLiveEntryModelIntraday is ApplyLiveEntryModel with intraday bars (see
+// Intraday). A limit entry on a session the intraday bars cover is filled and
+// judged on them; elsewhere it falls back to the daily bar.
+func ApplyLiveEntryModelIntraday(
+	signals []models.Signal,
+	barsBySymbol map[string][]models.Bar,
+	intraday Intraday,
+	cfgFor func(models.Signal) strategy.StrategyConfig,
+) []models.Signal {
 	out := make([]models.Signal, 0, len(signals))
 	for _, sig := range signals {
 		cfg := cfgFor(sig)
+		if cfg.EntryLimitPct > 0 && sig.Entry > 0 {
+			if limited, ok := limitEntry(sig, cfg, barsBySymbol[sig.Symbol], intraday[sig.Symbol]); ok {
+				out = append(out, limited)
+			}
+			continue
+		}
 		if cfg.NextDayOpenEntry {
 			if open, ok := openEntry(sig, cfg, barsBySymbol[sig.Symbol]); ok {
 				out = append(out, open)
@@ -122,6 +140,39 @@ func openEntry(sig models.Signal, cfg strategy.StrategyConfig, bars []models.Bar
 	sig.Close = fill
 	sig.BuyLimit = fill
 	sig.OrderType = "market"
+	return sig, true
+}
+
+// limitEntry turns an entry signal on session D into a buy limit at
+// EntryLimitPct of the previous session's close, live on D itself. It fills if
+// D's low reaches the limit (at the limit, or at the open when the open is
+// already below it) and is dropped otherwise, and so is a signal on a
+// symbol's first bar, which has no previous close. Take-profit and stop are left
+// to the config percentages, applied to the booked entry.
+func limitEntry(sig models.Signal, cfg strategy.StrategyConfig, bars []models.Bar, hourly []models.Bar) (models.Signal, bool) {
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].Date >= sig.Date })
+	if i >= len(bars) || bars[i].Date != sig.Date || i == 0 || bars[i-1].Close <= 0 {
+		return sig, false
+	}
+	bar := bars[i]
+	limit := bars[i-1].Close * cfg.EntryLimitPct
+	if bar.Low > limit {
+		return sig, false // the day never traded down to the limit
+	}
+	fill := limit
+	if bar.Open > 0 && bar.Open < limit {
+		fill = bar.Open
+	}
+	if session, covered := intradaySession(hourly, bar); covered {
+		after, price, ok := fillOnIntraday(session, bar, limit)
+		if !ok {
+			return sig, false // the day's low is in the daily bar but no hour confirms a touch
+		}
+		fill, sig.AfterFill = price, after
+	}
+	sig.Close = fill
+	sig.BuyLimit = fill
+	sig.OrderType = "limit"
 	return sig, true
 }
 

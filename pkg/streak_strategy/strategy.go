@@ -104,7 +104,7 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		TargetPct:       target,
 		TakeProfitPct:   tp,
 		StopLossPct:     stop,
-		HoldingWindow:   s.Row.HoldDays,
+		HoldingWindow:   strategy.HoldLimit(s.Row.HoldDays),
 		PositionCap:     1,
 		CashYieldAnnual: s.Row.CashYield,
 		SlippagePct:     s.Row.SlippagePct,
@@ -141,7 +141,7 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		SignalSymbol: cfg.Benchmark,
 		Direction:    s.Row.Direction,
 		SignalDays:   strategy.UnionInts(ax.Ints("signal_days"), []int{s.Row.SignalDays}),
-		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{s.Row.HoldDays}),
+		HoldDays:     strategy.UnionInts(ax.Ints("hold_days"), []int{strategy.HoldLimit(s.Row.HoldDays)}),
 		TakeProfits:  strategy.UnionFloats(ax.Nums["take_profit_pct"], []float64{s.Row.TakeProfitPct}),
 		StopLosses:   strategy.UnionFloats(ax.Nums["stop_loss_pct"], []float64{s.Row.StopLossPct}),
 		Regimes:      regimes,
@@ -149,7 +149,7 @@ func (s *Strategy) ParameterSpace() strategy.ParameterSpace {
 		CashYield:    s.Row.CashYield,
 		Baseline: strategy.BaselineParams{
 			SignalDays: s.Row.SignalDays,
-			HoldDays:   s.Row.HoldDays,
+			HoldDays:   strategy.HoldLimit(s.Row.HoldDays),
 			TakeProfit: s.Row.TakeProfitPct,
 			StopLoss:   s.Row.StopLossPct,
 			Allocation: s.Row.AllocationPct,
@@ -194,7 +194,7 @@ func ValidateRow(row refdb.StreakStrategy) error {
 	if row.SignalDays < 1 {
 		return fmt.Errorf("signal_days %d", row.SignalDays)
 	}
-	if row.HoldDays < 1 {
+	if row.HoldDays < 0 {
 		return fmt.Errorf("hold_days %d", row.HoldDays)
 	}
 	if row.TakeProfitPct < 0 {

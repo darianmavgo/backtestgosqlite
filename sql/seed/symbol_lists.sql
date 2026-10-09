@@ -1,0 +1,43 @@
+-- Symbol lists for refdata/strategies.db. Re-runnable: it replaces these ids only.
+--
+--   sqlite3 refdata/strategies.db -cmd "attach 'refdata/universe.db' as u" < sql/seed/symbol_lists.sql
+--
+-- etf-pre-2021: every ETF in the universe whose first trade date is before
+-- 2021-01-01 (is_etf = 1, first_trade_date known), sorted, comma separated.
+INSERT OR REPLACE INTO symbol_lists (symbol_list_id, list)
+SELECT 'etf-pre-2021', group_concat(symbol, ',')
+FROM (
+    SELECT symbol FROM u.universe
+    WHERE is_etf = 1 AND first_trade_date <> '' AND first_trade_date < '2021-01-01'
+    ORDER BY symbol
+);
+
+-- etf-pre-2021-unleveraged: etf-pre-2021 without the leveraged funds (leverage
+-- 1.5x, 2x or 3x, long or inverse). Unleveraged inverse funds (SH, VXX, ...) stay.
+INSERT OR REPLACE INTO symbol_lists (symbol_list_id, list)
+SELECT 'etf-pre-2021-unleveraged', group_concat(symbol, ',')
+FROM (
+    SELECT symbol FROM u.universe
+    WHERE is_etf = 1 AND first_trade_date <> '' AND first_trade_date < '2021-01-01' AND leverage = 'none'
+    ORDER BY symbol
+);
+
+-- etf-2x-pre-2021: only the 2x leveraged ETFs (long and inverse) whose first
+-- trade date is before 2021-01-01, so they have history to backtest.
+INSERT OR REPLACE INTO symbol_lists (symbol_list_id, list)
+SELECT 'etf-2x-pre-2021', group_concat(symbol, ',')
+FROM (
+    SELECT symbol FROM u.universe
+    WHERE is_etf = 1 AND first_trade_date <> '' AND first_trade_date < '2021-01-01' AND leverage = '2x'
+    ORDER BY symbol
+);
+
+-- etf-3x-pre-2021: only the 3x leveraged ETFs (long and inverse) whose first
+-- trade date is before 2021-01-01, so they have history to backtest.
+INSERT OR REPLACE INTO symbol_lists (symbol_list_id, list)
+SELECT 'etf-3x-pre-2021', group_concat(symbol, ',')
+FROM (
+    SELECT symbol FROM u.universe
+    WHERE is_etf = 1 AND first_trade_date <> '' AND first_trade_date < '2021-01-01' AND leverage = '3x'
+    ORDER BY symbol
+);

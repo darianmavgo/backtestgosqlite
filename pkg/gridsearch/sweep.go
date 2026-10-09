@@ -26,10 +26,11 @@ type sweepOptions struct {
 	Capital           float64
 	MinTrades         int
 	TopN              int
-	StartDate         string // earliest bar date to sweep ("" = full history)
-	EndDate           string // latest bar date to sweep ("" = latest bar)
-	InnerWorkers      int    // single-strategy mode only: workers within this one sweep
-	MarketDB          string // market database path; streak sweeps calculate entries in SQL from it
+	StartDate         string   // earliest bar date to sweep ("" = full history)
+	EndDate           string   // latest bar date to sweep ("" = latest bar)
+	InnerWorkers      int      // single-strategy mode only: workers within this one sweep
+	MarketDB          string   // market database path; streak sweeps calculate entries in SQL from it
+	PeriodOverride    []string // -period: calendar periods to sweep instead of the strategy's own axis
 }
 
 // sweepTask is one (signal-days, hold, TP, SL, regime, allocation, symbol)
@@ -44,6 +45,8 @@ type sweepTask struct {
 	alloc      float64
 	tradeBars  []models.Bar
 	isBaseline bool
+	period     string  // calendar period of a period sweep ("" for any other)
+	limit      float64 // buy limit as a fraction of the previous close in a period sweep (0 = none)
 }
 
 // sweepContext holds everything about one strategy's parameter space needed to
@@ -58,6 +61,12 @@ type sweepContext struct {
 	SortedDates []string
 	TotalPerms  int
 	StartedAt   time.Time
+
+	// Period sweeps: the strategy's signals for each period, calculated once in
+	// SQL, and the bars they trade.
+	PeriodSignals map[string][]models.Signal
+	PeriodConfigs map[string]strategy.StrategyConfig
+	AllBars       map[string][]models.Bar
 }
 
 // estimatePerms computes a strategy's generic parameter grid size without
@@ -71,8 +80,10 @@ func estimatePerms(strat strategy.Strategy, opts sweepOptions) int {
 	if len(opts.SymbolOverride) > 0 {
 		paramSpace.Symbols = opts.SymbolOverride
 	}
-	return len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
-		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
+	if len(opts.PeriodOverride) > 0 && len(paramSpace.Periods) > 0 {
+		paramSpace.Periods = opts.PeriodOverride
+	}
+	return paramSpace.Perms()
 }
 
 // prepareSweep resolves a strategy's parameter space, fetches the bars it needs,
@@ -92,6 +103,13 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 	}
 	if opts.SignalOverride != "" {
 		paramSpace.SignalSymbol = opts.SignalOverride
+	}
+
+	if len(paramSpace.Periods) > 0 {
+		if len(opts.PeriodOverride) > 0 {
+			paramSpace.Periods = opts.PeriodOverride
+		}
+		return preparePeriodSweep(db, strat, paramSpace, opts)
 	}
 
 	barMap, _, err := storage.FetchBars(db, "backtest_start", []string{paramSpace.SignalSymbol}, opts.StartDate, opts.EndDate)
@@ -127,8 +145,7 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 	}
 	sort.Strings(sortedDates)
 
-	totalPerms := len(paramSpace.Symbols) * len(paramSpace.SignalDays) * len(paramSpace.HoldDays) *
-		len(paramSpace.TakeProfits) * len(paramSpace.StopLosses) * len(paramSpace.Regimes) * len(paramSpace.Allocations)
+	totalPerms := paramSpace.Perms()
 
 	var baseSignals []models.Signal
 	if paramSpace.EntriesFixed() {
@@ -233,6 +250,9 @@ func evaluateTask(ctx *sweepContext, t sweepTask, opts sweepOptions) (gridResult
 }
 
 func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool) (gridResult, bool) {
+	if t.period != "" {
+		return evalPeriodTask(ctx, t, opts, keepDetail)
+	}
 	barsBySymbol := map[string][]models.Bar{
 		ctx.ParamSpace.SignalSymbol: ctx.SignalBars,
 		t.sym:                       t.tradeBars,
@@ -419,4 +439,164 @@ func runSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (sweepOut
 	wg.Wait()
 
 	return finalizeSweep(ctx, results, baselineRes, opts), nil
+}
+
+// preparePeriodSweep is prepareSweep for a strategy that reruns its own pipeline
+// per calendar period (rotation period rows). The pipeline decides every entry
+// and exit, so each period runs once and the grid reprices the same signals. The
+// periods are calculated concurrently, one calc database each.
+func preparePeriodSweep(db *sqlx.DB, strat strategy.Strategy, space strategy.ParameterSpace, opts sweepOptions) (*sweepContext, []sweepTask, error) {
+	pv, ok := strat.(strategy.PeriodVariants)
+	if !ok {
+		return nil, nil, fmt.Errorf("%s has no period variants", strat.ID())
+	}
+	if opts.MarketDB == "" {
+		return nil, nil, fmt.Errorf("%s: a period sweep needs the market database path", strat.ID())
+	}
+	bars, _, err := storage.FetchBars(db, "backtest_start", space.Symbols, opts.StartDate, opts.EndDate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch bars for %s: %w", strat.ID(), err)
+	}
+	if len(bars) == 0 {
+		return nil, nil, fmt.Errorf("%s: no price bars found", strat.ID())
+	}
+	dateSet := map[string]struct{}{}
+	var signalBars []models.Bar
+	for _, bs := range bars {
+		for _, b := range bs {
+			dateSet[b.Date] = struct{}{}
+		}
+		if len(bs) > len(signalBars) {
+			signalBars = bs // the longest history stands in for the data window
+		}
+	}
+	sortedDates := make([]string, 0, len(dateSet))
+	for d := range dateSet {
+		sortedDates = append(sortedDates, d)
+	}
+	sort.Strings(sortedDates)
+
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		signals = map[string][]models.Signal{}
+		configs = map[string]strategy.StrategyConfig{}
+	)
+	for _, period := range space.Periods {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v := pv.PeriodVariant(period)
+			calcPath, cleanup := runner.CalcDBPath(appenv.Reports(), "gridsearch_period_"+period+"_"+strat.ID())
+			defer cleanup()
+			v.SetDatabases(opts.MarketDB, calcPath)
+			sigs := v.GenerateSignals(bars)
+			mu.Lock()
+			defer mu.Unlock()
+			if len(sigs) == 0 {
+				fmt.Printf("   ⚠️  %s: period %s produced no signals, skipped\n", strat.ID(), period)
+				return
+			}
+			signals[period], configs[period] = sigs, v.DefaultConfig()
+		}()
+	}
+	wg.Wait()
+	if len(signals) == 0 {
+		return nil, nil, fmt.Errorf("%s produced no signals for any of the periods %v", strat.ID(), space.Periods)
+	}
+
+	ctx := &sweepContext{
+		Strat: strat, ParamSpace: space, SignalBars: signalBars, SortedDates: sortedDates,
+		TotalPerms: space.Perms(), StartedAt: time.Now(),
+		PeriodSignals: signals, PeriodConfigs: configs, AllBars: bars,
+	}
+	var tasks []sweepTask
+	limits := space.EntryLimits
+	if len(limits) == 0 {
+		limits = []float64{0}
+	}
+	for _, period := range space.Periods {
+		if _, ok := signals[period]; !ok {
+			continue
+		}
+		for _, limit := range limits {
+			for _, hold := range space.HoldDays {
+				for _, tp := range space.TakeProfits {
+					for _, sl := range space.StopLosses {
+						for _, alloc := range space.Allocations {
+							tasks = append(tasks, sweepTask{
+								period: period, limit: limit, hold: hold, tp: tp, sl: sl, alloc: alloc,
+								isBaseline: period == space.Baseline.Period && hold == space.Baseline.HoldDays &&
+									math.Abs(limit-space.Baseline.EntryLimit) < 1e-9 &&
+									math.Abs(tp-space.Baseline.TakeProfit) < 1e-4 && math.Abs(sl-space.Baseline.StopLoss) < 1e-4,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+	return ctx, tasks, nil
+}
+
+// evalPeriodTask simulates one period's signals, repriced for the grid point.
+func evalPeriodTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool) (gridResult, bool) {
+	cfg := ctx.PeriodConfigs[t.period]
+	cfg.AllocationPct = t.alloc
+	cfg.TakeProfitPct = t.tp
+	cfg.StopLossPct = t.sl
+	cfg.HoldingWindow = t.hold
+	if t.hold <= 0 {
+		cfg.HoldingWindow = 99999 // no hold limit: the period's last session exits
+	}
+	cfg.EntryLimitPct = t.limit
+	cfg.SameDayExit = t.limit > 0 // a limit order fills during the session, so its target can too
+	if t.limit > 0 && t.tp > 0 {
+		cfg.TargetPct = 0 // the simulator prefers TargetPct above 1 over TakeProfitPct
+	}
+	cfg.CashYieldAnnual = ctx.ParamSpace.CashYield
+
+	base := ctx.PeriodSignals[t.period]
+	sigs := make([]models.Signal, len(base))
+	for i, bs := range base {
+		sCopy := bs
+		sCopy.HoldDaysOverride = max(t.hold, 0)
+		sCopy.TakeProfit, sCopy.StopLoss = 0, 0
+		// A limit entry books its own price, so the simulator measures the target
+		// and stop from that fill (cfg) and not from the signal bar's close.
+		if bs.Entry == 1 && t.limit <= 0 {
+			if t.tp > 0 {
+				sCopy.TakeProfit = bs.Close * (1.0 + t.tp)
+			}
+			if t.sl > 0 {
+				sCopy.StopLoss = bs.Close * (1.0 - t.sl)
+			}
+		}
+		sigs[i] = sCopy
+	}
+	if len(sigs) < opts.MinTrades {
+		return gridResult{}, false
+	}
+	sim := simulator.NewPortfolioSimulator(cfg, opts.Capital)
+	report, trades, curve := sim.Run(sigs, ctx.AllBars, ctx.SortedDates)
+	if report.TotalTrades < opts.MinTrades {
+		return gridResult{}, false
+	}
+	if !keepDetail {
+		trades, curve = nil, nil
+	}
+	return gridResult{
+		task:       t,
+		Label:      fmt.Sprintf("Period-%s/Limit-%.0f%%/Hold-%dd/TP+%.0f%%/SL-%.0f%%", t.period, t.limit*100, t.hold, t.tp*100, t.sl*100),
+		Report:     report,
+		Trades:     trades,
+		Curve:      curve,
+		IsBaseline: t.isBaseline,
+		Period:     t.period,
+		EntryLimit: t.limit,
+		HoldDays:   t.hold,
+		TakeProfit: t.tp,
+		StopLoss:   t.sl,
+		Allocation: t.alloc,
+	}, true
 }

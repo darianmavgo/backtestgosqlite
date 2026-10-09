@@ -480,6 +480,13 @@ func (s *SharedAccountSimulator) Run(
 					MaxHighSince:      entryPrice,
 					HoldDaysOverride:  sig.HoldDaysOverride,
 				}
+				if cfg.SameDayExit {
+					if bar, ok := barsBySymbolDate[sig.Symbol][date]; ok {
+						if px, reason, hit := sameDayExit(s.Positions[sig.Symbol], bar, cfg.SlippagePct, sig.AfterFill); hit {
+							s.closePosition(sig.Symbol, date, px, reason)
+						}
+					}
+				}
 			}
 		}
 

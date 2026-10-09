@@ -8,7 +8,7 @@ Window: 2025-10-02 to 2026-10-01, the 12 months the backtester holds out. The IB
 |---|---|---|
 | Omnifunds claimed | `data/ibkr_claim_performance_nas100,TopTech&RUSS3000.txt`, loaded into `claimed_performance`. Newer than [omnifunds_benchmark.md](omnifunds_benchmark.md) (1 year CAR 44.9% against 42.0%). | It is the vendor's figure |
 | IBKR actual | The real account. `transaction_calc account` rebuilds it from the 631 statement rows in `data/U22262325.TRANSACTIONS.1Y.csv` and the daily bars. | Not a backtest: these are real trades, so there is no in-sample or out-of-sample |
-| Schwab stack | **A backtest, not the Schwab account.** The stack in `STRATEGY_ALLOWLIST`, `streak-voo-buy-tecl+mara_tree+pdd_tree` (`sig-voo-buy-tecl` is now `streak-voo-buy-tecl`), run through `backtest` on $100,000. `tsll-daily-one-share` is the ops check and is left out. | Yes, the held-out pass of run 18 |
+| Schwab stack | **A backtest, not the Schwab account.** The stack in `STRATEGY_ALLOWLIST`, `streak-voo-buy-tecl+mara_tree+pdd_tree` run through `backtest` on $100,000. `tsll-daily-one-share` is the ops check and is left out. | Yes, the held-out pass of run 18 |
 | `streak-voo-buy-tecl` alone, markov strategies, buy and hold | Held-out passes of backtests in `data/reports/1/oos` (streak, markov) and `data/reports/3/oos` (hold) | Yes, held-out passes. Each runs alone on $100,000 at its own allocation |
 | Clean stacks | `backtest` in `data/reports/19`, both passes | Held-out pass is the year above, and the in-sample pass is 2021-01-04 to 2025-10-02 |
 

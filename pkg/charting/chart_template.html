@@ -51,6 +51,13 @@
         .badge { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
         .badge-win { background: rgba(16, 185, 129, 0.15); color: var(--strategy); border: 1px solid rgba(16, 185, 129, 0.3); }
         .badge-loss { background: rgba(244, 63, 94, 0.15); color: var(--danger); border: 1px solid rgba(244, 63, 94, 0.3); }
+        .params-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; }
+        .params-card > summary { cursor: pointer; font-weight: 700; }
+        .params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 12px; }
+        .params-group h4 { margin: 0 0 6px; font-size: 13px; color: #38bdf8; }
+        .params-group table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .params-group td { padding: 3px 0; vertical-align: top; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .params-group td:first-child { opacity: 0.7; padding-right: 12px; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -67,6 +74,20 @@
                 <button class="btn" onclick="setTimeframe('6m')" id="btn-6m">6 Months</button>
             </div>
         </div>
+
+        {{ if .Params }}
+        <details class="params-card" open>
+            <summary>⚙️ Run Parameters</summary>
+            <div class="params-grid">
+                {{ range .Params }}
+                <div class="params-group">
+                    <h4>{{ .Title }}</h4>
+                    <table>{{ range .Rows }}<tr><td>{{ .Name }}</td><td>{{ .Value }}</td></tr>{{ end }}</table>
+                </div>
+                {{ end }}
+            </div>
+        </details>
+        {{ end }}
 
         {{ if .KPICards }}
         <div class="kpi-grid">

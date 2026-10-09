@@ -58,6 +58,13 @@ type Signal struct {
 	// StrategyID identifies the strategy that generated this signal (e.g. "sig-voo-buy-tecl", "bb-capitulation").
 	StrategyID string `db:"strategy_id" json:"strategy_id,omitempty"`
 
+	// AfterFill, set by the simulator's limit-entry model when intraday bars are
+	// available, holds the intraday bars of the entry session from the fill bar
+	// on. The same-day exit is judged on these in order instead of on the daily
+	// high and low. The fill bar's High is cut down to the fill price (the order
+	// of touches inside one bar is unknown, so only its low can stop the trade).
+	AfterFill []Bar `db:"-" json:"-"`
+
 	// Priority denotes the execution priority tier (0 = primary, 1 = secondary, etc.).
 	Priority int `db:"priority" json:"priority"`
 }

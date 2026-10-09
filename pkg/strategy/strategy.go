@@ -144,6 +144,16 @@ type StrategyConfig struct {
 	// for gapping up). Take-profit and stop are measured from that fill. It wins
 	// over NextDayLimitEntry when both are set.
 	NextDayOpenEntry   bool    `json:"next_day_open_entry,omitempty"`
+	// EntryLimitPct, when above 0, enters on the signal's own session with a buy
+	// limit at that fraction of the previous session's close (0.9 is 10% under).
+	// The order fills only if the session's low reaches the limit, at the limit or
+	// at the open when the open is already below it, and is dropped otherwise.
+	// Take-profit and stop come from TakeProfitPct / StopLossPct on the booked entry.
+	EntryLimitPct float64 `json:"entry_limit_pct,omitempty"`
+	// SameDayExit lets a position opened on a session be stopped out or take its
+	// profit on that same session, judged on the day's low and high. The stop is
+	// checked before the target because the order of the touches is unknown.
+	SameDayExit bool `json:"same_day_exit,omitempty"`
 	PositionCap        int     `json:"position_cap"`           // Max concurrent open positions (e.g. 5)
 	AllocationPct      float64 `json:"allocation_pct"`         // Portfolio equity allocation per trade (e.g. 0.20 for 20%)
 	FixedShares        int     `json:"fixed_shares,omitempty"` // Shares per position if PositionSizing == "fixed_shares"

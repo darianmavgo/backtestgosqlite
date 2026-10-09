@@ -63,6 +63,10 @@ INSERT OR REPLACE INTO strategy_family_param (family, param, kind, role, gridsea
 ('hold', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter'),
 ('hold', 'trailing_stop_pct', 'real', 'exit', 0, NULL, 'gridsearch has no hold signal stage for a changed trailing stop yet. 0 never bails'),
 ('hold', 'sma_reentry_period', 'int', 'entry', 0, NULL, 'gridsearch has no hold signal stage for a changed re-entry period yet. 0 never re-enters'),
+('hold', 'hold_days', 'int', 'exit', 1, '[2,4,6,8,10,12,15]', 'a regime row sets its own hold per entry, so it is not searched. 0 or 99999 is no limit'),
+('hold', 'take_profit_pct', 'real', 'exit', 1, '[0,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.10]', '0 is no take-profit'),
+('hold', 'stop_loss_pct', 'real', 'exit', 1, '[0,0.02,0.03,0.05,0.07]', '0 is no stop'),
+('hold', 'regime_symbol', 'symbol', 'entry', 0, NULL, 'gridsearch has no hold signal stage for a changed regime yet. Empty holds without a regime'),
 ('rotation', 'id', 'text', 'identity', 0, NULL, 'the row key'),
 ('rotation', 'name', 'text', 'label', 0, NULL, 'a label'),
 ('rotation', 'symbols', 'text', 'symbol', 0, NULL, 'the candidate list defines the strategy. Empty means every symbol in the market database'),
@@ -74,4 +78,11 @@ INSERT OR REPLACE INTO strategy_family_param (family, param, kind, role, gridsea
 ('rotation', 'regime_sma', 'int', 'entry', 0, NULL, 'gridsearch has no rotation signal stage yet. 0 turns the gate off'),
 ('rotation', 'allocation_pct', 'real', 'sizing', 0, NULL, 'sizing, set by the -alloc flag for the whole run'),
 ('rotation', 'cash_yield', 'real', 'cost', 0, NULL, 'an account setting, not a strategy parameter'),
-('rotation', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter');
+('rotation', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter'),
+('rotation', 'period', 'text', 'entry', 1, '["1d","1w","1m","1q","1y"]', NULL),
+('rotation', 'side', 'text', 'entry', 0, NULL, 'long, short and inverse are different trades, so they are separate rows'),
+('rotation', 'pick', 'text', 'entry', 0, NULL, 'winner and loser are opposite rules, so they are separate rows'),
+('rotation', 'entry_limit_pct', 'real', 'entry', 1, '[1.0,0.97,0.95,0.9]', 'a long period row only. 1.0 buys at the previous close, 0.9 at 10% under it'),
+('rotation', 'take_profit_pct', 'real', 'exit', 1, '[0.03,0.04,0.05,0.06,0.07,0.08]', 'a long period row only'),
+('rotation', 'hold_days', 'int', 'exit', 1, '[1,2,3,4,5]', 'a long period row only. Sessions held after the entry session, 0 holds to the period end'),
+('rotation', 'stop_loss_pct', 'real', 'exit', 1, '[0,0.02,0.03,0.05,0.07]', 'a long period row only. 0 is no stop');

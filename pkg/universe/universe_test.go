@@ -223,3 +223,88 @@ func TestVerifySymbolHistoryLive(t *testing.T) {
 		t.Errorf("AAPL first trade date %s should be before cutoff %s", res.FirstTradeDate, CutoffDate)
 	}
 }
+
+// Names the classifier used to get wrong: leverage written as "Double" or glued to a
+// word ("2xLeveraged"), "Short-Term" read as a short bet, "Ultra Short" bond funds read
+// as 2x leveraged, and "DoubleLine" read as leverage.
+func TestClassifyLeverageAndDirectionFromNames(t *testing.T) {
+	for _, tc := range []struct {
+		name, lev, dir string
+	}{
+		{"DB Gold Double Short ETN due February 15, 2038", "2x", "inverse"},
+		{"DB Gold Double Long ETN due February 15, 2038", "2x", "long"},
+		{"ETRACS Monthly Pay 2xLeveraged US High Dividend Low Volatility ETN Series B due September 30, 2044", "2x", "long"},
+		{"ETRACS 2xMonthly Pay Leveraged Preferred Stock Index ETN due September 25, 2048", "2x", "long"},
+		{"VIX Short-Term Futures ETF", "none", "long"},
+		{"ProShares VIX Short-Term Futures ETF", "none", "long"},
+		{"ProShares Short VIX Short-Term Futures ETF", "none", "inverse"},
+		{"iShares Short Treasury Bond ETF", "none", "long"},
+		{"iShares Ultra Short-Term Bond ETF", "none", "long"},
+		{"PIMCO Enhanced Short Maturity Active ETF", "none", "long"},
+		{"State Street DoubleLine Total Return Tactical ETF", "none", "long"},
+		{"ProShares Short S&P500", "none", "inverse"},
+		{"ProShares UltraShort QQQ", "2x", "inverse"},
+		{"DoubleLine Ultrashort Income ETF", "none", "long"},
+		{"ProShares Trust UltraShort MSCI Emerging Markets", "2x", "inverse"},
+		{"ProShares Trust II Ultra VIX Short-Term Futures ETF", "2x", "long"},
+		{"Franklin Ultra Short Bond ETF", "none", "long"},
+		{"ProShares Ultra VIX Short Term Futures ETF", "2x", "long"},
+		{"ProShares UltraShort Bloomberg Crude Oil", "2x", "inverse"},
+		{"MicroSectors -3x Short Investment Grade Corporate Bond (LQD) ETNs", "3x", "inverse"},
+		{"Triple Flag Precious Metals Corp. Common Shares", "none", "long"},
+		{"YieldMax U.S. Stocks Target Double Distribution ETF", "none", "long"},
+		{"Ultralife Corporation Common Stock", "none", "long"},
+		{"Innovator U.S. Equity Ultra Buffer ETF - May", "none", "long"},
+		{"ProShares UltraPro Short QQQ", "3x", "inverse"},
+		{"ProShares Ultra QQQ", "2x", "long"},
+		{"Direxion Daily Gold Miners Index Bear 2X Shares", "2x", "inverse"},
+		{"Direxion Daily Small Cap Bull 3X Shares", "3x", "long"},
+		{"VelocityShares Triple Long Crude Oil ETN", "3x", "long"},
+		{"iShares 1-3 Year Treasury Bond ETF", "none", "long"},
+		{"Invesco S&P 500 Equal Weight ETF", "none", "long"},
+	} {
+		_, lev, dir, _ := ClassifyTicker("X", tc.name, "ETF")
+		if lev != tc.lev || dir != tc.dir {
+			t.Errorf("%q: got %s/%s, want %s/%s", tc.name, lev, dir, tc.lev, tc.dir)
+		}
+	}
+}
+
+func TestProSharesShortBondFundsAreInverse(t *testing.T) {
+	_, lev, dir, _ := ClassifyTicker("TBF", "ProShares Short 20+ Year Treasury", "ETF")
+	if lev != "none" || dir != "inverse" {
+		t.Errorf("got %s/%s, want none/inverse", lev, dir)
+	}
+}
+
+func TestUnleveragedETFsOrderAndFilter(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "universe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	etf := func(sym, lev string, active bool) SymbolRecord {
+		return SymbolRecord{Symbol: sym, AssetType: "ETF", IsETF: true, Leverage: lev, Direction: "long", Category: "other", Active: active}
+	}
+	if err := SaveSymbols(db, []SymbolRecord{
+		etf("BBB", "none", true), etf("AAA", "none", true), etf("TQQQ", "3x", true), etf("OLD", "none", false),
+		{Symbol: "AAPL", AssetType: "CS", Leverage: "none", Direction: "long", Category: "common_stock", Active: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := UnleveragedETFs(db)
+	if err != nil || len(got) != 2 || got[0] != "AAA" || got[1] != "BBB" {
+		t.Fatalf("without avg_volume got %v, %v; want [AAA BBB]", got, err)
+	}
+
+	if _, err := db.Exec(`CREATE TABLE avg_volume (symbol TEXT, window_days INT, avg_volume REAL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO avg_volume VALUES ('BBB', 20, 900), ('AAA', 20, 5), ('AAA', 60, 99999)`); err != nil {
+		t.Fatal(err)
+	}
+	got, err = UnleveragedETFs(db)
+	if err != nil || len(got) != 2 || got[0] != "BBB" || got[1] != "AAA" {
+		t.Fatalf("with avg_volume got %v, %v; want most traded first [BBB AAA]", got, err)
+	}
+}
