@@ -258,6 +258,7 @@ It records the gates in `check_overfit_gate`.
 - `id.db` is run 1. `id_N.db` is run N. The latest usable file is the highest N that still validates, not the newest mtime.
 - Shared-account priority is list order. Overlays do not preempt each other.
 - Next-day limits that never trade are absent from `trades` and still present in `signals`.
+- A limit that does not fill reserves no cash in the simulator, so a `pick = all` period row with dozens of limit entries can book more names than a real account could rest orders for. Same-day fills are taken alphabetically and one that costs more than the cash left is skipped without counting as a fill. The live system (`trade_orchestrator/pkg/trigger_limits`) seats the nearest-to-fill limits until the broker refuses one for buying power, then swaps and triggers; see the buying-power note in README.md under the 80% CAGR result. The two orderings and the position count differ, and the gap has not been measured.
 - Daily fetches ignore intraday rows. Downloading `1m` bars does not change a daily backtest until a study queries `timeframe = '1m'` directly (`march_april_voo_gld_uten`, `sp500_lead_lag`).
 - `streak-*` registration also depends on `refdata/strategies.db` (`streak_strategy`). `gridsearch -strategy all` omits that prefix unless `-include-streak`. Scoreboard and backtest include every row.
 
