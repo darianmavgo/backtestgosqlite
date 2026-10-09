@@ -464,8 +464,12 @@ func ExecuteStrategyWithDividends(
 	report, trades, equityCurve := sim.Run(signals, barsBySymbol, scopedDates)
 
 	// 5. Persist the whole run in one transaction.
+	savedCurve := equityCurve
+	if cfg.SkipEquityCurve {
+		savedCurve = nil
+	}
 	payload := storage.RunPayload{
-		Signals: signals, Trades: trades, Equity: equityCurve,
+		Signals: signals, Trades: trades, Equity: savedCurve,
 		Reports: []storage.NamedReport{{StrategyID: strat.ID(), Report: report}},
 	}
 	var bd *totalReturnBreakdown

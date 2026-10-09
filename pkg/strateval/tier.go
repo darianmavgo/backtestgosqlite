@@ -37,6 +37,9 @@ type Metrics struct {
 	WinRate        float64
 	AvgTradePct    float64
 	TotalReturnPct float64
+	// IdleDays of Days sessions had no open position. Days 0 means not recorded.
+	IdleDays int
+	Days     int
 }
 
 // AssignTier classifies a strategy. inAllowlist marks decaying live names as D

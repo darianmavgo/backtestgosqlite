@@ -137,13 +137,13 @@ type StrategyConfig struct {
 	// (at the open when the open is already lower), and is dropped otherwise.
 	// Take-profit and stop are anchored to the limit price, as the live bracket
 	// order is. Off = the legacy model of filling at the signal bar's close.
-	NextDayLimitEntry  bool    `json:"next_day_limit_entry,omitempty"`
+	NextDayLimitEntry bool `json:"next_day_limit_entry,omitempty"`
 	// NextDayOpenEntry enters at the next session's market open: the signal is
 	// known after the close, so a market order sent the next morning fills at
 	// that bar's open whatever the price is (no limit, so it is never dropped
 	// for gapping up). Take-profit and stop are measured from that fill. It wins
 	// over NextDayLimitEntry when both are set.
-	NextDayOpenEntry   bool    `json:"next_day_open_entry,omitempty"`
+	NextDayOpenEntry bool `json:"next_day_open_entry,omitempty"`
 	// EntryLimitPct, when above 0, enters on the signal's own session with a buy
 	// limit at that fraction of the previous session's close (0.9 is 10% under).
 	// The order fills only if the session's low reaches the limit, at the limit or
@@ -154,6 +154,12 @@ type StrategyConfig struct {
 	// profit on that same session, judged on the day's low and high. The stop is
 	// checked before the target because the order of the touches is unknown.
 	SameDayExit bool `json:"same_day_exit,omitempty"`
+	// SkipEquityCurve leaves the daily equity curve out of the saved result (the
+	// trades, signals and performance summary are still saved). The curve is one
+	// row per session and costs more to write than the strategy costs to run, so a
+	// bulk ranking run keeps it only for the strategies worth looking at. It does
+	// not change the simulation or its report.
+	SkipEquityCurve    bool    `json:"-"`
 	PositionCap        int     `json:"position_cap"`           // Max concurrent open positions (e.g. 5)
 	AllocationPct      float64 `json:"allocation_pct"`         // Portfolio equity allocation per trade (e.g. 0.20 for 20%)
 	FixedShares        int     `json:"fixed_shares,omitempty"` // Shares per position if PositionSizing == "fixed_shares"
@@ -178,11 +184,11 @@ type StrategyConfig struct {
 	TradeSymbol     string `json:"trade_symbol,omitempty"`
 	StreakDirection string `json:"streak_direction,omitempty"`
 	Regime          string `json:"regime,omitempty"`
-	
+
 	// Tree-specific parameters substituted in tree_strategy SQL
-	TreeCoilMax  float64 `json:"tree_coil_max,omitempty"`
-	TreeSMAMin   float64 `json:"tree_sma_min,omitempty"`
-	TreeSMAMax   float64 `json:"tree_sma_max,omitempty"`
+	TreeCoilMax float64 `json:"tree_coil_max,omitempty"`
+	TreeSMAMin  float64 `json:"tree_sma_min,omitempty"`
+	TreeSMAMax  float64 `json:"tree_sma_max,omitempty"`
 
 	// SQLParams are extra placeholders a pipeline substitutes: key K replaces
 	// __K__ in its .sql files. RunPipeline adds START_DATE and END_DATE.
@@ -222,6 +228,11 @@ type StrategyConfig struct {
 	// ledger does not open shorts.
 	ShortBorrowAnnual float64 `json:"short_borrow_annual,omitempty"`
 
+	// OneFillPerMonth takes a symbol out of the rotation for the rest of the calendar
+	// month once an entry in it fills: its signals are ignored until the first
+	// session of the next month. A position that cannot be opened (no cash, at the
+	// position cap) is not a fill and does not remove the symbol.
+	OneFillPerMonth bool `json:"one_fill_per_month,omitempty"`
 	// ReentryCooldownDays is the number of trading days to wait after exiting a position before re-entering that symbol.
 	ReentryCooldownDays int `json:"reentry_cooldown_days,omitempty"`
 }

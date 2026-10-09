@@ -98,7 +98,11 @@ CREATE TABLE IF NOT EXISTS markov_strategy (
 -- under) and skips the period if the low never reaches it. take_profit_pct above 0
 -- sells at that gain over the entry, also on the entry session if the high gets there.
 -- hold_days above 0 sells at the close that many sessions after the entry session, if the
--- period has not ended first.
+-- period has not ended first (on a 1d period there is no earlier period-end sale: the hold
+-- window, take profit and stop are the exits). pick = all enters every name of the list each
+-- period, sized at max_weight_pct of equity, instead of ranking. stop_loss_pct is a
+-- fractional offset under the entry. cooldown = month takes a name out of the rotation for
+-- the rest of the calendar month once an entry in it fills.
 CREATE TABLE IF NOT EXISTS rotation_strategy (
 	id               TEXT PRIMARY KEY,
 	name             TEXT NOT NULL,
@@ -118,7 +122,8 @@ CREATE TABLE IF NOT EXISTS rotation_strategy (
 	entry_limit_pct  REAL NOT NULL DEFAULT 0,
 	take_profit_pct  REAL NOT NULL DEFAULT 0,
 	hold_days        INTEGER NOT NULL DEFAULT 0,
-	stop_loss_pct    REAL NOT NULL DEFAULT 0
+	stop_loss_pct    REAL NOT NULL DEFAULT 0,
+	cooldown         TEXT NOT NULL DEFAULT ''
 );
 
 -- Named symbol lists a strategy or a command can take as its basket. list is the
@@ -203,6 +208,11 @@ func upgradeRotation(db *sqlx.DB) error {
 			if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN ` + c + ` REAL NOT NULL DEFAULT 0`); err != nil {
 				return err
 			}
+		}
+	}
+	if !have["cooldown"] {
+		if _, err := db.Exec(`ALTER TABLE rotation_strategy ADD COLUMN cooldown TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -665,6 +675,12 @@ type RotationStrategy struct {
 	TakeProfitPct float64 `db:"take_profit_pct"`
 	HoldDays      int     `db:"hold_days"`
 	StopLossPct   float64 `db:"stop_loss_pct"`
+	Cooldown      string  `db:"cooldown"`
+}
+
+// Selector reads rows: *sqlx.DB and *sqlx.Tx both are one.
+type Selector interface {
+	Select(dest any, query string, args ...any) error
 }
 
 // RotationStrategies returns every rotation_strategy row, ordered by id.
@@ -673,7 +689,7 @@ func RotationStrategies(db *sqlx.DB) ([]RotationStrategy, error) {
 }
 
 // RotationStrategyByID returns the row whose id is exactly id.
-func RotationStrategyByID(db *sqlx.DB, id string) (RotationStrategy, bool, error) {
+func RotationStrategyByID(db Selector, id string) (RotationStrategy, bool, error) {
 	rows, err := rotationStrategiesWhere(db, " WHERE id = ?", id)
 	if err != nil || len(rows) == 0 {
 		return RotationStrategy{}, false, err
@@ -681,12 +697,12 @@ func RotationStrategyByID(db *sqlx.DB, id string) (RotationStrategy, bool, error
 	return rows[0], true, nil
 }
 
-func rotationStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]RotationStrategy, error) {
+func rotationStrategiesWhere(db Selector, where string, args ...any) ([]RotationStrategy, error) {
 	var out []RotationStrategy
 	err := db.Select(&out, `
 		SELECT id, name, symbols, universe_size, top_k, exit_buffer, max_weight_pct,
 		       regime_symbol, regime_sma, allocation_pct, cash_yield, slippage_pct,
-		       period, side, pick, entry_limit_pct, take_profit_pct, hold_days, stop_loss_pct
+		       period, side, pick, entry_limit_pct, take_profit_pct, hold_days, stop_loss_pct, cooldown
 		FROM rotation_strategy`+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
@@ -700,7 +716,7 @@ func rotationStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]Rotation
 // `symbols = 'etf-pre-2021'` means that list's tickers. Any other value is a
 // literal ticker list and is left alone. A database without symbol_lists, or
 // with none, changes nothing.
-func resolveSymbolLists(db *sqlx.DB, rows []RotationStrategy) {
+func resolveSymbolLists(db Selector, rows []RotationStrategy) {
 	var lists []struct {
 		ID   string `db:"symbol_list_id"`
 		List string `db:"list"`

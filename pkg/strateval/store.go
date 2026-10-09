@@ -70,6 +70,18 @@ CREATE INDEX IF NOT EXISTS idx_strategy_evals_run ON strategy_evals(run_id);
 	if err != nil {
 		return err
 	}
+	// Evaluations made before idle days were recorded get the columns, empty (0 of 0 sessions).
+	for _, col := range []string{"is_idle_days", "is_days", "oos_idle_days", "oos_days"} {
+		var have int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('strategy_evals') WHERE name = ?`, col).Scan(&have); err != nil {
+			return err
+		}
+		if have == 0 {
+			if _, err := s.db.Exec(`ALTER TABLE strategy_evals ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+				return err
+			}
+		}
+	}
 	return s.ensureLedger()
 }
 
@@ -85,13 +97,15 @@ INSERT INTO strategy_evals (
   is_start, is_end, oos_start, oos_end,
   is_cagr, is_sharpe, is_max_dd, is_trades, is_win_rate, is_avg_trade_pct, is_total_return_pct,
   oos_cagr, oos_sharpe, oos_max_dd, oos_trades, oos_win_rate, oos_avg_trade_pct, oos_total_return_pct,
-  tier, reasons_json, created_at
-) VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?)`,
+  tier, reasons_json, created_at,
+  is_idle_days, is_days, oos_idle_days, oos_days
+) VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?, ?,?,?,?)`,
 		row.RunID, row.StrategyID, row.ParamsJSON, boolInt(row.Optimized),
 		row.Split.ISStart, row.Split.ISEnd, row.Split.OOSStart, row.Split.OOSEnd,
 		row.IS.CAGR, row.IS.Sharpe, row.IS.MaxDD, row.IS.Trades, row.IS.WinRate, row.IS.AvgTradePct, row.IS.TotalReturnPct,
 		row.OOS.CAGR, row.OOS.Sharpe, row.OOS.MaxDD, row.OOS.Trades, row.OOS.WinRate, row.OOS.AvgTradePct, row.OOS.TotalReturnPct,
 		row.Tier, string(reasons), row.CreatedAt.Format(time.RFC3339),
+		row.IS.IdleDays, row.IS.Days, row.OOS.IdleDays, row.OOS.Days,
 	)
 	if err != nil {
 		return err
@@ -113,7 +127,8 @@ SELECT run_id, strategy_id, params_json, optimized,
   is_start, is_end, oos_start, oos_end,
   is_cagr, is_sharpe, is_max_dd, is_trades, is_win_rate, is_avg_trade_pct, is_total_return_pct,
   oos_cagr, oos_sharpe, oos_max_dd, oos_trades, oos_win_rate, oos_avg_trade_pct, oos_total_return_pct,
-  tier, reasons_json, created_at
+  tier, reasons_json, created_at,
+  is_idle_days, is_days, oos_idle_days, oos_days
 FROM strategy_evals e
 WHERE id IN (
   SELECT MAX(id) FROM strategy_evals`
@@ -144,6 +159,7 @@ WHERE id IN (
 			&r.IS.CAGR, &r.IS.Sharpe, &r.IS.MaxDD, &r.IS.Trades, &r.IS.WinRate, &r.IS.AvgTradePct, &r.IS.TotalReturnPct,
 			&r.OOS.CAGR, &r.OOS.Sharpe, &r.OOS.MaxDD, &r.OOS.Trades, &r.OOS.WinRate, &r.OOS.AvgTradePct, &r.OOS.TotalReturnPct,
 			&r.Tier, &reasons, &created,
+			&r.IS.IdleDays, &r.IS.Days, &r.OOS.IdleDays, &r.OOS.Days,
 		); err != nil {
 			return nil, err
 		}
@@ -190,15 +206,19 @@ func FormatReport(rows []EvalRow, allowlist []string) string {
 		b = append(b, fmt.Sprintf(format, args...)...)
 	}
 	w("# Strategy eval scorecard\n\n")
-	w("| Tier | Strategy | OOS Sharpe | OOS CAGR | OOS DD | OOS Trades | Notes |\n")
-	w("|------|----------|------------|----------|--------|------------|-------|\n")
+	w("| Tier | Strategy | OOS Sharpe | OOS CAGR | OOS DD | OOS Trades | OOS Idle Days | Notes |\n")
+	w("|------|----------|------------|----------|--------|------------|---------------|-------|\n")
 	for _, r := range rows {
 		note := ""
 		if len(r.Reasons) > 0 {
 			note = r.Reasons[0]
 		}
-		w("| %s | `%s` | %.2f | %.1f%% | %.1f%% | %d | %s |\n",
-			r.Tier, r.StrategyID, r.OOS.Sharpe, r.OOS.CAGR*100, r.OOS.MaxDD*100, r.OOS.Trades, note)
+		idle := "-"
+		if r.OOS.Days > 0 {
+			idle = fmt.Sprintf("%d/%d (%.0f%%)", r.OOS.IdleDays, r.OOS.Days, 100*float64(r.OOS.IdleDays)/float64(r.OOS.Days))
+		}
+		w("| %s | `%s` | %.2f | %.1f%% | %.1f%% | %d | %s | %s |\n",
+			r.Tier, r.StrategyID, r.OOS.Sharpe, r.OOS.CAGR*100, r.OOS.MaxDD*100, r.OOS.Trades, idle, note)
 	}
 	w("\n## Allowlist proposal (manual apply — not written)\n\n")
 	if len(add) == 0 && len(demote) == 0 {

@@ -1,5 +1,6 @@
--- For each period, the previous period's best __TOP_K__ returns (worst when __PICK_ORDER__
--- is ASC) among symbols that also trade in the period. Ties go to the lower symbol.
+-- For each period, the previous period's best __PICK_LIMIT__ returns (worst when __PICK_ORDER__
+-- is ASC) among symbols that also trade in the period. Ties go to the lower symbol. A row
+-- that picks every name has a limit above the list size.
 INSERT INTO rp_pick (period, symbol, ret)
 SELECT period, symbol, ret
 FROM (
@@ -14,4 +15,4 @@ FROM (
     JOIN rp_period c ON c.symbol = p.symbol AND c.period = ns.period
     WHERE p.ret IS NOT NULL
 )
-WHERE rk <= __TOP_K__;
+WHERE rk <= __PICK_LIMIT__;

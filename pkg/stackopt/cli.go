@@ -31,6 +31,7 @@ func Main() {
 	flag.IntVar(&cfg.MaxSleeves, "max-sleeves", 12, "Most sleeves in the stack")
 	flag.IntVar(&cfg.Concurrency, "concurrency", 8, "Parallel trials")
 	flag.StringVar(&cfg.OutDir, "out-dir", cfg.OutDir, "Reports root; a new numbered run folder is made inside")
+	flag.BoolVar(&cfg.AllowLeaks, "allow-leaks", false, "keep tree strategies trained past the holdout cutoff (default: drop them; run `train check` first)")
 	flag.StringVar(&cfg.Name, "name", "", "Save the result in the refdata stack table under this name")
 	flag.Parse()
 

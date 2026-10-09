@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,5 +76,43 @@ func TestRunStrategyWritesSummary(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("summary rows = %d", n)
+	}
+}
+
+func TestFoldsKeepIdleDaysAndSummaryTotalsThem(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "wf.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// A fold table made before idle days existed: EnsureSchema must add the columns.
+	if _, err := db.Exec(`CREATE TABLE walk_forward_fold (
+		strategy_id TEXT NOT NULL, fold INTEGER NOT NULL, is_start TEXT NOT NULL, is_end TEXT NOT NULL,
+		oos_start TEXT NOT NULL, oos_end TEXT NOT NULL, is_sharpe REAL NOT NULL, oos_sharpe REAL NOT NULL,
+		is_return_pct REAL NOT NULL, oos_return_pct REAL NOT NULL, is_trades INTEGER NOT NULL, oos_trades INTEGER NOT NULL,
+		is_max_dd REAL NOT NULL, oos_max_dd REAL NOT NULL, trials INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (strategy_id, fold))`); err != nil {
+		t.Fatal(err)
+	}
+	rows := []FoldRow{
+		{StrategyID: "s", Fold: 1, ISStart: "a", ISEnd: "b", OOSStart: "c", OOSEnd: "d", ISIdleDays: 30, ISDays: 100, OOSIdleDays: 10, OOSDays: 50, Trials: 1},
+		{StrategyID: "s", Fold: 2, ISStart: "a", ISEnd: "b", OOSStart: "c", OOSEnd: "d", ISIdleDays: 20, ISDays: 100, OOSIdleDays: 20, OOSDays: 50, Trials: 1},
+	}
+	if err := Save(db, "s", rows); err != nil {
+		t.Fatal(err)
+	}
+	var idle, days int
+	var pct float64
+	if err := db.QueryRow(`SELECT oos_idle_days, oos_days, oos_idle_pct FROM walk_forward_summary WHERE strategy_id = 's'`).Scan(&idle, &days, &pct); err != nil {
+		t.Fatal(err)
+	}
+	if idle != 30 || days != 100 || pct != 0.3 {
+		t.Fatalf("summary idle = %d of %d (%v), want 30 of 100 (0.3)", idle, days, pct)
+	}
+	var isIdle int
+	if err := db.QueryRow(`SELECT is_idle_days FROM walk_forward_fold WHERE fold = 2`).Scan(&isIdle); err != nil || isIdle != 20 {
+		t.Fatalf("fold is_idle_days = %d (%v), want 20", isIdle, err)
+	}
+	if got := FormatRows(rows); !strings.Contains(got, "10/50") {
+		t.Errorf("the fold table should show out-of-sample idle days:\n%s", got)
 	}
 }

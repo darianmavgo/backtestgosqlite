@@ -76,6 +76,9 @@ func (s *Strategy) Description() string {
 
 func (s *Strategy) periodDescription() string {
 	unit := map[string]string{"1d": "day", "1w": "week", "1m": "month", "1q": "quarter", "1y": "calendar year"}[s.Row.Period]
+	if s.Row.Pick == "all" {
+		return s.allDescription(unit)
+	}
 	kind := "winner"
 	if s.Row.Pick == "loser" {
 		kind = "loser"
@@ -94,6 +97,33 @@ func (s *Strategy) periodDescription() string {
 			"Skips a pick that has no inverse ETF in the bar history, or whose inverse did not trade on the entry date.", names, unit, unit)
 	}
 	return fmt.Sprintf("Buys %s of the previous %s and holds it for the new %s.", names, unit, unit)
+}
+
+// allDescription describes a row that enters every name of its list each period.
+func (s *Strategy) allDescription(unit string) string {
+	r := s.Row
+	desc := fmt.Sprintf("Each %s, enters every one of its %d names", unit, len(s.candidates()))
+	if r.EntryLimitPct > 0 {
+		desc += fmt.Sprintf(" with a buy limit at %.0f%% of the previous close that expires unfilled at the close", r.EntryLimitPct*100)
+	}
+	desc += fmt.Sprintf(", each position %.0f%% of portfolio value.", s.weight()*100)
+	var exits []string
+	if r.TakeProfitPct > 0 {
+		exits = append(exits, fmt.Sprintf("take profit %.0f%% over the entry", r.TakeProfitPct*100))
+	}
+	if r.StopLossPct > 0 {
+		exits = append(exits, fmt.Sprintf("stop %.0f%% under it", r.StopLossPct*100))
+	}
+	if r.HoldDays > 0 {
+		exits = append(exits, fmt.Sprintf("sell at the close %d sessions after the entry session", r.HoldDays))
+	}
+	if len(exits) > 0 {
+		desc += " Exits: " + strings.Join(exits, ", ") + "."
+	}
+	if r.Cooldown == "month" {
+		desc += " A name that fills is out of the rotation until the next calendar month."
+	}
+	return desc
 }
 
 // candidates is the row's symbol list, upper case. Validate has already refused an unsafe entry.
@@ -123,6 +153,11 @@ func (s *Strategy) RequiredSymbols() []string {
 // weight is the share of equity in one name: an even split of the sleeve across
 // top_k names, capped at max_weight_pct.
 func (s *Strategy) weight() float64 {
+	if s.periodic() && s.Row.Pick == "all" {
+		// Every name is entered, so the sleeve is not split: each position is its own
+		// share of equity, never more than max_weight_pct.
+		return min(s.Row.AllocationPct, s.Row.MaxWeightPct)
+	}
 	w := s.Row.AllocationPct / float64(max(s.Row.TopK, 1))
 	if s.Row.MaxWeightPct > 0 && w > s.Row.MaxWeightPct {
 		w = s.Row.MaxWeightPct
@@ -139,12 +174,13 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 			TargetPct:         999.0,                                                                // never exit via profit target
 			StopLossPct:       0.0,                                                                  // 0 disables the stop loss
 			HoldingWindow:     map[bool]int{true: s.Row.HoldDays, false: 99999}[s.Row.HoldDays > 0], // else the period's last session is the exit
-			PositionCap:       max(s.Row.TopK, 1),
+			PositionCap:       s.positionCap(),
 			AllocationPct:     s.Row.AllocationPct,
 			CashYieldAnnual:   s.Row.CashYield,
 			SlippagePct:       s.Row.SlippagePct,
 			ShortBorrowAnnual: map[bool]float64{true: annualShortBorrow}[s.Row.Side == "short"],
 			EntryLimitPct:     s.Row.EntryLimitPct,
+			OneFillPerMonth:   s.Row.Cooldown == "month",
 		}
 		if s.Row.TakeProfitPct > 0 {
 			cfg.TargetPct = 0 // the simulator prefers TargetPct when it is above 1
@@ -156,6 +192,9 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		// A limit order fills during the entry session, so its stop or target can be
 		// reached that same session. A close entry has no session left to judge.
 		cfg.SameDayExit = s.Row.EntryLimitPct > 0
+		if s.Row.Pick == "all" {
+			cfg.AllocationPct = s.weight() // each name is sized alone, not as a share of top_k
+		}
 		return cfg
 	}
 	return strategy.StrategyConfig{
@@ -172,6 +211,15 @@ func (s *Strategy) DefaultConfig() strategy.StrategyConfig {
 		SlippagePct:        s.Row.SlippagePct,
 		CommissionPerShare: 0.005,
 	}
+}
+
+// positionCap is how many names are held at once: top_k, or with pick = all as many
+// as the list has (the only limit is each position's size).
+func (s *Strategy) positionCap() int {
+	if s.Row.Pick == "all" {
+		return max(len(s.candidates()), 1)
+	}
+	return max(s.Row.TopK, 1)
 }
 
 func (s *Strategy) pipelineDir() string {
@@ -210,8 +258,12 @@ func (s *Strategy) Validate() error {
 		}
 		switch s.Row.Pick {
 		case "winner", "loser":
+		case "all":
+			if len(s.candidates()) == 0 {
+				return fmt.Errorf("pick all needs a list of symbols")
+			}
 		default:
-			return fmt.Errorf("pick %q is not winner or loser", s.Row.Pick)
+			return fmt.Errorf("pick %q is not winner, loser or all", s.Row.Pick)
 		}
 	} else if s.Row.Side != "" && s.Row.Side != "long" {
 		return fmt.Errorf("side %q needs a period: only a period row can be short or inverse", s.Row.Side)
@@ -219,10 +271,15 @@ func (s *Strategy) Validate() error {
 	if r.HoldDays < 0 {
 		return fmt.Errorf("hold_days must not be negative, got %d", r.HoldDays)
 	}
-	if r.EntryLimitPct != 0 || r.TakeProfitPct != 0 || r.StopLossPct != 0 || r.HoldDays != 0 {
+	switch r.Cooldown {
+	case "", "month":
+	default:
+		return fmt.Errorf("cooldown %q is not empty or month", r.Cooldown)
+	}
+	if r.EntryLimitPct != 0 || r.TakeProfitPct != 0 || r.StopLossPct != 0 || r.HoldDays != 0 || r.Cooldown != "" {
 		switch {
 		case s.Row.Period == "" || s.Row.Side != "long":
-			return fmt.Errorf("entry_limit_pct, take_profit_pct, stop_loss_pct and hold_days need a long period row")
+			return fmt.Errorf("entry_limit_pct, take_profit_pct, stop_loss_pct, hold_days and cooldown need a long period row")
 		case r.StopLossPct < 0 || r.StopLossPct >= 1:
 			return fmt.Errorf("stop_loss_pct must be in [0, 1), got %v", r.StopLossPct)
 		case r.EntryLimitPct < 0 || r.EntryLimitPct > 1:
@@ -289,11 +346,24 @@ func (s *Strategy) periodSQLParams() map[string]string {
 		"USE_LIST":   useList,
 		"SYMBOLS":    strings.Join(quoted, ","),
 		"TOP_K":      strconv.Itoa(max(s.Row.TopK, 1)),
-		"SIDE":       s.Row.Side,
-		"PICK_ORDER": map[bool]string{true: "ASC", false: "DESC"}[s.Row.Pick == "loser"],
-		"PERIOD_KEY": Periods[s.Row.Period],
-		"ALLOC":      strconv.FormatFloat(s.weight(), 'f', 6, 64),
+		"PICK_LIMIT": strconv.Itoa(s.pickLimit()),
+		// A 1d row with a hold window has no earlier period-end sale: its next session
+		// would end every hold after one session.
+		"PERIOD_EXIT": map[bool]string{true: "0", false: "1"}[s.Row.Period == "1d" && s.Row.HoldDays > 0],
+		"SIDE":        s.Row.Side,
+		"PICK_ORDER":  map[bool]string{true: "ASC", false: "DESC"}[s.Row.Pick == "loser"],
+		"PERIOD_KEY":  Periods[s.Row.Period],
+		"ALLOC":       strconv.FormatFloat(s.weight(), 'f', 6, 64),
 	}
+}
+
+// pickLimit is how many names the pick stage keeps each period: top_k, or every
+// name of the list.
+func (s *Strategy) pickLimit() int {
+	if s.Row.Pick == "all" {
+		return 1 << 30
+	}
+	return max(s.Row.TopK, 1)
 }
 
 // PeriodVariant returns the strategy over the same row with its period replaced

@@ -65,6 +65,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		return code
 	}
+	if args[0] == "check" {
+		return runCheck(args[1:], stdout, stderr)
+	}
 	f, ok := families[args[0]]
 	if !ok {
 		fmt.Fprintf(stderr, "train: unknown family %q\n", args[0])
@@ -89,5 +92,6 @@ func usage(w io.Writer) {
 	for _, n := range sortedFamilies() {
 		fmt.Fprintf(w, "  %-10s %s\n", n, families[n].note)
 	}
+	fmt.Fprintf(w, "  %-10s %s\n", "check", "lists models trained on bars after the holdout cutoff; -fix retrains them")
 	fmt.Fprintln(w, "markov_hmm strategies read hmm_regime.db, written by `study hmm_regime`.")
 }

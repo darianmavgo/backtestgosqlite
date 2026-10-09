@@ -3,6 +3,9 @@
 // the performance_summary tables of the result DBs in the reports folder (the
 // top-level <id>.db files and the numbered pipeline run folders; oos/ is not
 // read). "Most recent" is the row with the latest created_at per strategy id.
+//
+// Subcommand `untrainable` prunes tree strategies and models whose signal symbol
+// cannot be trained on the bars before the holdout cutoff (see untrainable.go).
 package prune_losers
 
 import (
@@ -50,6 +53,9 @@ type result struct {
 
 // Main parses flags and runs.
 func Main() {
+	if len(os.Args) > 1 && os.Args[1] == "untrainable" {
+		os.Exit(runUntrainable(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	cfg := Config{Out: os.Stdout}
 	flag.StringVar(&cfg.StrategiesDB, "db", appenv.RefDB(), "strategies database to prune")
 	flag.StringVar(&cfg.ReportsDir, "reports", appenv.Reports(), "reports folder holding the result DBs")

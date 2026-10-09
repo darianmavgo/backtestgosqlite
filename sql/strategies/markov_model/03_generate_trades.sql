@@ -1,3 +1,6 @@
+-- CROSS JOIN pins the loop order: signal rows outside, one index lookup per row in
+-- the market bars. A plain JOIN lets SQLite loop the other way (no statistics
+-- here) and re-scan the slice for every bar, which cost 90 ms a strategy.
 INSERT INTO markov_model_signals (idx, symbol, date, open, high, low, close, volume, buylimit, entry, direction, regime, hold_days_override, take_profit, stop_loss, allocation_pct_override)
 SELECT
     coalesce(t.idx, t.rowid, 0) AS idx,
@@ -26,7 +29,7 @@ SELECT
         ELSE 0.05
     END AS allocation_pct_override
 FROM markov_model_predictions p
-JOIN market.backtest_start t ON t.Date = p.Date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
+CROSS JOIN market.backtest_start t ON t.Date = p.Date AND t.symbol = '__TRADE_SYMBOL__' AND length(t.Date) = 10
 WHERE p.symbol = '__SYMBOL__' 
   AND CASE 
         WHEN p.current_state = 1 THEN 'bull'

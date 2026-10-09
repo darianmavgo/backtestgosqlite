@@ -367,3 +367,104 @@ func TestLoserRowBuysThePreviousPeriodsWorstName(t *testing.T) {
 		t.Error("pick \"best\" should not validate")
 	}
 }
+
+// allRow is a pick = all row over the test symbols: every name each session, a
+// 90% limit, 5% target, 10% stop, 3 session hold, 10% positions, once a month.
+func allRow() refdb.RotationStrategy {
+	return refdb.RotationStrategy{
+		ID: "rot-all", Name: "all", Symbols: strings.Join(testSymbols, ","), TopK: len(testSymbols), UniverseSize: len(testSymbols),
+		MaxWeightPct: 0.10, RegimeSymbol: "QQQ", AllocationPct: 0.10, SlippagePct: 0.0005,
+		Period: "1d", Side: "long", Pick: "all",
+		EntryLimitPct: 0.9, TakeProfitPct: 0.05, HoldDays: 3, StopLossPct: 0.10, Cooldown: "month",
+	}
+}
+
+func TestPickAllConfigIsPositionSizedLimitRow(t *testing.T) {
+	s := &Strategy{Row: allRow()}
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg := s.DefaultConfig()
+	if cfg.PositionCap != len(testSymbols) || cfg.AllocationPct != 0.10 || cfg.EntryLimitPct != 0.9 || !cfg.SameDayExit ||
+		cfg.TakeProfitPct != 0.05 || cfg.HoldingWindow != 3 || !cfg.OneFillPerMonth {
+		t.Fatalf("config %+v", cfg)
+	}
+	if got := cfg.StopLossPct; got < 0.8999 || got > 0.9001 {
+		t.Fatalf("stop multiplier %v, want 0.9 for a 10%% stop", got)
+	}
+}
+
+func TestPickAllValidate(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		edit func(*refdb.RotationStrategy)
+		ok   bool
+	}{
+		{"as seeded", func(*refdb.RotationStrategy) {}, true},
+		{"no list", func(r *refdb.RotationStrategy) { r.Symbols = "" }, false},
+		{"no period", func(r *refdb.RotationStrategy) { r.Period = "" }, false},
+		{"bad cooldown", func(r *refdb.RotationStrategy) { r.Cooldown = "week" }, false},
+		{"cooldown on a short row", func(r *refdb.RotationStrategy) { r.Side = "short" }, false},
+		{"unknown pick", func(r *refdb.RotationStrategy) { r.Pick = "most" }, false},
+	} {
+		r := allRow()
+		c.edit(&r)
+		if err := (&Strategy{Row: r}).Validate(); (err == nil) != c.ok {
+			t.Errorf("%s: err %v, want ok=%v", c.name, err, c.ok)
+		}
+	}
+}
+
+// Every name gets an entry every session after the first, and a row with a hold
+// window writes no period-end exit (the hold window, target and stop are the exits).
+func TestPickAllEntersEveryNameEverySession(t *testing.T) {
+	market, dates, bars := gappedMarketDB(t)
+	signalsOf := func(r refdb.RotationStrategy) []models.Signal {
+		s := &Strategy{Row: r}
+		if err := s.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		s.SetDatabases(market, filepath.Join(t.TempDir(), "calc.db"))
+		return s.GenerateSignals(bars)
+	}
+	run := func(r refdb.RotationStrategy) map[string]map[string]int {
+		got := map[string]map[string]int{}
+		for _, sig := range signalsOf(r) {
+			if got[sig.Date] == nil {
+				got[sig.Date] = map[string]int{}
+			}
+			got[sig.Date][sig.Symbol] = sig.Entry
+		}
+		return got
+	}
+
+	got := run(allRow())
+	for i, d := range dates {
+		if i == 0 {
+			if len(got[d]) != 0 {
+				t.Errorf("%s: no previous session to rank on, got %v", d, got[d])
+			}
+			continue
+		}
+		if len(got[d]) != len(testSymbols) {
+			t.Errorf("%s: %d entries, want all %d names: %v", d, len(got[d]), len(testSymbols), got[d])
+		}
+		for sym, entry := range got[d] {
+			if entry != 1 {
+				t.Errorf("%s %s: entry %d, want only entries", d, sym, entry)
+			}
+		}
+	}
+
+	noHold := allRow()
+	noHold.HoldDays = 0
+	exits := 0
+	for _, sig := range signalsOf(noHold) {
+		if sig.Entry < 0 {
+			exits++
+		}
+	}
+	if exits == 0 {
+		t.Error("a 1d row with no hold window still ends each period with a sale at the next session")
+	}
+}

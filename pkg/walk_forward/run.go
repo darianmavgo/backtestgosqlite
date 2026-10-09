@@ -30,7 +30,13 @@ type FoldRow struct {
 	OOSTrades    int
 	ISMaxDD      float64
 	OOSMaxDD     float64
-	Trials       int
+	// Idle days are the sessions with no open position, out of the sessions of the
+	// window. Zero sessions means the window was empty.
+	ISIdleDays  int
+	ISDays      int
+	OOSIdleDays int
+	OOSDays     int
+	Trials      int
 }
 
 // Options controls one walk-forward run. Zero months fall back to 24/6/6.
@@ -98,6 +104,8 @@ func RunStrategy(ctx context.Context, strat strategy.Strategy, bars map[string][
 			ISReturnPct: isRep.TotalReturnPct, OOSReturnPct: oosRep.TotalReturnPct,
 			ISTrades: isRep.TotalTrades, OOSTrades: oosRep.TotalTrades,
 			ISMaxDD: isRep.MaxDrawdownPct, OOSMaxDD: oosRep.MaxDrawdownPct,
+			ISIdleDays: isRep.IdleDays, ISDays: isRep.TotalTradingDays,
+			OOSIdleDays: oosRep.IdleDays, OOSDays: oosRep.TotalTradingDays,
 			Trials: trials,
 		})
 	}
@@ -164,9 +172,29 @@ CREATE TABLE IF NOT EXISTS walk_forward_fold (
 	is_max_dd REAL NOT NULL,
 	oos_max_dd REAL NOT NULL,
 	trials INTEGER NOT NULL DEFAULT 1,
+	is_idle_days INTEGER NOT NULL DEFAULT 0,
+	is_days INTEGER NOT NULL DEFAULT 0,
+	oos_idle_days INTEGER NOT NULL DEFAULT 0,
+	oos_days INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (strategy_id, fold)
 )`)
-	return err
+	if err != nil {
+		return err
+	}
+	// A fold table made before idle days existed gets the columns; the folds already in
+	// it read as 0 of 0 sessions until the strategy is run again.
+	for _, col := range []string{"is_idle_days", "is_days", "oos_idle_days", "oos_days"} {
+		var have int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('walk_forward_fold') WHERE name = ?`, col).Scan(&have); err != nil {
+			return err
+		}
+		if have == 0 {
+			if _, err := db.Exec(`ALTER TABLE walk_forward_fold ADD COLUMN ` + col + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Save replaces one strategy's folds and rebuilds walk_forward_summary.
@@ -186,11 +214,13 @@ func Save(db *sql.DB, strategyID string, rows []FoldRow) error {
 		if _, err := tx.Exec(`INSERT INTO walk_forward_fold (
 			strategy_id, fold, is_start, is_end, oos_start, oos_end,
 			is_sharpe, oos_sharpe, is_return_pct, oos_return_pct,
-			is_trades, oos_trades, is_max_dd, oos_max_dd, trials)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			is_trades, oos_trades, is_max_dd, oos_max_dd, trials,
+			is_idle_days, is_days, oos_idle_days, oos_days)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			r.StrategyID, r.Fold, r.ISStart, r.ISEnd, r.OOSStart, r.OOSEnd,
 			r.ISSharpe, r.OOSSharpe, r.ISReturnPct, r.OOSReturnPct,
-			r.ISTrades, r.OOSTrades, r.ISMaxDD, r.OOSMaxDD, r.Trials); err != nil {
+			r.ISTrades, r.OOSTrades, r.ISMaxDD, r.OOSMaxDD, r.Trials,
+			r.ISIdleDays, r.ISDays, r.OOSIdleDays, r.OOSDays); err != nil {
 			return err
 		}
 	}
@@ -213,12 +243,12 @@ func Summarize(db *sql.DB) error {
 // FormatRows renders one strategy's folds for the CLI.
 func FormatRows(rows []FoldRow) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-6s %-12s %-12s %8s %8s %8s %8s %6s %6s\n",
-		"fold", "oos_start", "oos_end", "is_shp", "oos_shp", "is_ret", "oos_ret", "is_n", "oos_n")
+	fmt.Fprintf(&b, "%-6s %-12s %-12s %8s %8s %8s %8s %6s %6s %9s\n",
+		"fold", "oos_start", "oos_end", "is_shp", "oos_shp", "is_ret", "oos_ret", "is_n", "oos_n", "oos_idle")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "%-6d %-12s %-12s %8.2f %8.2f %7.1f%% %7.1f%% %6d %6d\n",
+		fmt.Fprintf(&b, "%-6d %-12s %-12s %8.2f %8.2f %7.1f%% %7.1f%% %6d %6d %4d/%-4d\n",
 			r.Fold, r.OOSStart, r.OOSEnd, r.ISSharpe, r.OOSSharpe,
-			r.ISReturnPct*100, r.OOSReturnPct*100, r.ISTrades, r.OOSTrades)
+			r.ISReturnPct*100, r.OOSReturnPct*100, r.ISTrades, r.OOSTrades, r.OOSIdleDays, r.OOSDays)
 	}
 	return b.String()
 }

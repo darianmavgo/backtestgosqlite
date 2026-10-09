@@ -283,8 +283,8 @@ func runEval(conf Config) error {
 			log.Printf("persist %s: %v", s.ID(), err)
 		}
 		rows = append(rows, res.Row)
-		fmt.Printf("  tier=%s oos_sharpe=%.2f oos_trades=%d oos_cagr=%.1f%%\n",
-			res.Row.Tier, res.Row.OOS.Sharpe, res.Row.OOS.Trades, res.Row.OOS.CAGR*100)
+		fmt.Printf("  tier=%s oos_sharpe=%.2f oos_trades=%d oos_cagr=%.1f%% oos_idle_days=%d/%d\n",
+			res.Row.Tier, res.Row.OOS.Sharpe, res.Row.OOS.Trades, res.Row.OOS.CAGR*100, res.Row.OOS.IdleDays, res.Row.OOS.Days)
 	}
 
 	if conf.SyncDeployed {

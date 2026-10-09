@@ -2,6 +2,7 @@ package strateval
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -138,5 +139,32 @@ func TestSyncAllowlistAndStatus(t *testing.T) {
 	}
 	if retired < 1 {
 		t.Fatalf("expected retirements, got %d", retired)
+	}
+}
+
+func TestIdleDaysAreStoredAndReported(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "idle.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	row := EvalRow{
+		RunID: "r1", StrategyID: "idle_a", ParamsJSON: "{}",
+		Split: Split{ISStart: "a", ISEnd: "b", OOSStart: "c", OOSEnd: "d"},
+		IS:    Metrics{Sharpe: 1, IdleDays: 600, Days: 1000}, OOS: Metrics{Sharpe: 0.8, Trades: 40, IdleDays: 135, Days: 250},
+		Tier: "A", CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Insert(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LatestByStrategy("r1")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got=%d err=%v", len(got), err)
+	}
+	if got[0].IS.IdleDays != 600 || got[0].IS.Days != 1000 || got[0].OOS.IdleDays != 135 || got[0].OOS.Days != 250 {
+		t.Fatalf("idle days did not round trip: IS %+v OOS %+v", got[0].IS, got[0].OOS)
+	}
+	if out := FormatReport(got, nil); !strings.Contains(out, "135/250 (54%)") {
+		t.Errorf("scorecard should show out-of-sample idle days:\n%s", out)
 	}
 }

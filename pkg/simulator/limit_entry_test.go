@@ -90,3 +90,55 @@ func TestNoSameDayExitWhenTheHighFallsShortOrTheFlagIsOff(t *testing.T) {
 		}
 	}
 }
+
+func TestOneFillPerMonthTakesTheSymbolOutUntilNextMonth(t *testing.T) {
+	dates := []string{"2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02"}
+	// Every session trades down to the 90 limit (the previous close is always 100).
+	bars := day("AAA", dates, [4]float64{100, 100, 85, 100}, [4]float64{100, 100, 85, 100}, [4]float64{100, 100, 85, 100}, [4]float64{100, 100, 85, 100}, [4]float64{100, 100, 85, 100})
+	var signals []models.Signal
+	for _, d := range dates {
+		signals = append(signals, buy(d))
+	}
+	cfg := func(oneFill bool) strategy.StrategyConfig {
+		return strategy.StrategyConfig{
+			AllocationPct: 0.1, PositionCap: 10, HoldingWindow: 1, PositionSizing: "fixed_pct",
+			EntryLimitPct: 0.9, OneFillPerMonth: oneFill,
+		}
+	}
+	entries := func(oneFill bool) []string {
+		sim := NewPortfolioSimulator(cfg(oneFill), 100000)
+		_, trades, _ := sim.Run(signals, bars, dates)
+		var got []string
+		for _, tr := range trades {
+			got = append(got, tr.EntryDate)
+		}
+		return got
+	}
+	if got := entries(false); len(got) != 4 {
+		t.Fatalf("without the flag every session after the first fills: got %v", got)
+	}
+	got := entries(true)
+	if len(got) != 2 || got[0] != "2026-03-30" || got[1] != "2026-04-01" {
+		t.Fatalf("want one fill in March (03-30) and one in April (04-01), got %v", got)
+	}
+}
+
+func TestOneFillPerMonthIgnoresAnOrderThatCouldNotBeBooked(t *testing.T) {
+	dates := []string{"2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"}
+	bars := day("AAA", dates, [4]float64{100, 100, 100, 100}, [4]float64{100, 100, 85, 100}, [4]float64{100, 100, 85, 100}, [4]float64{100, 100, 85, 100})
+	cfg := strategy.StrategyConfig{
+		AllocationPct: 0.1, PositionCap: 10, HoldingWindow: 1, PositionSizing: "fixed_pct",
+		EntryLimitPct: 0.9, OneFillPerMonth: true,
+	}
+	// No cash on 03-03: the order cannot be booked, so AAA is still in the rotation.
+	sim := NewPortfolioSimulator(cfg, 100000)
+	sim.Cash = 0
+	signals := []models.Signal{buy("2026-03-03"), buy("2026-03-04")}
+	sim.Run(signals, bars, dates)
+	if len(sim.Positions) != 0 || sim.Cash != 0 {
+		t.Fatalf("with no cash nothing can be booked, positions %v cash %v", sim.Positions, sim.Cash)
+	}
+	if got := sim.filledMonth["AAA"]; got != "" {
+		t.Fatalf("an unbooked order marked AAA as filled in %q", got)
+	}
+}

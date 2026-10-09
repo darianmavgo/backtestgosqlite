@@ -64,6 +64,10 @@ The search that produced the current numbers, in order:
 4. `backtest stack` over the survivors for several primaries and `-alloc` sizes.
 5. Re-run the frozen stacks on the held-out year with `-start`.
 
+Shortcut for steps 4 and 5: `./bin/stackopt -candidates-file ids.txt -max-dd 0.10` picks sleeves one at a time by the stack's own CAGR while the stack's max drawdown stays under `-max-dd`, selecting on data before the holdout (`-holdout-months`, default 12), then runs the held-out months once. It writes `<run>/stack.db` and `<run>/oos/stack.db`; `-name "My Stack"` saves the result in the `stack` table. Other flags: `-alloc`, `-capital`, `-min-gain`, `-max-sleeves`, `-start`, `-concurrency`, `-out-dir`. It drops tree strategies listed by `train check` unless `-allow-leaks` is given.
+
+`./bin/train check` lists models trained on bars after the holdout cutoff (today: trees; markov is walk-forward by construction) and saves them to `training_leak` in `data/reports/training_leaks.db`. `-fix` retrains each through the cutoff; a symbol without enough pre-cutoff history stays on the list.
+
 Every `backtest` and `backtest stack` run now does step 5 itself (see the holdout note under `backtest`). Result to date: no stack reached 79% CAGR with drawdown under 6%. Liquid stacks held a Calmar of about 4 to 8 in-sample and about 4.5 on the holdout. The benchmark to beat is in [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md).
 
 ## Create and polish a strategy: GOOGL walkthrough
@@ -371,9 +375,12 @@ Backtest every registered strategy that lacks a usable result, then rank them.
 ./bin/scoreboard status
 ./bin/scoreboard -force -strategy streak-googl-down3,googl_tree   # compare only these (ids, a family name, or all)
 ./bin/scoreboard compile -strategy streak-googl-down3,googl_tree
+./bin/scoreboard -detail 100   # faster bulk run: daily equity curves only for the 100 best by CAGR
 ```
 
 `-strategy` takes comma-separated ids or a family name (`streak`, `hold`, `tree`, `markov`) and limits the backtests, the comparison table and `scoreboard.db` to those strategies. With a subcommand, put it after the subcommand. `compile` only reads result DBs. `status` reports whether every registered strategy has a usable result and does not write `scoreboard.db`.
+
+`-detail N` (default `-1`: every strategy saves its daily equity curve) saves the curve of only the N best strategies of the run by CAGR, after the bulk pass; the others still save trades, signals and the performance summary, so the ranking is the same. The curve is one row per session, and writing it is the one step of a bulk run that cannot run in parallel (one writer per result database), so `-detail 100` cuts the wall time of a large run noticeably. A strategy without a saved curve can be rerun with `backtest -strategy <id>`.
 
 ---
 
@@ -581,6 +588,28 @@ Print every strategy that has its own `sql/strategies` pipeline, then a row coun
 ```bash
 ./bin/strategy
 ```
+
+### strategy derive
+
+Add a rotation strategy that is a copy of an existing one with the parameter set of a sweep result. The parameter set is the label `gridsearch` prints, alone or inside the whole result line.
+
+**Writes:** one new row in `refdata/strategies.db` table `rotation_strategy`.
+
+```bash
+./bin/strategy derive -from rotation-2x-sector-pairs-daily-limit90 \
+  -id rotation-2x-sector-pairs-daily-limit95-tp3-sl3 -name "2x Sector Pairs Daily 95% Limit TP3 SL3" \
+  "#1  Period-1d/Limit-95%/Hold-2d/TP+3%/SL-3%   Profit=+$258505.67  CAGR=37.73%"
+```
+
+| Flag | Default |
+|---|---|
+| `-from` | required: the rotation strategy id to copy |
+| `-params` | the parameter set, or bare arguments after the flags |
+| `-id` | the source id without its `-limit..` suffix, then `-limit95-tp3-sl3-hold2` (and the period when it is not `1d`) |
+| `-name` | the source name with the parameter set |
+| `-ref` | `refdata/strategies.db` |
+
+The copy sets the period, buy limit, hold days, take profit and stop from the label and keeps every other column, the symbol list by its `symbol_lists` id included. The label holds whole percents (the sweep prints `%.0f`). An id that exists, an unknown source, or a parameter set the row cannot run (a stop of 100%) is refused and writes nothing. The command prints the `backtest` line to run it.
 
 ### strategy export
 

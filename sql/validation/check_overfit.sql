@@ -10,6 +10,8 @@ SELECT
 	s.oos_trades,
 	s.oos_positive_folds,
 	s.trials,
+	COALESCE(s.oos_idle_days, 0) AS oos_idle_days,
+	COALESCE(s.oos_days, 0) AS oos_days,
 	CASE
 		WHEN s.oos_trades < g.min_oos_trades THEN 'INSUFFICIENT'
 		WHEN s.trials >= g.trial_cutoff AND s.is_sharpe > 0.5 AND s.oos_sharpe < s.is_sharpe * g.decay THEN 'CURVE_FIT'

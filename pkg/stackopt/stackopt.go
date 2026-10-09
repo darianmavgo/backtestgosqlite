@@ -39,6 +39,8 @@ type Config struct {
 	MaxSleeves    int
 	Concurrency   int
 	OutDir        string    // reports root; a new numbered run folder is made inside
+	AllowLeaks    bool      // keep tree strategies whose model was trained past the holdout cutoff (see `train check`)
+	LeakReport    string    // training_leaks.db from `train check`; empty = appenv.ReportFile("training_leaks.db")
 	Name          string    // when set, the result is saved to the refdata stack table under this name
 	Out           io.Writer // progress; nil discards
 }
@@ -114,6 +116,16 @@ func Run(cfg Config) (*Result, error) {
 	cfg.norm()
 	if cfg.DB == "" || len(cfg.Candidates) == 0 {
 		return nil, fmt.Errorf("stackopt: DB and at least one candidate are required")
+	}
+	if !cfg.AllowLeaks {
+		kept, dropped, err := dropLeaked(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if dropped > 0 {
+			fmt.Fprintf(cfg.Out, "stackopt: dropped %d tree candidates trained past the holdout cutoff (train check)\n", dropped)
+		}
+		cfg.Candidates = kept
 	}
 	var strats []strategy.Strategy
 	for _, id := range cfg.Candidates {
@@ -370,4 +382,44 @@ func nextDay(d string) string {
 		return d
 	}
 	return t.AddDate(0, 0, 1).Format("2006-01-02")
+}
+
+// dropLeaked removes tree candidates whose signal symbol is listed in
+// training_leak. A missing report is an error: run `train check` first.
+func dropLeaked(cfg Config) ([]string, int, error) {
+	path := cfg.LeakReport
+	if path == "" {
+		path = appenv.ReportFile("training_leaks.db")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, 0, fmt.Errorf("stackopt: %s not found: run `train check` first, or pass -allow-leaks", path)
+	}
+	ldb, err := storage.OpenSQLite(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer ldb.Close()
+	var syms []string
+	if err := ldb.Select(&syms, "SELECT symbol FROM training_leak WHERE family = 'tree'"); err != nil {
+		return nil, 0, fmt.Errorf("stackopt: read %s: %w", path, err)
+	}
+	leaked := map[string]bool{}
+	for _, s := range syms {
+		leaked[strings.ToUpper(s)] = true
+	}
+	rdb, err := refdb.Open(refdb.DefaultPath)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rdb.Close()
+	var kept []string
+	dropped := 0
+	for _, id := range cfg.Candidates {
+		if row, ok, _ := refdb.TreeStrategyByID(rdb, strings.TrimSpace(id)); ok && leaked[strings.ToUpper(row.SignalSymbol)] {
+			dropped++
+			continue
+		}
+		kept = append(kept, id)
+	}
+	return kept, dropped, nil
 }

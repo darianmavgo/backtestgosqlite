@@ -81,8 +81,9 @@ INSERT OR REPLACE INTO strategy_family_param (family, param, kind, role, gridsea
 ('rotation', 'slippage_pct', 'real', 'cost', 0, NULL, 'a cost assumption, not a strategy parameter'),
 ('rotation', 'period', 'text', 'entry', 1, '["1d","1w","1m","1q","1y"]', NULL),
 ('rotation', 'side', 'text', 'entry', 0, NULL, 'long, short and inverse are different trades, so they are separate rows'),
-('rotation', 'pick', 'text', 'entry', 0, NULL, 'winner and loser are opposite rules, so they are separate rows'),
+('rotation', 'pick', 'text', 'entry', 0, NULL, 'winner, loser and all are different rules, so they are separate rows'),
 ('rotation', 'entry_limit_pct', 'real', 'entry', 1, '[1.0,0.97,0.95,0.9]', 'a long period row only. 1.0 buys at the previous close, 0.9 at 10% under it'),
 ('rotation', 'take_profit_pct', 'real', 'exit', 1, '[0.03,0.04,0.05,0.06,0.07,0.08]', 'a long period row only'),
 ('rotation', 'hold_days', 'int', 'exit', 1, '[1,2,3,4,5]', 'a long period row only. Sessions held after the entry session, 0 holds to the period end'),
-('rotation', 'stop_loss_pct', 'real', 'exit', 1, '[0,0.02,0.03,0.05,0.07]', 'a long period row only. 0 is no stop');
+('rotation', 'stop_loss_pct', 'real', 'exit', 1, '[0,0.02,0.03,0.05,0.07]', 'a long period row only. 0 is no stop'),
+('rotation', 'cooldown', 'text', 'exit', 0, NULL, 'a long period row only. month takes a name out of the rotation after a fill until the next calendar month. It defines the strategy');

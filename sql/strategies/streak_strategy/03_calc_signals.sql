@@ -1,3 +1,6 @@
+-- CROSS JOIN pins the loop order: signal rows outside, one index lookup per row in
+-- the market bars. A plain JOIN lets SQLite loop the other way (no statistics
+-- here) and re-scan the slice for every bar, which cost 90 ms a strategy.
 -- Buy the trade symbol when the watch symbol's streak is long enough.
 -- __STREAK_COL__ is down_streak or up_streak. __REGIME_PREDICATE__ is
 -- applied to the watch bar (alias v), not the trade bar.
@@ -26,7 +29,7 @@ SELECT
     0.0 AS take_profit,
     0.0 AS stop_loss
 FROM streak_strategy_slice v
-JOIN backtest_start t
+CROSS JOIN backtest_start t
   ON t.Date = v.date
  AND t.symbol = '__TRADE_SYMBOL__'
  AND length(t.Date) = 10

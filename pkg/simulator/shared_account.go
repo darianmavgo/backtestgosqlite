@@ -158,13 +158,7 @@ func (s *SharedAccountSimulator) Run(
 	}
 
 	// Index bars by symbol and date
-	barsBySymbolDate := make(map[string]map[string]models.Bar)
-	for sym, bars := range barsBySymbol {
-		barsBySymbolDate[sym] = make(map[string]models.Bar)
-		for _, b := range bars {
-			barsBySymbolDate[sym][b.Date] = b
-		}
-	}
+	barsBySymbolDate := indexBarsByDate(barsBySymbol, signals, s.defaultAsset)
 
 	peakEquity := s.InitialCapital
 

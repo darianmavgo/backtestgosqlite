@@ -1,3 +1,6 @@
+-- CROSS JOIN pins the loop order: signal rows outside, one index lookup per row in
+-- the market bars. A plain JOIN lets SQLite loop the other way (no statistics
+-- here) and re-scan the slice for every bar, which cost 90 ms a strategy.
 -- BUY TQQQ when VOO has closed up __DECLINE_DAYS__ consecutive days (the
 -- placeholder is reused for the up-streak window here -- see StrategyConfig.DeclineDays's
 -- doc comment in pkg/strategy/strategy.go).
@@ -19,5 +22,5 @@ SELECT
     t.close * __TAKE_PROFIT_MULT__ AS take_profit,
     t.close * __STOP_LOSS_MULT__ AS stop_loss
 FROM voo_up3_streaks_slice v
-JOIN backtest_start t ON t.Date = v.date AND t.symbol = 'TQQQ' AND length(t.Date) = 10
+CROSS JOIN backtest_start t ON t.Date = v.date AND t.symbol = 'TQQQ' AND length(t.Date) = 10
 WHERE v.up_streak >= __DECLINE_DAYS__ AND t.close > 0;

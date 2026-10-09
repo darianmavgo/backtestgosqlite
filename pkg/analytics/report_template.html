@@ -384,6 +384,7 @@
                         <th>Sharpe</th>
                         <th>Sortino</th>
                         <th>Avg Hold</th>
+                        <th>Idle Days</th>
                     </tr>
                 </thead>
                 <tbody id="comparison-tbody">
@@ -515,6 +516,15 @@
             document.getElementById('kpi-sharpe-sub').innerText = 'Sortino: ' + bestStrat.report.sortino_ratio.toFixed(2) + ' | PF: ' + bestStrat.report.profit_factor.toFixed(2);
         }
 
+        // Sessions with no open position, and their share of the window. A curve that
+        // never recorded positions (idle_known false) has no idle count to show.
+        function idleText(r) {
+            if (!r.idle_known) return '&mdash;';
+            const idle = r.idle_days || 0; // omitted from the JSON when zero
+            const pct = r.total_trading_days > 0 ? ' (' + (idle / r.total_trading_days * 100).toFixed(1) + '%)' : '';
+            return idle + pct;
+        }
+
         // Populate Comparison Table
         const compTbody = document.getElementById('comparison-tbody');
         reportData.strategies.forEach(s => {
@@ -533,7 +543,8 @@
                 '<td>' + s.report.max_drawdown_days + 'd</td>' +
                 '<td>' + s.report.sharpe_ratio.toFixed(2) + '</td>' +
                 '<td>' + s.report.sortino_ratio.toFixed(2) + '</td>' +
-                '<td>' + s.report.avg_holding_days.toFixed(1) + 'd</td>';
+                '<td>' + s.report.avg_holding_days.toFixed(1) + 'd</td>' +
+                '<td>' + idleText(s.report) + '</td>';
             compTbody.appendChild(tr);
         });
 

@@ -22,11 +22,11 @@ type PortfolioSimulator struct {
 	// Dividends optionally maps symbol → date → cash dividend per share. Held
 	// shares are paid on that date into Cash (not reinvested). Used with raw
 	// price bars to model "take dividends as cash".
-	Dividends            map[string]map[string]float64
-	DividendCash         float64 // total dividends received during Run
+	Dividends    map[string]map[string]float64
+	DividendCash float64 // total dividends received during Run
 	// Intraday, when set, lets an EntryLimitPct entry fill and take its same-day
 	// exit on hourly bars instead of the daily high and low.
-	Intraday Intraday
+	Intraday             Intraday
 	Sizer                PositionSizer
 	tradeIDCounter       int
 	dailyCashYieldRate   float64 // pre-computed daily compound factor from CashYieldAnnual
@@ -37,6 +37,7 @@ type PortfolioSimulator struct {
 	// than its collateral; flooring equity at zero would hide that.
 	allowNegativeEquity bool
 	lastExitDay         map[string]int
+	filledMonth         map[string]string // symbol -> YYYY-MM of its last fill, for OneFillPerMonth
 }
 
 // NewPortfolioSimulator initializes a simulator instance.
@@ -75,6 +76,7 @@ func NewPortfolioSimulator(config strategy.StrategyConfig, initialCapital float6
 		dailyMarginRate:      dailyMarginRate,
 		dailyShortBorrowRate: dailyShortBorrowRate,
 		lastExitDay:          make(map[string]int),
+		filledMonth:          make(map[string]string),
 	}
 }
 
@@ -98,13 +100,7 @@ func (s *PortfolioSimulator) Run(
 	}
 
 	// Index bars by symbol and date for O(1) price checks
-	barsBySymbolDate := make(map[string]map[string]models.Bar)
-	for sym, bars := range barsBySymbol {
-		barsBySymbolDate[sym] = make(map[string]models.Bar)
-		for _, b := range bars {
-			barsBySymbolDate[sym][b.Date] = b
-		}
-	}
+	barsBySymbolDate := indexBarsByDate(barsBySymbol, signals)
 
 	peakEquity := s.InitialCapital
 
@@ -251,6 +247,9 @@ func (s *PortfolioSimulator) Run(
 				if _, alreadyHeld := s.Positions[sig.Symbol]; alreadyHeld {
 					continue // Already holding this symbol
 				}
+				if s.Config.OneFillPerMonth && s.filledMonth[sig.Symbol] == monthOf(date) {
+					continue // filled earlier this month: out of the rotation until the next one
+				}
 				if s.Config.ReentryCooldownDays > 0 {
 					if exitDay, exited := s.lastExitDay[sig.Symbol]; exited {
 						if currentDayIdx-exitDay <= s.Config.ReentryCooldownDays {
@@ -358,6 +357,7 @@ func (s *PortfolioSimulator) Run(
 				}
 
 				s.Cash -= (cost + commission)
+				s.filledMonth[sig.Symbol] = monthOf(date)
 				direction := ""
 				if isShort {
 					direction = "SHORT"
@@ -539,4 +539,12 @@ func slipped(raw, slippage float64, adverseUp bool) float64 {
 		return raw * (1.0 + slippage)
 	}
 	return raw * (1.0 - slippage)
+}
+
+// monthOf is the YYYY-MM of a YYYY-MM-DD session date.
+func monthOf(date string) string {
+	if len(date) >= 7 {
+		return date[:7]
+	}
+	return date
 }

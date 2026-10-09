@@ -57,6 +57,7 @@ type TreeConfig struct {
 	Symbols  []string // symbols to train; empty = every signal_symbol in tree_strategy
 	Through  string   // train only on bars up to and including this date (YYYY-MM-DD); empty = all history
 	CalcDir  string   // keep the feature slice tables of the last symbol here; empty = scratch, removed
+	DryRun   bool     // only apply the minimum-data rules: nothing is fitted or saved (Trained lists who would get a tree)
 	Out      io.Writer
 }
 
@@ -150,8 +151,31 @@ func downsampleNeutral(samples []treeSample) []int {
 	return cases
 }
 
+// checkSamples applies the minimum-data rules a symbol must meet to get a tree.
+func checkSamples(samples []treeSample) error {
+	counts := map[string]int{}
+	labelled := 0
+	for _, s := range samples {
+		if s.Class == nil {
+			continue
+		}
+		counts[strconv.Itoa(*s.Class)]++
+		labelled++
+	}
+	if labelled < MinSamples {
+		return fmt.Errorf("insufficient labelled bars (%d, need >= %d)", labelled, MinSamples)
+	}
+	if counts["2"] < MinTarget {
+		return fmt.Errorf("too few class 2 bars, next bar up 5%% or more (%d, need >= %d)", counts["2"], MinTarget)
+	}
+	return nil
+}
+
 // fitTree grows the tree for one symbol's samples.
 func fitTree(samples []treeSample) (*fittedTree, error) {
+	if err := checkSamples(samples); err != nil {
+		return nil, err
+	}
 	counts := map[string]int{}
 	labelled := 0
 	var first, last string
@@ -165,12 +189,6 @@ func fitTree(samples []treeSample) (*fittedTree, error) {
 			first = s.Date
 		}
 		last = s.Date
-	}
-	if labelled < MinSamples {
-		return nil, fmt.Errorf("insufficient labelled bars (%d, need >= %d)", labelled, MinSamples)
-	}
-	if counts["2"] < MinTarget {
-		return nil, fmt.Errorf("too few class 2 bars, next bar up 5%% or more (%d, need >= %d)", counts["2"], MinTarget)
 	}
 
 	n := len(samples)
@@ -355,6 +373,14 @@ func TrainTree(ctx context.Context, cfg TreeConfig) (TreeResult, error) {
 				}
 			}
 			samples = kept
+		}
+		if cfg.DryRun {
+			if err := checkSamples(samples); err != nil {
+				res.Skipped[sym] = err.Error()
+			} else {
+				res.Trained = append(res.Trained, sym)
+			}
+			continue
 		}
 		tree, err := fitTree(samples)
 		if err != nil {

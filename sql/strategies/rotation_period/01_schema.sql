@@ -5,6 +5,10 @@
 --   __PERIOD_KEY__   SQL expression of `date` naming the calendar period of a
 --                    session (1d, 1w, 1m, 1q or 1y). Keys sort in time order.
 --   __TOP_K__        names held each period.
+--   __PICK_LIMIT__   names picked each period: __TOP_K__, or every name of the list for a
+--                    row that picks all.
+--   __PERIOD_EXIT__  1 sells at the period's last session, 0 leaves the exit to the row's
+--                    hold window, take profit and stop (a 1d row with a hold window).
 --   __PICK_ORDER__   DESC to hold the best previous period returns, ASC the worst.
 --   __USE_LIST__ / __SYMBOLS__  1 and a quoted list restrict the candidates, 0 means
 --                    every symbol in the market database.

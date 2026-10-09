@@ -20,6 +20,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,6 +45,7 @@ type Config struct {
 	Serial      bool     // -serial
 	Start       string   // -start
 	Force       bool     // -force
+	Detail      int      // -detail: strategies that keep their equity curve (-1 = all)
 	Strategy    string   // -strategy: comma-separated ids, a family name, or "all" (empty = all)
 	RunID       int      // -run-id
 	Mode        string   // subcommand (empty = default)
@@ -56,6 +58,7 @@ func DefaultConfig() Config {
 		Concurrency: runtime.NumCPU(),
 		Start:       storage.DefaultStartDate,
 		Force:       false,
+		Detail:      -1,
 	}
 }
 
@@ -71,6 +74,7 @@ func Main() {
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent workers (defaults to all CPU cores; bounds memory/IO use with hundreds of strategies)")
 	flag.StringVar(&conf.Start, "start", d.Start, "Earliest bar date (YYYY-MM-DD) to backtest; earlier bars only warm up SMAs. Empty = full history")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(default mode only) redo every strategy's backtest even if a usable result already exists")
+	flag.IntVar(&conf.Detail, "detail", d.Detail, "Strategies whose daily equity curve is saved: the N best by CAGR of this run, for example 100 (the others save trades, signals and the summary only, which makes a bulk run faster). -1 saves every curve")
 	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Run folder under the reports root to read (compile, status) or to continue (default mode). Without it compile and status read the latest run and the default mode starts a new one")
 	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "Strategies to compare: comma-separated ids, a family (streak, hold, tree, markov), or all. Empty = every registered strategy")
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"compile": "compile", "status": "status"})
@@ -122,7 +126,7 @@ func Run(conf Config) error {
 			return err
 		}
 	default:
-		if err := runAll(conf.Concurrency, conf.Force, conf.Strategy); err != nil {
+		if err := runAll(conf.Concurrency, conf.Force, conf.Strategy, conf.Detail); err != nil {
 			return err
 		}
 	}
@@ -171,7 +175,7 @@ func missingAmong(list []strategy.Strategy, byStrategy map[string]runner.Compile
 // backtests strategies that are missing a usable result. Pass -force to ignore
 // existing results and redo everything anyway. The final table/scoreboard.db
 // always covers every strategy — freshly run ones plus whatever was already valid.
-func runAll(concurrency int, force bool, arg string) error {
+func runAll(concurrency int, force bool, arg string, detail int) error {
 	fmt.Println("🚀 RUNNING SCOREBOARD: All Strategies (5 Years, $100k Capital)")
 
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), targetDb) // so -sql strategies are included, matching compile/status
@@ -230,6 +234,7 @@ func runAll(concurrency int, force bool, arg string) error {
 			DB: db, Table: tableName, Start: startDate, Workers: concurrency,
 		}, toRun, func(s strategy.Strategy, barsBySymbol map[string][]models.Bar, sortedDates []string) runner.RunResult {
 			cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
+			cfg.SkipEquityCurve = detail >= 0
 			res := runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb)
 			if res.Err != nil {
 				log.Printf("❌ [%s] Error: %v\n", s.ID(), res.Err)
@@ -244,6 +249,9 @@ func runAll(concurrency int, force bool, arg string) error {
 		})
 		if err != nil {
 			return fmt.Errorf("Error loading bars: %v", err)
+		}
+		if err := saveCurves(db, toRun, freshResults, detail); err != nil {
+			return err
 		}
 	} else {
 		fmt.Println("✅ Nothing to backtest — every registered strategy already has a usable result. (Use -force to redo everything.)")
@@ -268,6 +276,44 @@ func runAll(concurrency int, force bool, arg string) error {
 		return err
 	}
 
+	return nil
+}
+
+// saveCurves runs the detail best strategies of this run again with their daily
+// equity curve saved. The bulk pass leaves the curves out (writing one row per
+// session for tens of thousands of strategies costs more than running them), so
+// the ones worth opening in a report get theirs here. The run is deterministic, so
+// the saved summary equals the one already ranked. detail < 0 means every curve
+// was saved in the bulk pass.
+func saveCurves(db *sqlx.DB, ran []strategy.Strategy, results map[string]runner.RunResult, detail int) error {
+	if detail <= 0 {
+		return nil
+	}
+	var ok []strategy.Strategy
+	for _, s := range ran {
+		if r, found := results[s.ID()]; found && r.Err == nil {
+			ok = append(ok, s)
+		}
+	}
+	sort.SliceStable(ok, func(a, b int) bool {
+		return results[ok[a].ID()].Report.CAGR > results[ok[b].ID()].Report.CAGR
+	})
+	if len(ok) > detail {
+		ok = ok[:detail]
+	}
+	if len(ok) == 0 {
+		return nil
+	}
+	fmt.Printf("\n📈 Saving equity curves of the %d best strategies\n", len(ok))
+	_, err := runner.RunBatched(runner.BatchOptions{
+		DB: db, Table: tableName, Start: startDate, Workers: runtime.NumCPU(),
+	}, ok, func(s strategy.Strategy, barsBySymbol map[string][]models.Bar, sortedDates []string) runner.RunResult {
+		cfg := runner.BuildConfig(s, 0.0, 0.0, 0, 0)
+		return runner.ExecuteStrategy(s, cfg, barsBySymbol, sortedDates, capital, "", outDir, targetDb).Slim()
+	})
+	if err != nil {
+		return fmt.Errorf("Error loading bars: %v", err)
+	}
 	return nil
 }
 

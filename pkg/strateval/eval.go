@@ -48,6 +48,8 @@ func metricsFrom(rep models.PerformanceReport) Metrics {
 		WinRate:        rep.WinRate,
 		AvgTradePct:    rep.AvgTradeReturnPct,
 		TotalReturnPct: rep.TotalReturnPct,
+		IdleDays:       rep.IdleDays,
+		Days:           rep.TotalTradingDays,
 	}
 }
 
