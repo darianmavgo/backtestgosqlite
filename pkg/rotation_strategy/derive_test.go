@@ -81,6 +81,27 @@ func TestDeriveCopiesTheRowWithTheParameterSet(t *testing.T) {
 		t.Fatalf("the source row must not change: %+v", got)
 	}
 
+	// Only the position size: the parameters of the source are kept.
+	sized, err := DeriveWith(db, "copy", "", "", nil, 0.2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sized.ID != "copy-pos20" || sized.AllocationPct != 0.2 || sized.MaxWeightPct != 0.2 || sized.EntryLimitPct != 0.95 || sized.HoldDays != 2 || sized.Cooldown != "month" {
+		t.Fatalf("position-only copy: %+v", sized)
+	}
+	if got, ok, _ := refdb.RotationStrategyByID(db, "copy"); !ok || got.AllocationPct != src.AllocationPct {
+		t.Fatalf("the source of a position-only copy must not change: %+v", got)
+	}
+	both, err := DeriveWith(db, src.ID, "", "", &p, 0.2)
+	if err != nil || both.ID != "rot-all-limit95-tp3-sl3-hold2-pos20" || both.AllocationPct != 0.2 || both.StopLossPct != 0.03 {
+		t.Fatalf("parameters and position size together: %+v %v", both, err)
+	}
+	if _, err := DeriveWith(db, src.ID, "x", "", nil, 0); err == nil {
+		t.Error("a derive that changes nothing must be refused")
+	}
+	if _, err := DeriveWith(db, src.ID, "x", "", nil, 1.5); err == nil {
+		t.Error("a position of 150% of the portfolio must be refused")
+	}
 	if _, err := Derive(db, src.ID, "copy", "", p); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("an existing id must be refused, got %v", err)
 	}

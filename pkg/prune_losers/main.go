@@ -6,6 +6,8 @@
 //
 // Subcommand `untrainable` prunes tree strategies and models whose signal symbol
 // cannot be trained on the bars before the holdout cutoff (see untrainable.go).
+// Subcommand `symbols` takes the losing names out of a rotation strategy's list
+// (see symbols.go).
 package prune_losers
 
 import (
@@ -56,6 +58,9 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "untrainable" {
 		os.Exit(runUntrainable(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "symbols" {
+		os.Exit(runSymbols(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	cfg := Config{Out: os.Stdout}
 	flag.StringVar(&cfg.StrategiesDB, "db", appenv.RefDB(), "strategies database to prune")
 	flag.StringVar(&cfg.ReportsDir, "reports", appenv.Reports(), "reports folder holding the result DBs")
@@ -63,6 +68,11 @@ func Main() {
 	flag.IntVar(&cfg.Workers, "workers", MaxWorkers, "concurrent result DB readers (max 32)")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "report what would be deleted without deleting")
 	flag.Parse()
+	if flag.NArg() > 0 {
+		// A stray word (a mistyped subcommand) must never fall through to a real prune.
+		fmt.Fprintf(os.Stderr, "prune_losers: unexpected argument %q (subcommands: untrainable, symbols)\n", flag.Arg(0))
+		os.Exit(2)
+	}
 	if _, err := Run(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "prune_losers:", err)
 		os.Exit(1)

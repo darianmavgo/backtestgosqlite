@@ -4,7 +4,7 @@
 //
 //	strategy                 list the strategies with their own pipeline and the family counts
 //	strategy export          write a reference database holding only some rows
-//	strategy derive          copy a rotation row with a sweep's parameter set
+//	strategy derive          copy a rotation row with a sweep's parameter set and/or a position size
 package strategy_cmd
 
 import (
@@ -110,6 +110,7 @@ func list() {
 func deriveMain() {
 	from := flag.String("from", "", "rotation strategy id to copy")
 	params := flag.String("params", "", "parameter set, like Period-1d/Limit-95%/Hold-2d/TP+3%/SL-3%, or a whole sweep output line holding one (bare arguments work too)")
+	position := flag.Float64("position-pct", 0, "size of each position as a fraction of portfolio value, for a pick = all row (0.20 is 20%); sets allocation_pct and max_weight_pct. Alone, it copies the row with only that change")
 	id := flag.String("id", "", "id of the new strategy (default: the source id with the parameters)")
 	name := flag.String("name", "", "name of the new strategy (default: the source name with the parameters)")
 	ref := flag.String("ref", appenv.RefDB(), "reference database to add the strategy to")
@@ -118,33 +119,48 @@ func deriveMain() {
 	if text == "" {
 		text = strings.Join(flag.Args(), " ")
 	}
-	if err := Derive(os.Stdout, *ref, *from, *id, *name, text); err != nil {
+	if err := DeriveWith(os.Stdout, *ref, *from, *id, *name, text, *position); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// Derive adds to the reference database at refPath a copy of the rotation strategy
-// from with the parameter set in text (a gridsearch label, alone or inside the line
-// a sweep printed), and says how to run it.
+// Derive is DeriveWith with the source's position size.
 func Derive(out io.Writer, refPath, from, id, name, text string) error {
+	return DeriveWith(out, refPath, from, id, name, text, 0)
+}
+
+// DeriveWith adds to the reference database at refPath a copy of the rotation
+// strategy from, with the parameter set in text (a gridsearch label, alone or inside
+// the line a sweep printed) when there is one, and with positionPct as the size of
+// each position when it is above 0. It says how to run the copy.
+func DeriveWith(out io.Writer, refPath, from, id, name, text string, positionPct float64) error {
 	if from == "" {
 		return fmt.Errorf("derive needs -from <rotation strategy id>")
 	}
-	p, err := rotation_strategy.ParseParams(text)
-	if err != nil {
-		return err
+	var p *rotation_strategy.Params
+	if strings.TrimSpace(text) != "" || positionPct <= 0 {
+		parsed, err := rotation_strategy.ParseParams(text)
+		if err != nil {
+			return err
+		}
+		p = &parsed
 	}
 	db, err := refdb.Open(refPath)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	row, err := rotation_strategy.Derive(db, from, id, name, p)
+	row, err := rotation_strategy.DeriveWith(db, from, id, name, p, positionPct)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "added %s (%s) to %s\n", row.ID, row.Name, refPath)
-	fmt.Fprintf(out, "  from %s with %s\n", from, p.Label())
+	if p != nil {
+		fmt.Fprintf(out, "  from %s with %s\n", from, p.Label())
+	}
+	if positionPct > 0 {
+		fmt.Fprintf(out, "  positions %.0f%% of portfolio value each (from %s)\n", positionPct*100, from)
+	}
 	fmt.Fprintf(out, "  run it: ./bin/backtest -strategy %s\n", row.ID)
 	return nil
 }

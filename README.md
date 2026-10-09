@@ -605,6 +605,7 @@ Add a rotation strategy that is a copy of an existing one with the parameter set
 |---|---|
 | `-from` | required: the rotation strategy id to copy |
 | `-params` | the parameter set, or bare arguments after the flags |
+| `-position-pct` | none. The size of each position as a fraction of portfolio value for a `pick = all` row (`0.20` is 20%); it sets `allocation_pct` and `max_weight_pct` together. Alone it copies the row with only that change, and the parameter set becomes optional |
 | `-id` | the source id without its `-limit..` suffix, then `-limit95-tp3-sl3-hold2` (and the period when it is not `1d`) |
 | `-name` | the source name with the parameter set |
 | `-ref` | `refdata/strategies.db` |
@@ -623,6 +624,26 @@ Write a small reference database holding only the rows of the named strategies, 
 `-ids` takes strategy ids and `a+b+c` stacks, comma-separated. Every id must be a row in `streak_strategy`, `tree_strategy`, `hold_strategy` or `markov_strategy`, or the command fails and names the ones that are not. `-src` chooses the full database. `trade_orchestrator` embeds the output and reads it where it has no reference database.
 
 A strategy that needs something built from the bars before it can signal implements `strategy.Preparer`, and a live scan (`livescan`, `runner.RunLiveScan`) calls it after refreshing the bars. `markov_strategy` trains its signal symbol through the latest bar when its saved model is behind, because the model holds one prediction per date and has none for a session it was not trained through. A failed `Prepare` stops the scan with `PREPARE_FAILED`, and a missing model never passes as "no signal".
+
+## prune_losers
+
+Remove what does not earn its place. `-dry-run` on every mode reports without changing anything.
+
+```bash
+./bin/prune_losers -dry-run                       # strategies whose latest backtest has win_rate < 0.5 (or no trades)
+./bin/prune_losers untrainable -dry-run           # tree strategies and models that cannot be trained before the holdout cutoff
+./bin/prune_losers symbols -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl3 -dry-run
+```
+
+The first two delete rows from `refdata/strategies.db`.
+
+### prune_losers symbols
+
+Take the losing names out of a rotation strategy's symbol list. A name is a loser only when all three hold: it lost money in the in-sample backtest, it lost money in the held-out backtest, and it won fewer than `-min-win-rate` (default `0.4`) of its trades over both windows. A name with no trades in either window is never removed. The results are the strategy's latest run in a run folder, `rotation.db` (in-sample) and `oos/rotation.db` (held out), the latest folder holding both unless `-run-id N` names one.
+
+The strategy is pointed at a new symbol list, the old id plus `-pruned` (`etf-2x-sector-pairs` becomes `etf-2x-sector-pairs-pruned`). The list it used is not changed, because other strategies may use it. A strategy with a literal ticker list has the names removed from that list. Run the strategy's `backtest` again to see the effect; the result files of the earlier run still hold the removed names, and the command prints the table it decided from.
+
+---
 
 ## transaction_calc
 

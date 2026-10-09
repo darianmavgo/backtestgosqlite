@@ -16,8 +16,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
@@ -197,7 +197,6 @@ func PruneUntrainable(ctx context.Context, cfg UntrainableConfig) (UntrainableRe
 	}
 	fmt.Fprintf(cfg.Out, "%s %d tree models (%d nodes) from %s and %d tree strategies from %s\n",
 		verb, res.Models, res.Nodes, cfg.TreeDB, res.Strategies, cfg.StrategiesDB)
-	_ = strings.TrimSpace
 	return res, nil
 }
 
