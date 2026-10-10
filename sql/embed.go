@@ -23,3 +23,9 @@ var Validation embed.FS
 //
 //go:embed stages
 var Stages embed.FS
+
+// SymbolStatsView is the v_symbol_stats view over backtest_start, created in
+// every market database by storage.EnsureBarTable.
+//
+//go:embed view_symbol_stats.sql
+var SymbolStatsView string

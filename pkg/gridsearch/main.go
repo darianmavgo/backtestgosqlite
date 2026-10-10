@@ -43,6 +43,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/rotation_strategy"
+	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
@@ -128,6 +129,7 @@ type Config struct {
 	Top           int             // -top
 	Html          string          // -html
 	NoHtml        bool            // -no-html
+	DailyFills    bool            // -daily-fills
 	Concurrency   int             // -concurrency
 	Force         bool            // -force
 	IncludeStreak bool            // -include-streak
@@ -201,6 +203,7 @@ func Main() {
 	flag.IntVar(&conf.MinTrades, "min-trades", d.MinTrades, "Minimum trade count filter")
 	flag.IntVar(&conf.Top, "top", d.Top, "Top N results to display per strategy")
 	flag.StringVar(&conf.Html, "html", d.Html, "Path to export HTML comparison report (single-strategy mode; defaults to data/reports/<strategy>_gridsearch.html)")
+	flag.BoolVar(&conf.DailyFills, "daily-fills", d.DailyFills, "Judge limit entries on the daily bar alone instead of the hourly bars (the default). For comparison only: it books same-day profit exits the hourly bars would not")
 	flag.BoolVar(&conf.NoHtml, "no-html", d.NoHtml, "Skip per-strategy HTML export (batch mode; speeds up large sweeps)")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Worker goroutines. Single-strategy mode: workers within that one sweep. Multi-strategy mode: total workers shared across every strategy's tasks combined (not per-strategy — a few expensive strategies get proportionally more of the pool once cheap ones finish). Defaults to all CPU cores.")
 	flag.BoolVar(&conf.Force, "force", d.Force, "Redo strategies that already have a completed sweep in data/reports/gridsearch.db")
@@ -221,6 +224,7 @@ func Main() {
 
 // Run executes the command with cfg. It returns errors instead of exiting.
 func Run(conf Config) error {
+	runner.DailyFills = conf.DailyFills
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
 	stratreg.RegisterFamilies()
 
@@ -335,6 +339,10 @@ func Run(conf Config) error {
 		}
 		printPromoteReport(rep)
 		return nil
+	}
+
+	if conf.Subcommand != "params" {
+		runner.PrintMarketSourcesFor(os.Stdout, conf.Db, "backtest_start", true)
 	}
 
 	if conf.End == "" {
@@ -620,6 +628,11 @@ func sweepParams(strat strategy.Strategy, ps strategy.ParameterSpace, capital fl
 		run.Add("Signal symbol", ps.SignalSymbol+" ("+ps.Direction+")")
 	}
 	run.Add("Window", orNone(opts.StartDate)+" to "+orNone(opts.EndDate))
+	if opts.MarketDB != "" {
+		srcs := runner.MarketSourcesFor(opts.MarketDB, true)
+		run.Add("Market DB (daily)", srcs[0].Path+" ("+srcs[0].Detail+")")
+		run.Add("Market DB (hourly)", srcs[1].Path+" ("+srcs[1].Detail+"; "+srcs[1].Use+")")
+	}
 	run.Add("Starting capital", fmt.Sprintf("$%.2f", capital))
 	run.Add("Minimum trades", fmt.Sprintf("%d", opts.MinTrades))
 	run.Add("Grid points", fmt.Sprintf("%d", ps.Perms()))

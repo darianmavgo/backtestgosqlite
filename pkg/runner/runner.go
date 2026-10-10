@@ -456,7 +456,7 @@ func ExecuteStrategyWithDividends(
 				syms = append(syms, sg.Symbol)
 			}
 		}
-		if sim.Intraday, err = LoadIntraday(marketDBPath, syms); err != nil {
+		if sim.Intraday, err = LoadFillBars(marketDBPath, syms); err != nil {
 			log.Printf("Warning: no intraday bars for %s: %v", strat.ID(), err)
 			sim.Intraday = nil
 		}

@@ -148,6 +148,8 @@ Notes:
 |---|---|---|
 | `APP_FOLDER` | `.` | repository root. `data/`, `refdata/` and `data/reports/` are fixed subfolders of it |
 | `POLYGON_API_KEY` | empty | Polygon equity and option downloads, `universe` |
+| `ALPACA_KEY`, `ALPACA_SECRET` | empty | Alpaca bar downloads (`market_history -source alpaca`) |
+| `ALPACA_FEED` | `sip` | Alpaca feed: `sip` (consolidated tape, needs a paid data plan) or `iex` (free plan, one exchange) |
 | `STRATEGY_ALLOWLIST` | empty | `strateval` live-list snapshot |
 | `STRATEGIES_DB` or `STRATEVAL_DB` | empty | overrides the strateval ledger path (otherwise `strategies.db` in the run folder) |
 
@@ -204,9 +206,18 @@ Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Poly
 ./bin/market_history -source polygon-options -symbols VOO
 ./bin/market_history -source polygon -timeframe 1h -unleveraged-etfs -concurrency 1   # hours of runtime at 5 calls/min
 ./bin/market_history -source polygon -timeframe 1h -unleveraged-etfs -status       # what is pulled, what is left
+./bin/market_history -source alpaca -timeframe 1h -symbols SPY,QQQ -years 5          # Alpaca hourly bars (keys from .env; consolidated sip feed; -alpaca-feed iex on the free plan)
 ```
 
-Hourly and minute bars go to `data/market_history_hourly.db` / `data/market_history_minute.db`, and coverage is checked there first, so a rerun asks Polygon only for the missing days. Hourly pulls never fall back to Yahoo.
+Hourly and minute bars go to `data/market_history_hourly.db` / `data/market_history_minute.db`, and coverage is checked there first, so a rerun asks the source (Polygon or Alpaca) only for the missing days. Alpaca defaults to the consolidated `sip` feed; with the free plan it answers 403, so pass `-alpaca-feed iex`, which reports one exchange's volume and prices, leaves hours with no IEX trade empty, and differs from consolidated bars. Hourly pulls never fall back to Yahoo.
+
+**`market_history update -strategy <id>`** keeps the bars of one strategy's symbols complete. It takes the symbols from the strategy (candidates, regime symbol, benchmark; `a+b+c` stacks work), checks with the same completeness test as `strategy coverage` which of them have sessions with no bars, and downloads only those. Defaults: daily bars (`-timeframe 1d`), `-source alpaca`, `-start 2021-01-01`, no `-limit`; add `-hourly` (same as `-timeframe 1h`) for hourly bars in `market_history_hourly.db`. A symbol with a gap is fetched again over the whole window and replaces bars stored at the same time, because a normal run fills only the two ends of a symbol's range, never a gap inside it. Alpaca returns up to 10,000 bars a request and the source pages itself. `-strategy` is required; `-dry-run` lists the symbols with gaps and downloads nothing; the other flags are the download flags above (`-symbols` is ignored).
+
+```bash
+./bin/market_history update -dry-run -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20           # daily
+./bin/market_history update -hourly -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20           # hourly
+```
+
 
 `-start YYYY-MM-DD` overrides `-years`. `-end` defaults to today.
 
@@ -219,6 +230,10 @@ Run one strategy, many strategies, or a shared cash account.
 **Reads:** market DB (`-db`, table `-table` `backtest_start`). `gridsearch apply` is what reads `gridsearch.db` and calls back into this package. SQL pipelines read `sql/strategies/<id>/` when that directory exists, otherwise the copy embedded in the binary.
 
 **Writes:** `data/reports/<id>.db` (next free `data/reports/<id>_N.db` if the name is taken). Tables `signals`, `trades`, `equity_curve`, `performance_summary`, and when relevant `return_breakdown` and `run_metrics`. HTML at `data/reports/backtest_report.html`. Auto-download (`-auto-download`, default on) writes missing bars into the market DB. Window starts `2021-01-01` (`-start`); earlier bars warm up SMAs only. Capital default `$100,000`. `-download-years` default `5`.
+
+Limit entries are judged on the hourly bars by default, in `backtest` and `gridsearch` alike: the fill is the first hour whose low reaches the limit, and only hours after it can book the take-profit or stop (the stop is checked before the target inside one hour). `-daily-fills` turns that off and judges the limit on the daily bar alone, which books a same-day profit exit whenever the day touched both the limit and the target in either order; use it only to see how much that flatters a result. A symbol with no hourly bars is named in a warning and falls back to the daily bar.
+
+Every run prints the databases it reads bars from, with size and last update, right after startup: the daily `market_history.db` and the hourly `market_history_hourly.db` beside it (used for limit-entry fills and exits; `not found` means those fills fall back to daily rules). The same two paths are in the HTML report's Run parameters as `Market DB (daily)` and `Market DB (hourly)`.
 
 ```bash
 ./bin/backtest -strategylist                    # counts per family, then asks before dumping every strategy (y/N)
@@ -327,6 +342,8 @@ Sweep hold, take-profit, stop, and the strategy's other axes. One strategy write
 **Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
 **Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-holdout-months` (default 12, the same window `backtest` holds out) stops the sweep at the in-sample cutoff, so the held-out months do not tune the parameters; `-end <date>` sets the stop date directly and `-holdout-months 0` sweeps all history. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing. rotation period rows: the calendar period, below). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
+
+A sweep prints the market databases it reads at startup, and the HTML report's Run group lists them as `Market DB (daily)` and `Market DB (hourly)`. Period sweeps with a limit axis load the hourly bars, so a sweep and `backtest` agree on fills (`-daily-fills` for the old behavior).
 
 ```bash
 ./bin/gridsearch -list
@@ -632,6 +649,18 @@ Print every strategy that has its own `sql/strategies` pipeline, then a row coun
 ./bin/strategy
 ```
 
+### strategy coverage
+
+Report how complete the bar history is for the symbols a strategy needs, so a backtest on thin data is caught before it is trusted.
+
+```bash
+./bin/strategy coverage -id rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20            # daily bars
+./bin/strategy coverage -id rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20 -hourly    # market_history_hourly.db
+./bin/strategy coverage -symbols SPY,QQQ -start 2023-01-01
+```
+
+`-id` takes strategy ids and `a+b+c` stacks and reports every symbol they need (candidates, regime symbol, benchmark); `-symbols` adds more. For each symbol it prints first and last session with a bar, sessions expected, sessions present, missing, the longest run of missing sessions and the coverage percent. A session is a day SPY traded, counted from the symbol's first to its last daily bar, so a later listing is not a gap. `-hourly` counts a session as present when it has at least one hourly bar and adds the average bars per covered day (a regular session is about 7). Flags: `-start` (default `2021-01-01`), `-end`, `-db`.
+
 ### strategy derive
 
 Add a rotation strategy that is a copy of an existing one with the parameter set of a sweep result. The parameter set is the label `gridsearch` prints, alone or inside the whole result line.
@@ -668,6 +697,21 @@ Write a small reference database holding only the rows of the named strategies, 
 
 A strategy that needs something built from the bars before it can signal implements `strategy.Preparer`, and a live scan (`livescan`, `runner.RunLiveScan`) calls it after refreshing the bars. `markov_strategy` trains its signal symbol through the latest bar when its saved model is behind, because the model holds one prediction per date and has none for a session it was not trained through. A failed `Prepare` stops the scan with `PREPARE_FAILED`, and a missing model never passes as "no signal".
 
+## cleanup
+
+One command for tidying `data/reports/`, built on `prune_losers` and `clear_older` (both still work). Every mode takes `-dry-run`. Workers default to 32 and are kept between 10 and 32.
+
+```bash
+./bin/cleanup report                 # one line per run folder: size, lock, step statuses, notes
+./bin/cleanup runs -dry-run          # dead locks, aborted steps, empty run folders
+./bin/cleanup runs -failed           # also delete runs where no step finished (never one a strategy's latest backtest lives in)
+./bin/cleanup sql                    # sql/ files no .go, .md or .sh mentions (report only; -remove-sql deletes)
+./bin/cleanup all -dry-run -keep "$STRATEGY_ALLOWLIST"
+./bin/cleanup all -yes -vacuum -keep "$STRATEGY_ALLOWLIST"
+```
+
+`runs` removes a `pipeline.lock` whose process is gone, turns steps stuck in `running` into `failed` (so `pipeline -run-id N` retries them) and deletes empty folders. A folder held by a live pipeline is never touched. `all` runs, in this order: `runs`, losing strategies (`prune_losers`, only when `-keep` names the greenlit ids), orphan rows (`prune_losers orphans`, empty result DBs deleted, `-vacuum` for mostly-free files), old versions (`clear_older`), then lists unreferenced `sql/` files (never deletes them) and runs `backtest lastrun`. `sql` matches names in the repo and sibling repos, so a name built at run time shows up as a candidate: read the list before `-remove-sql`. `all` refuses to delete without `-yes`. Not undoable: copy `data/reports` first. The `untrainable` and `symbols` prunes are not part of `all`; run them with `prune_losers`.
+
 ## prune_losers
 
 Remove what does not earn its place. `-dry-run` on every mode reports without changing anything.
@@ -683,7 +727,7 @@ The first two delete rows from `refdata/strategies.db`.
 
 ### prune_losers orphans
 
-Delete, from every result DB under `data/reports/` (`*.db`, `<run>/*.db`), the rows of strategies that no longer exist: `strategy.Get` finds no such id, or for a stack `a+b` finds no such member. Every table keyed by `strategy_id` is cleaned (`combined_id` for the shared-account tables). A DB without `performance_summary` (gridsearch, walk-forward) is left alone. The strategies come from `-db` (default `refdata/strategies.db`) and `sql/strategies/` under `-root`, so prune strategies first. `-dry-run` counts only. Deleted rows leave the file the same size until `-vacuum` rewrites it (slow on big files); `-remove-empty` deletes a result DB with no backtest left. Run `backtest lastrun` afterwards to refresh `strategy_last_backtest`. Not undoable: copy `data/reports` first.
+Delete, from every result DB under `data/reports/` (`*.db`, `<run>/*.db`), the rows of strategies that no longer exist: `strategy.Get` finds no such id, or for a stack `a+b` finds no such member. Every table keyed by `strategy_id` is cleaned (`combined_id` for the shared-account tables). A DB without `performance_summary` (gridsearch, walk-forward) is left alone. The strategies come from `-db` (default `refdata/strategies.db`) and `sql/strategies/` under `-root`, so prune strategies first. `-dry-run` counts only. Deleted rows leave the file the same size until `-vacuum` rewrites it (slow on big files); a result DB with no backtest left is deleted unless `-remove-empty=false`. `-workers` defaults to 32 and is kept within 10 to 32. Run `backtest lastrun` afterwards to refresh `strategy_last_backtest`. Not undoable: copy `data/reports` first.
 
 ### prune_losers symbols
 

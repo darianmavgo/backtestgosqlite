@@ -16,6 +16,9 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 )
 
+// MinWorkers is the fewest result DBs `orphans` works on at once.
+const MinWorkers = 10
+
 // OrphansConfig holds the settings of `prune_losers orphans`.
 type OrphansConfig struct {
 	StrategiesDB string // -db: where the row-backed strategies are read
@@ -47,10 +50,10 @@ func runOrphans(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&cfg.StrategiesDB, "db", appenv.RefDB(), "strategies database that defines which strategies exist")
 	fs.StringVar(&cfg.ReportsDir, "reports", appenv.Reports(), "reports folder holding the result DBs")
 	fs.StringVar(&cfg.Root, "root", appenv.Folder(), "folder holding sql/strategies")
-	fs.IntVar(&cfg.Workers, "workers", 8, "concurrent result DBs (max 32)")
+	fs.IntVar(&cfg.Workers, "workers", MaxWorkers, "concurrent result DBs (min 10, max 32)")
 	fs.BoolVar(&cfg.DryRun, "dry-run", false, "report what would be deleted without deleting")
 	fs.BoolVar(&cfg.Vacuum, "vacuum", false, "VACUUM each changed result DB to return the space (slow on large files)")
-	fs.BoolVar(&cfg.RemoveEmpty, "remove-empty", false, "delete a result DB that has no backtest left")
+	fs.BoolVar(&cfg.RemoveEmpty, "remove-empty", true, "delete a result DB that has no backtest left (-remove-empty=false keeps them)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -89,8 +92,8 @@ func PruneOrphans(cfg OrphansConfig) (OrphansResult, error) {
 	if cfg.Exists == nil {
 		cfg.Exists = registryExists(cfg.Root, cfg.StrategiesDB)
 	}
-	if cfg.Workers < 1 {
-		cfg.Workers = 1
+	if cfg.Workers < MinWorkers {
+		cfg.Workers = MinWorkers
 	}
 	if cfg.Workers > MaxWorkers {
 		cfg.Workers = MaxWorkers
@@ -273,7 +276,7 @@ func pruneOrphansIn(path string, cfg OrphansConfig, exists func(string) bool) (o
 		}
 	}
 	if len(dead) == 0 {
-		return out, nil
+		return out, vacuumIfWasteful(db, cfg) // a file pruned by an earlier run still holds its free pages
 	}
 	sort.Strings(dead)
 
@@ -336,10 +339,31 @@ func pruneOrphansIn(path string, cfg OrphansConfig, exists func(string) bool) (o
 		out.removed = true
 		return out, nil
 	}
-	if cfg.Vacuum {
-		if _, err := db.Exec(`VACUUM`); err != nil {
-			return out, fmt.Errorf("vacuum: %w", err)
-		}
+	return out, vacuumIfWasteful(db, cfg)
+}
+
+// vacuumSlots bounds the VACUUMs running at once: each writes a full copy of
+// its file next to it, so 32 of them on multi-GB files would fill the disk.
+var vacuumSlots = make(chan struct{}, 3)
+
+// vacuumIfWasteful rewrites db when -vacuum is set and over a quarter of its
+// pages are free. DELETE never shrinks a SQLite file; only VACUUM does.
+func vacuumIfWasteful(db *sql.DB, cfg OrphansConfig) error {
+	if !cfg.Vacuum || cfg.DryRun {
+		return nil
 	}
-	return out, nil
+	var free, total int64
+	if err := db.QueryRow(`SELECT freelist_count, page_count FROM pragma_freelist_count, pragma_page_count`).Scan(&free, &total); err != nil {
+		return err
+	}
+	if total == 0 || free*4 < total {
+		return nil
+	}
+	vacuumSlots <- struct{}{}
+	defer func() { <-vacuumSlots }()
+	if _, err := db.Exec(`VACUUM`); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	_, err := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
 }

@@ -66,6 +66,7 @@ func Run(conf Config) error {
 		conf.Concurrency = 1
 	}
 	runner.KeepCalc = conf.KeepCalc
+	runner.DailyFills = conf.DailyFills
 	if conf.CPUProfile != "" {
 		pf, err := os.Create(conf.CPUProfile)
 		if err != nil {

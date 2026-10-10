@@ -79,3 +79,28 @@ func TestPruneOrphans(t *testing.T) {
 		t.Fatal("non-result DB touched")
 	}
 }
+
+func TestVacuumIfWastefulShrinksFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "r.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`CREATE TABLE t(x TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2000; i++ {
+		db.Exec(`INSERT INTO t VALUES (?)`, strings.Repeat("x", 500))
+	}
+	db.Exec(`DELETE FROM t`)
+	before, _ := os.Stat(path)
+	if err := vacuumIfWasteful(db, OrphansConfig{Vacuum: true}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(path)
+	if after.Size() >= before.Size()/2 {
+		t.Fatalf("file did not shrink: %d -> %d", before.Size(), after.Size())
+	}
+}

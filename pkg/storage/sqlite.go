@@ -112,8 +112,16 @@ func EnsureBarTable(db *sqlx.DB, tableName string) error {
 		CREATE INDEX IF NOT EXISTS idx_%s_sym_date ON %s(symbol, Date);
 		CREATE INDEX IF NOT EXISTS idx_%s_sym_tf_date ON %s(symbol, timeframe, Date);
 	`, tableName, tableName, tableName, tableName, tableName, tableName, tableName)
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	if tableName == "backtest_start" {
+		// Market databases (daily, hourly, minute) all carry v_symbol_stats.
+		if _, err := db.Exec(sqlfiles.SymbolStatsView); err != nil {
+			return fmt.Errorf("create v_symbol_stats: %w", err)
+		}
+	}
+	return nil
 }
 
 // SymbolDateCoverage contains the earliest date, latest date, and count of bars for a symbol in a table.

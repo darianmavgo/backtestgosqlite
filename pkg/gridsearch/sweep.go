@@ -67,6 +67,10 @@ type sweepContext struct {
 	PeriodSignals map[string][]models.Signal
 	PeriodConfigs map[string]strategy.StrategyConfig
 	AllBars       map[string][]models.Bar
+
+	// Hourly bars that decide limit fills in a period sweep (nil with -daily-fills
+	// or when no grid point has a limit). Read-only, shared by the workers.
+	Intraday simulator.Intraday
 }
 
 // estimatePerms computes a strategy's generic parameter grid size without
@@ -510,6 +514,16 @@ func preparePeriodSweep(db *sqlx.DB, strat strategy.Strategy, space strategy.Par
 		TotalPerms: space.Perms(), StartedAt: time.Now(),
 		PeriodSignals: signals, PeriodConfigs: configs, AllBars: bars,
 	}
+	if space.HasLimit() {
+		syms := make([]string, 0, len(bars))
+		for sym := range bars {
+			syms = append(syms, sym)
+		}
+		sort.Strings(syms)
+		if ctx.Intraday, err = runner.LoadFillBars(opts.MarketDB, syms); err != nil {
+			return nil, nil, fmt.Errorf("%s: hourly bars for limit fills: %w (use -daily-fills to sweep on daily bars)", strat.ID(), err)
+		}
+	}
 	var tasks []sweepTask
 	limits := space.EntryLimits
 	if len(limits) == 0 {
@@ -578,6 +592,9 @@ func evalPeriodTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetai
 		return gridResult{}, false
 	}
 	sim := simulator.NewPortfolioSimulator(cfg, opts.Capital)
+	if t.limit > 0 {
+		sim.Intraday = ctx.Intraday
+	}
 	report, trades, curve := sim.Run(sigs, ctx.AllBars, ctx.SortedDates)
 	if report.TotalTrades < opts.MinTrades {
 		return gridResult{}, false

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"io"
 	"log"
 	"net/http"
@@ -116,19 +117,20 @@ func fetchWithFallback(ctx context.Context, out io.Writer, primary, fallback dat
 // Config holds every setting of a download run. Zero values mean "unset";
 // DefaultConfig returns the CLI defaults.
 type Config struct {
-	DB, SettingsDB, Source, PolygonKey string
-	Symbols, Table                     string
-	Limit, Years                       int
-	Start, End, Timeframe, TargetTable string
-	Force                              bool
-	UniverseDB                         string // universe.db read by UnleveragedETFs
-	UnleveragedETFs                    bool   // symbols = every active ETF with no leverage, most traded first
-	Status                             bool   // only report what the target database holds and what is left to pull
-	Concurrency                        int
-	OTM                                string    // polygon-options: comma-separated % OTM
-	Rate                               int       // polygon: API calls per minute, 0 = unthrottled
-	MaxCalls                           int       // polygon-options
-	Out                                io.Writer // progress output; nil discards
+	DB, SettingsDB, Source, PolygonKey  string
+	AlpacaKey, AlpacaSecret, AlpacaFeed string // alpaca source: key id, secret, feed (sip or iex)
+	Symbols, Table                      string
+	Limit, Years                        int
+	Start, End, Timeframe, TargetTable  string
+	Force                               bool
+	UniverseDB                          string // universe.db read by UnleveragedETFs
+	UnleveragedETFs                     bool   // symbols = every active ETF with no leverage, most traded first
+	Status                              bool   // only report what the target database holds and what is left to pull
+	Concurrency                         int
+	OTM                                 string    // polygon-options: comma-separated % OTM
+	Rate                                int       // polygon: API calls per minute, 0 = unthrottled
+	MaxCalls                            int       // polygon-options
+	Out                                 io.Writer // progress output; nil discards
 }
 
 // Summary reports what a Run did.
@@ -146,13 +148,14 @@ func DefaultConfig() Config {
 	}
 }
 
-// Main is the CLI entry point.
-func Main() {
-	d := DefaultConfig()
-	cfg := d
+// bindFlags registers the download flags on cfg, with d as the defaults.
+func bindFlags(cfg *Config, d Config) {
 	flag.StringVar(&cfg.DB, "db", d.DB, "Daily market history DB (default: APP_FOLDER/data/market_history.db); 1h/minute timeframes go to market_history_hourly.db / market_history_minute.db beside it")
 	flag.StringVar(&cfg.SettingsDB, "settings", d.SettingsDB, "Reference DB path (strategies and symbol tables)")
-	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, polygon-options, stooq")
+	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, alpaca, polygon-options, stooq")
+	flag.StringVar(&cfg.AlpacaKey, "alpaca-key", d.AlpacaKey, "Alpaca key id (or set ALPACA_KEY in environment or .env)")
+	flag.StringVar(&cfg.AlpacaSecret, "alpaca-secret", d.AlpacaSecret, "Alpaca secret (or set ALPACA_SECRET in environment or .env)")
+	flag.StringVar(&cfg.AlpacaFeed, "alpaca-feed", d.AlpacaFeed, "(alpaca) data feed: sip (consolidated, default; needs a paid data plan) or iex (free plan, one exchange); default ALPACA_FEED or sip")
 	flag.StringVar(&cfg.PolygonKey, "polygon-key", d.PolygonKey, "Polygon.io API key (or set POLYGON_API_KEY in environment or .env)")
 	flag.StringVar(&cfg.Symbols, "symbols", d.Symbols, "Comma-separated symbols to download (e.g. SPY,QQQ), or ids of symbol_lists rows in the settings DB (e.g. etf-pre-2021-unleveraged). Bare arguments work too: market_history VOO, IEF, GLD")
 	flag.StringVar(&cfg.Table, "table", d.Table, "Table name in strategies.db with symbols (fallback if no symbols specified)")
@@ -170,6 +173,31 @@ func Main() {
 	flag.StringVar(&cfg.OTM, "otm", d.OTM, "(polygon-options) call strikes to pull, as % OTM vs spot at the roll date (nearest listed strike each)")
 	flag.IntVar(&cfg.Rate, "rate", d.Rate, "(polygon, polygon-options) API calls per minute; 5 = Polygon free tier, 0 = unthrottled (paid). A rate-limited (429) call waits a minute and retries")
 	flag.IntVar(&cfg.MaxCalls, "max-calls", d.MaxCalls, "(polygon-options) stop after this many API calls (0 = no cap); reruns resume, finished contracts are skipped")
+}
+
+// resolveKeys fills the provider keys from the environment or .env. CLI only: Run never reads the environment.
+func resolveKeys(cfg *Config) {
+	if strings.TrimSpace(cfg.PolygonKey) == "" {
+		cfg.PolygonKey = datasource.ResolvePolygonAPIKey() // POLYGON_API_KEY / .env: CLI only, Run never reads the environment
+	}
+	if strings.TrimSpace(cfg.AlpacaKey) == "" || strings.TrimSpace(cfg.AlpacaSecret) == "" {
+		cfg.AlpacaKey, cfg.AlpacaSecret = datasource.ResolveAlpacaKeys() // ALPACA_KEY / ALPACA_SECRET / .env: CLI only
+	}
+	if strings.TrimSpace(cfg.AlpacaFeed) == "" {
+		cfg.AlpacaFeed = appenv.Get("ALPACA_FEED")
+	}
+}
+
+// Main is the CLI entry point.
+func Main() {
+	d := DefaultConfig()
+	cfg := d
+	sub := cliutils.PopSubcommand(map[string]string{"update": "update"})
+	if sub == "update" {
+		updateMain()
+		return
+	}
+	bindFlags(&cfg, d)
 	flag.Parse()
 	if cfg.UnleveragedETFs {
 		set := false
@@ -186,9 +214,7 @@ func Main() {
 		}
 	}
 	cfg.Out = os.Stdout
-	if strings.TrimSpace(cfg.PolygonKey) == "" {
-		cfg.PolygonKey = datasource.ResolvePolygonAPIKey() // POLYGON_API_KEY / .env: CLI only, Run never reads the environment
-	}
+	resolveKeys(&cfg)
 	if _, err := Run(context.Background(), cfg); err != nil {
 		log.Fatal(err)
 	}
@@ -269,6 +295,10 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 	}
 	if src := strings.ToLower(cfg.Source); (src == "polygon" || src == "polygon-options") && strings.TrimSpace(cfg.PolygonKey) == "" && !cfg.Status {
 		return nil, fmt.Errorf("market_history: source %s requires Config.PolygonKey", src)
+	}
+
+	if strings.ToLower(cfg.Source) == "alpaca" && (strings.TrimSpace(cfg.AlpacaKey) == "" || strings.TrimSpace(cfg.AlpacaSecret) == "") && !cfg.Status {
+		return nil, fmt.Errorf("market_history: source alpaca requires Config.AlpacaKey and Config.AlpacaSecret")
 	}
 
 	db, err := storage.OpenSQLite(cfg.DB)
@@ -358,6 +388,9 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 			// rows tagged with the intraday timeframe, so only daily falls back.
 			fallbackSource = datasource.NewYahooDataSource(client)
 		}
+	case "alpaca":
+		// Alpaca has no daily-only fallback worth the mixed rows; intraday never falls back.
+		primarySource = datasource.NewAlpacaDataSource(cfg.AlpacaKey, cfg.AlpacaSecret, cfg.AlpacaFeed, client)
 	case "stooq":
 		primarySource = datasource.NewStooqDataSource(client)
 	default:

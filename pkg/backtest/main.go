@@ -55,6 +55,7 @@ type Config struct {
 	Concurrency         int      // -concurrency
 	Serial              bool     // -serial
 	KeepCalc            bool     // -keep-calc
+	DailyFills          bool     // -daily-fills
 	Force               bool     // -force
 	GridsearchDb        string   // -gridsearch-db
 	IncludeUniverse     bool     // -include-universe
@@ -220,6 +221,7 @@ func Main() {
 	flag.IntVar(&conf.DownloadYears, "download-years", d.DownloadYears, "Number of years of history to fetch when downloading missing data")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
 	flag.BoolVar(&conf.Serial, "serial", d.Serial, "Run one strategy at a time instead of -concurrency workers writing their family result databases in parallel")
+	flag.BoolVar(&conf.DailyFills, "daily-fills", d.DailyFills, "Judge limit entries on the daily bar alone instead of the hourly bars (the default). For comparison only: a daily bar books a same-day exit whenever the day touched both the limit and the target, in either order")
 	flag.BoolVar(&conf.KeepCalc, "keep-calc", d.KeepCalc, "Keep each SQL strategy's calculation database (slice tables) under <out-dir>/calc/ instead of deleting it after the run")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(multi-strategy runs only) with -run-id, redo every strategy even if it already has a usable result in that run")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
@@ -301,6 +303,10 @@ func runOnce(conf Config) error {
 
 	// Auto-discover the strategy pipelines in sql/strategies/
 	stratreg.RegisterAll(appenv.Folder(), conf.Db)
+
+	if !conf.List {
+		runner.PrintMarketSources(os.Stdout, conf.Db, conf.Table)
+	}
 
 	if conf.Mode == "stale" {
 		if err := runStaleCommand(conf.OutDir, conf.Db, conf.Concurrency); err != nil {

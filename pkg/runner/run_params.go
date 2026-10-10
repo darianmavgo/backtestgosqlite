@@ -29,7 +29,9 @@ func DescribeRun(rs RunSettings, strats []strategy.Strategy) []models.ParamGroup
 	if rs.Command != "" {
 		run.Add("Command", rs.Command)
 	}
-	run.Add("Market DB", rs.MarketDB+" (table "+rs.Table+")")
+	srcs := MarketSources(rs.MarketDB)
+	run.Add("Market DB (daily)", srcs[0].Path+" (table "+rs.Table+"; "+srcs[0].Detail+")")
+	run.Add("Market DB (hourly)", srcs[1].Path+" ("+srcs[1].Detail+"; "+srcs[1].Use+")")
 	run.Add("Symbols", orDefault(rs.Symbols, "each strategy's own symbols"))
 	run.Add("Window", orDefault(rs.Start, "first bar")+" to "+orDefault(rs.End, "last bar"))
 	if rs.HoldoutMonth > 0 {

@@ -47,8 +47,10 @@ reports/data/reports/*/backtest_report.html
 /reports/41/hold.db
 /reports/41/markov.db
 /reports/41/streak.db
+/reports/41/streak.db-wal
 /reports/41/tree.db
 /reports/results.db
+/reports/results.db-wal
 /reports/strateval_runs/optimize_scratch/markov.db
 /reports/strateval_runs/optimize_scratch/streak.db
 /reports/strateval_runs/optimize_scratch/tree.db

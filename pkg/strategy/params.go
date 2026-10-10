@@ -67,7 +67,7 @@ type BaselineParams struct {
 	StopLoss   float64 `json:"stop_loss"`
 	Allocation float64 `json:"allocation"`
 	Regime     string  `json:"regime"`
-	Period     string  `json:"period,omitempty"` // period sweeps: the row's own period
+	Period     string  `json:"period,omitempty"`      // period sweeps: the row's own period
 	EntryLimit float64 `json:"entry_limit,omitempty"` // period sweeps: the row's own buy limit fraction (0 = none)
 }
 
@@ -296,4 +296,18 @@ func HoldLimit(days int) int {
 		return NoHoldLimit
 	}
 	return days
+}
+
+// HasLimit reports whether any grid point enters on a buy limit, so the sweep
+// needs the hourly bars that decide those fills.
+func (p ParameterSpace) HasLimit() bool {
+	if p.Baseline.EntryLimit > 0 {
+		return true
+	}
+	for _, l := range p.EntryLimits {
+		if l > 0 {
+			return true
+		}
+	}
+	return false
 }
