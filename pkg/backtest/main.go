@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/lastbacktest"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
@@ -36,6 +37,7 @@ type Config struct {
 	SharedAccount       bool     // -shared-account
 	Primary             string   // -primary
 	Secondary           string   // -secondary
+	StrategiesDb        string   // -strategies-db (lastrun: the database that gets strategy_last_backtest)
 	OutDir              string   // -out-dir (the reports root: each run gets a numbered folder in it)
 	RunID               int      // -run-id
 	CPUProfile          string   // -cpuprofile
@@ -84,6 +86,7 @@ func DefaultConfig() Config {
 		Primary:             "",
 		Secondary:           "",
 		OutDir:              appenv.Reports(),
+		StrategiesDb:        appenv.RefDB(),
 		List:                false,
 		Symbol:              "",
 		Capital:             100000.0,
@@ -200,6 +203,7 @@ func Main() {
 	flag.BoolVar(&conf.SharedAccount, "shared-account", d.SharedAccount, "Run strategies in a single shared cash account with priority preemption")
 	flag.StringVar(&conf.Primary, "primary", d.Primary, "Primary strategy ID for shared-account execution (has capital priority)")
 	flag.StringVar(&conf.Secondary, "secondary", d.Secondary, "Secondary strategy ID(s) for shared-account execution (comma-separated)")
+	flag.StringVar(&conf.StrategiesDb, "strategies-db", d.StrategiesDb, "(lastrun) strategies database that receives the strategy_last_backtest table")
 	flag.StringVar(&conf.OutDir, "out-dir", d.OutDir, "Reports root. Each backtest run writes to a new numbered folder here, <out-dir>/<run_id>/<family>.db, and held-out results to <run_id>/oos/")
 	flag.StringVar(&conf.CPUProfile, "cpuprofile", d.CPUProfile, "Write a CPU profile of the run to this file (read it with go tool pprof)")
 	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Use this existing run folder instead of starting a new one: finish an interrupted run (strategies already done in it are skipped unless -force) or read it (stale)")
@@ -236,7 +240,7 @@ func Main() {
 	if len(os.Args) > 1 {
 		called = os.Args[1]
 	}
-	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack": "stack-eval", "stack-eval": "stack-eval", "newrun": "newrun"})
+	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack": "stack-eval", "stack-eval": "stack-eval", "newrun": "newrun", "lastrun": "lastrun"})
 	switch called {
 	case "stack-eval":
 		fmt.Fprintln(os.Stderr, "note: `backtest stack-eval` is now `backtest stack`")
@@ -271,6 +275,15 @@ func runOnce(conf Config) error {
 			return err
 		}
 		return nil
+	}
+
+	if conf.Mode == "lastrun" {
+		// Record, per strategy, the result DB holding its most recent backtest.
+		_, err := lastbacktest.Run(lastbacktest.Config{
+			StrategiesDB: conf.StrategiesDb, ReportsDir: conf.OutDir, BaseDir: appenv.Folder(),
+			Workers: conf.Concurrency, Out: os.Stdout,
+		})
+		return err
 	}
 
 	if conf.Mode == "newrun" {

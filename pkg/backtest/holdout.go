@@ -138,7 +138,7 @@ func lastOrLatest(end string) string {
 // folder. stale only reads, so it takes the named run or the latest. The HTML
 // report, unless -html names a path, goes in the run folder as report.html.
 func prepareRun(conf Config) (Config, error) {
-	if conf.Mode == "covered-call" || conf.Mode == "newrun" {
+	if conf.Mode == "covered-call" || conf.Mode == "newrun" || conf.Mode == "lastrun" {
 		return conf, nil
 	}
 	root := conf.OutDir

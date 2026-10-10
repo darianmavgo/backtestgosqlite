@@ -246,6 +246,15 @@ Create the next run folder and print only its number, so a script can pass one `
 RUN=$(./bin/backtest newrun)
 ```
 
+### backtest lastrun
+
+Record where each strategy's most recent backtest lives. It reads `performance_summary` in every result DB under `data/reports/` (`*.db` and `<run>/*.db`, not `oos/`) and rewrites the table `strategy_last_backtest` in `strategies.db`: `strategy_id`, `result_db` (relative to `APP_FOLDER`, e.g. `data/reports/58/rotation.db`), `created_at`, `win_rate`, `total_trades`. Stacks (`a+b`) and built-ins get a row too; a strategy never backtested has none. It starts no run folder and runs no simulation. `-out-dir` picks the reports root and `-strategies-db` the database to write (default `refdata/strategies.db`).
+
+```bash
+./bin/backtest lastrun
+sqlite3 refdata/strategies.db "select result_db from strategy_last_backtest where strategy_id='streak-voo-buy-tecl'"
+```
+
 ### backtest stale
 
 Print which `data/reports/*.db` results are stale (unknown strategy, newer market bars, or an edited SQL pipeline). No simulation.

@@ -141,6 +141,18 @@ CREATE TABLE IF NOT EXISTS stack (
 	id           TEXT NOT NULL UNIQUE,
 	note         TEXT NOT NULL DEFAULT ''
 );
+
+-- Where each strategy's most recent backtest lives. result_db is relative to the
+-- app folder (data/reports/3/streak.db). Written by "backtest lastrun"; rows for
+-- strategies that were never backtested do not exist. strategy_id is any id a
+-- result DB uses, so stacks ("a+b") and built-ins are here too.
+CREATE TABLE IF NOT EXISTS strategy_last_backtest (
+	strategy_id  TEXT PRIMARY KEY,
+	result_db    TEXT NOT NULL,
+	created_at   TEXT NOT NULL DEFAULT '',
+	win_rate     REAL,
+	total_trades INTEGER NOT NULL DEFAULT 0
+);
 `
 
 // Open opens (creating if needed) the reference DB and ensures its schema.
