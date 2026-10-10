@@ -675,10 +675,15 @@ Remove what does not earn its place. `-dry-run` on every mode reports without ch
 ```bash
 ./bin/prune_losers -dry-run                       # strategies whose latest backtest has win_rate < 0.5 (or no trades)
 ./bin/prune_losers untrainable -dry-run           # tree strategies and models that cannot be trained before the holdout cutoff
+./bin/prune_losers orphans -dry-run                 # result-DB rows of strategies that no longer exist
 ./bin/prune_losers symbols -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl3 -dry-run
 ```
 
 The first two delete rows from `refdata/strategies.db`.
+
+### prune_losers orphans
+
+Delete, from every result DB under `data/reports/` (`*.db`, `<run>/*.db`), the rows of strategies that no longer exist: `strategy.Get` finds no such id, or for a stack `a+b` finds no such member. Every table keyed by `strategy_id` is cleaned (`combined_id` for the shared-account tables). A DB without `performance_summary` (gridsearch, walk-forward) is left alone. The strategies come from `-db` (default `refdata/strategies.db`) and `sql/strategies/` under `-root`, so prune strategies first. `-dry-run` counts only. Deleted rows leave the file the same size until `-vacuum` rewrites it (slow on big files); `-remove-empty` deletes a result DB with no backtest left. Run `backtest lastrun` afterwards to refresh `strategy_last_backtest`. Not undoable: copy `data/reports` first.
 
 ### prune_losers symbols
 

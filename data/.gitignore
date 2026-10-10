@@ -8,10 +8,15 @@ market_history.zip
 
 reports/.DS_Store
 
+
+# oversized reports with embedded DBs exceed GitHub 100MB limit
+reports/data/reports/*/backtest_report.html
+
 # BEGIN ignore-over-50MB
 # Files larger than 52428800 bytes. Rewritten by ignore_over50MB.sh.
 /market_history.db
-/market_history.zip
+/market_history.db.sz
+/market_history_hourly.db
 /markov_models.db
 /reports/1/markov.db
 /reports/1/oos/markov.db
@@ -25,6 +30,9 @@ reports/.DS_Store
 /reports/2/hold_bail.db
 /reports/2/markov.db
 /reports/2/tree.db
+/reports/22/strateval_runs/optimize_scratch/streak.db
+/reports/23/oos/streak.db
+/reports/23/streak.db
 /reports/3/hold.db
 /reports/3/hold_bail.db
 /reports/3/markov.db
@@ -35,12 +43,13 @@ reports/.DS_Store
 /reports/3/oos/tree.db
 /reports/3/streak.db
 /reports/3/tree.db
-/reports/data/reports/2026-10-02/backtest_report.html
+/reports/40/hold.db
+/reports/41/hold.db
+/reports/41/markov.db
+/reports/41/streak.db
+/reports/41/tree.db
 /reports/results.db
 /reports/strateval_runs/optimize_scratch/markov.db
 /reports/strateval_runs/optimize_scratch/streak.db
 /reports/strateval_runs/optimize_scratch/tree.db
 # END ignore-over-50MB
-
-# oversized reports with embedded DBs exceed GitHub 100MB limit
-reports/data/reports/*/backtest_report.html
