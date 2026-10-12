@@ -21,5 +21,6 @@ CREATE TABLE IF NOT EXISTS markov_model_meta (
     last_date TEXT NOT NULL,
     trained_at TEXT NOT NULL,
     lookback_days INTEGER NOT NULL,
-    state_threshold REAL NOT NULL
+    state_threshold REAL NOT NULL,
+    trained_through TEXT                -- last session the model learned from (the in-sample end), NULL on models trained before it existed
 );

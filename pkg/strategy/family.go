@@ -221,9 +221,15 @@ type FamilyAxes struct {
 	Strs map[string][]string  // text columns
 }
 
+var familyAxesMu sync.Mutex
+
 // LoadFamilyAxes reads the axes of family from the reference DB. A missing
 // reference DB gives empty axes, so a caller falls back to the row's own value.
 func LoadFamilyAxes(family string) FamilyAxes {
+	// refdb.Open seeds the family parameter table, a write: concurrent sweeps
+	// (gridsearch persymbol) would otherwise lock each other out.
+	familyAxesMu.Lock()
+	defer familyAxesMu.Unlock()
 	ax := FamilyAxes{Nums: map[string][]float64{}, Strs: map[string][]string{}}
 	if fi, err := os.Stat(refdb.DefaultPath); err != nil || fi.Size() == 0 {
 		return ax

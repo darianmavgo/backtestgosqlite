@@ -44,6 +44,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/rotation_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
@@ -129,7 +130,6 @@ type Config struct {
 	Top           int             // -top
 	Html          string          // -html
 	NoHtml        bool            // -no-html
-	DailyFills    bool            // -daily-fills
 	Concurrency   int             // -concurrency
 	Force         bool            // -force
 	IncludeStreak bool            // -include-streak
@@ -138,6 +138,9 @@ type Config struct {
 	RunID         int             // -run-id
 	MaxPerms      int             // -max-perms
 	Period        string          // -period: comma-separated calendar periods (1d,1w,1m,1q,1y) to sweep
+	MinSessions   int             // -min-sessions (persymbol)
+	AllSymbols    bool            // -all-symbols (persymbol): not only ETFs
+	WriteRows     bool            // -write-rows (persymbol)
 	Subcommand    string          // "params", "stale", "promote", or empty
 	Passed        map[string]bool // flags set explicitly on the command line (nil = none)
 	Args          []string        // positional arguments
@@ -168,6 +171,7 @@ func DefaultConfig() Config {
 		MinWinRate:    0.6,
 		GridsearchDb:  "",
 		MaxPerms:      20000,
+		MinSessions:   1000,
 	}
 }
 
@@ -203,7 +207,6 @@ func Main() {
 	flag.IntVar(&conf.MinTrades, "min-trades", d.MinTrades, "Minimum trade count filter")
 	flag.IntVar(&conf.Top, "top", d.Top, "Top N results to display per strategy")
 	flag.StringVar(&conf.Html, "html", d.Html, "Path to export HTML comparison report (single-strategy mode; defaults to data/reports/<strategy>_gridsearch.html)")
-	flag.BoolVar(&conf.DailyFills, "daily-fills", d.DailyFills, "Judge limit entries on the daily bar alone instead of the hourly bars (the default). For comparison only: it books same-day profit exits the hourly bars would not")
 	flag.BoolVar(&conf.NoHtml, "no-html", d.NoHtml, "Skip per-strategy HTML export (batch mode; speeds up large sweeps)")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Worker goroutines. Single-strategy mode: workers within that one sweep. Multi-strategy mode: total workers shared across every strategy's tasks combined (not per-strategy — a few expensive strategies get proportionally more of the pool once cheap ones finish). Defaults to all CPU cores.")
 	flag.BoolVar(&conf.Force, "force", d.Force, "Redo strategies that already have a completed sweep in data/reports/gridsearch.db")
@@ -212,11 +215,17 @@ func Main() {
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "SQLite DB for the pipeline controller (gridsearch_runs) and results (gridsearch_results) tables (default: gridsearch.db in the run folder)")
 	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Run folder under data/reports for gridsearch.db and the HTML. A sweep without it starts a new run. stale and promote without it use the latest run")
 	flag.IntVar(&conf.MaxPerms, "max-perms", d.MaxPerms, "Multi-strategy mode: skip a strategy whose generic parameter grid exceeds this many permutations (e.g. genetic-momentum's 50-symbol RequiredSymbols list balloons its generic grid to 210,000+ combos, none of which even exercise its real Python-driven signal logic). 0 disables the cap. Single-strategy mode ignores this.")
-	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"params": "params", "stale": "stale", "promote": "promote", "apply": "apply"})
+	flag.IntVar(&conf.MinSessions, "min-sessions", d.MinSessions, "persymbol: a symbol needs at least this many derived sessions to be tuned")
+	flag.BoolVar(&conf.AllSymbols, "all-symbols", d.AllSymbols, "persymbol: tune every symbol with enough history, not only ETFs")
+	flag.BoolVar(&conf.WriteRows, "write-rows", d.WriteRows, "persymbol: store each passing symbol's parameters as a rotation_strategy row (persym-<symbol>) in the reference database")
+	conf.Subcommand = cliutils.PopSubcommand(map[string]string{"params": "params", "stale": "stale", "promote": "promote", "apply": "apply", "persymbol": "persymbol"})
 	flag.Parse()
 	conf.Passed = map[string]bool{}
 	flag.Visit(func(f *flag.Flag) { conf.Passed[f.Name] = true })
 	conf.Args = flag.Args()
+	if err := appenv.RequireHourly(conf.Db); err != nil {
+		log.Fatal(err)
+	}
 	if err := Run(conf); err != nil {
 		log.Fatal(err)
 	}
@@ -224,12 +233,12 @@ func Main() {
 
 // Run executes the command with cfg. It returns errors instead of exiting.
 func Run(conf Config) error {
-	runner.DailyFills = conf.DailyFills
+	ensureSessions(conf.Db)
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), conf.Db)
 	stratreg.RegisterFamilies()
 
 	if conf.GridsearchDb == "" && conf.Subcommand != "params" && !conf.List {
-		create := conf.Subcommand == ""
+		create := conf.Subcommand == "" || conf.Subcommand == "persymbol"
 		path, id, err := storage.RunFile(appenv.Reports(), conf.RunID, create, "gridsearch.db")
 		if err != nil {
 			return fmt.Errorf("gridsearch: %w", err)
@@ -262,6 +271,10 @@ func Run(conf Config) error {
 		fmt.Println("=======================================================================================================================")
 		fmt.Println()
 		return nil
+	}
+
+	if conf.Subcommand == "persymbol" {
+		return runPerSymbol(conf)
 	}
 
 	// Resolve strategy selection from flag or positional argument
@@ -559,7 +572,9 @@ func printSweepReport(strat strategy.Strategy, outcome sweepOutcome) {
 			diff := (r.Report.NetProfit - outcome.BaselineRes.Report.NetProfit) / outcome.BaselineRes.Report.NetProfit * 100.0
 			comp = fmt.Sprintf(" (%+.0f%% vs base)", diff)
 		}
-		fmt.Printf("  #%d  %-50s  Profit=+$%.2f  CAGR=%.2f%%  Idle=%s%s\n", i+1, r.Label, r.Report.NetProfit, r.Report.CAGR*100, formatIdle(r.Report), comp)
+		fmt.Printf("  #%d  %-50s  Profit=$%.2f  CAGR=%.2f%%  DD=%.2f%%  DDdays=%d  Calmar=%.2f  WR=%.1f%%  Trades=%d  Idle=%s%s\n",
+			i+1, r.Label, r.Report.NetProfit, r.Report.CAGR*100, r.Report.MaxDrawdownPct*100, r.Report.MaxDrawdownDuration,
+			r.Report.CalmarRatio, r.Report.WinRate*100, r.Report.TotalTrades, formatIdle(r.Report), comp)
 	}
 }
 
@@ -630,8 +645,7 @@ func sweepParams(strat strategy.Strategy, ps strategy.ParameterSpace, capital fl
 	run.Add("Window", orNone(opts.StartDate)+" to "+orNone(opts.EndDate))
 	if opts.MarketDB != "" {
 		srcs := runner.MarketSourcesFor(opts.MarketDB, true)
-		run.Add("Market DB (daily)", srcs[0].Path+" ("+srcs[0].Detail+")")
-		run.Add("Market DB (hourly)", srcs[1].Path+" ("+srcs[1].Detail+"; "+srcs[1].Use+")")
+		run.Add("Market DB", srcs[0].Path+" ("+srcs[0].Detail+"; "+srcs[0].Use+")")
 	}
 	run.Add("Starting capital", fmt.Sprintf("$%.2f", capital))
 	run.Add("Minimum trades", fmt.Sprintf("%d", opts.MinTrades))
@@ -706,4 +720,16 @@ func symbolsFromReport(path string, n int) ([]string, error) {
 		return nil, fmt.Errorf("etf_compare returned no symbols")
 	}
 	return syms, nil
+}
+
+// ensureSessions brings the derived session rows of the hourly database up to
+// date before a sweep reads them. A database that is not there is left alone.
+func ensureSessions(marketDB string) {
+	path := appenv.BarDB(marketDB, "1h")
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	if _, err := sessions.Ensure(path); err != nil {
+		log.Printf("Warning: deriving sessions in %s: %v", path, err)
+	}
 }

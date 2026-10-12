@@ -16,7 +16,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
@@ -35,8 +38,15 @@ type MarkovConfig struct {
 	Symbols  []string // symbols to train; empty = every signal_symbol in markov_strategy
 	Batch    int      // symbols per pass; 0 = DefaultBatch
 	CalcDir  string   // keep the slice tables of the last batch here; empty = scratch dir, removed
-	Out      io.Writer
+	// Through is the last session (YYYY-MM-DD) the model may learn from, From the first;
+	// "" = no limit. Sessions after Through are still scored, with the counts frozen at
+	// Through, so the model never learns from the held-out period. This matches
+	// backtestgoduckdb's train markov -through/-from.
+	Through, From string
+	Out           io.Writer
 }
+
+var isoDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
 // DefaultMarkovConfig returns the defaults of `train markov`.
 func DefaultMarkovConfig() MarkovConfig {
@@ -73,6 +83,11 @@ func TrainMarkov(ctx context.Context, cfg MarkovConfig) (MarkovResult, error) {
 	if cfg.Out == nil {
 		cfg.Out = io.Discard
 	}
+	for _, d := range []string{cfg.Through, cfg.From} {
+		if d != "" && !isoDate.MatchString(d) {
+			return res, fmt.Errorf("train markov: %q is not a YYYY-MM-DD date", d)
+		}
+	}
 	if fi, err := os.Stat(cfg.MarketDB); err != nil || fi.Size() == 0 {
 		return res, fmt.Errorf("train markov: market database %s not found or empty", cfg.MarketDB)
 	}
@@ -96,6 +111,10 @@ func TrainMarkov(ctx context.Context, cfg MarkovConfig) (MarkovResult, error) {
 		return res, err
 	}
 	if err := storage.RunStage(model, "markov_model_schema", nil); err != nil {
+		model.Close()
+		return res, err
+	}
+	if err := addColumnIfMissing(model, "markov_model_meta", "trained_through", "TEXT"); err != nil {
 		model.Close()
 		return res, err
 	}
@@ -130,7 +149,7 @@ func TrainMarkov(ctx context.Context, cfg MarkovConfig) (MarkovResult, error) {
 			to = len(symbols)
 		}
 		list := strategy.SQLSymbolList(symbols[from:to])
-		repl := map[string]string{"__SYMBOL_LIST__": list}
+		repl := map[string]string{"__SYMBOL_LIST__": list, "__THROUGH__": cfg.Through, "__FROM__": cfg.From}
 		if err := storage.RunStage(calc, "markov_train", repl); err != nil {
 			return res, err
 		}
@@ -199,6 +218,8 @@ func runMarkov(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&cfg.RefDB, "ref-db", cfg.RefDB, "strategies database naming the symbols when -symbols is not given")
 	fs.StringVar(&symbols, "symbols", "", "comma-separated symbols to train (default: every signal_symbol in markov_strategy)")
 	fs.IntVar(&cfg.Batch, "batch", DefaultBatch, "symbols per pass of the SQL stages")
+	fs.StringVar(&cfg.Through, "through", "", "last session the model may learn from, YYYY-MM-DD (default: no limit; the in-sample end for a model that will be backtested out of sample)")
+	fs.StringVar(&cfg.From, "from", "", "first session the model may learn from, YYYY-MM-DD (default: the start of the data)")
 	fs.StringVar(&cfg.CalcDir, "calc-dir", "", "keep the last batch's slice tables here for inspection (default: scratch, removed)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -218,5 +239,28 @@ func runMarkov(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "trained %d of %d symbols (%d skipped: under 21 bars), %d prediction rows -> %s\n",
 		res.Trained, res.Requested, res.Skipped, res.Rows, cfg.ModelDB)
 	fmt.Fprintf(stdout, "trained on %s daily bars through %s\n", cfg.MarketDB, res.MarketThrough)
+	if cfg.Through != "" {
+		fmt.Fprintf(stdout, "learned from sessions %s to %s; later sessions are scored with the counts frozen at %s\n", orStart(cfg.From), cfg.Through, cfg.Through)
+	}
 	return 0
+}
+
+func orStart(from string) string {
+	if from == "" {
+		return "the start"
+	}
+	return from
+}
+
+// addColumnIfMissing upgrades a model database made before the column existed.
+func addColumnIfMissing(db *sqlx.DB, table, column, typ string) error {
+	var n int
+	if err := db.Get(&n, "SELECT COUNT(*) FROM pragma_table_info('"+table+"') WHERE name = ?", column); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + typ)
+	return err
 }

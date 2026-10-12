@@ -1,5 +1,5 @@
 // Package realbars gives tests real market data. Copy writes the daily bars of
-// the named symbols from the real market database (data/market_history.db) into
+// the named symbols from the real market database (data/market_history_hourly.db) into
 // a temp database, so a test runs on actual prices and never writes to the real
 // file. The test is skipped, with the reason, when that database is absent.
 package realbars
@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// marketPath finds data/market_history.db by walking up from the test's
+// marketPath finds data/market_history_hourly.db by walking up from the test's
 // working directory to the module root.
 func marketPath(t testing.TB) string {
 	t.Helper()
@@ -25,7 +25,7 @@ func marketPath(t testing.TB) string {
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			p := filepath.Join(dir, "data", "market_history.db")
+			p := filepath.Join(dir, "data", "market_history_hourly.db")
 			if fi, err := os.Stat(p); err != nil || fi.Size() == 0 {
 				t.Skipf("real market data %s not present", p)
 			}
@@ -62,6 +62,9 @@ func StrategiesDB(t testing.TB) string {
 	}
 }
 
+// MinSessions is the history Copy requires of each symbol it copies.
+const MinSessions = 1000
+
 // Copy returns the path of a new market database whose backtest_start holds
 // every daily (timeframe 1d) row of symbols, copied unchanged.
 func Copy(t testing.TB, symbols ...string) string {
@@ -88,6 +91,17 @@ func Copy(t testing.TB, symbols ...string) string {
 	var n int
 	if err := db.Get(&n, "SELECT COUNT(*) FROM backtest_start"); err != nil || n == 0 {
 		t.Skipf("real market data has no daily bars for %v", symbols)
+	}
+	// Tests on real bars were written for years of history. Sessions are derived
+	// from the hourly bars, which most symbols hold for two years only.
+	for _, s := range symbols {
+		var have int
+		if err := db.Get(&have, "SELECT COUNT(*) FROM backtest_start WHERE symbol = ?", strings.ToUpper(s)); err != nil {
+			t.Fatal(err)
+		}
+		if have < MinSessions {
+			t.Skipf("real market data holds %d sessions of %s, the test needs %d", have, strings.ToUpper(s), MinSessions)
+		}
 	}
 	if _, err := db.Exec("DETACH DATABASE real"); err != nil {
 		t.Fatal(err)

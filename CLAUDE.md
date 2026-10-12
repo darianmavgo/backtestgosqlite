@@ -21,9 +21,8 @@ go test ./pkg/strategy -run TestName              # one test
 ```
 
 - Flags go before positional args (Go `flag` stops at the first bare arg). A subcommand is arg 1: `backtest stack -primary ...`.
-- `data/market_history.db` (table `backtest_start`) and `refdata/strategies.db` are real data. Tests and experiments must not write to them; use `t.TempDir()` databases or `data/reports/`. For a search or experiment on trimmed data, build a copy of the market DB and pass `-db` (and `-out-dir`).
+- `data/market_history_hourly.db` (table `backtest_start`) and `refdata/strategies.db` are real data. Tests and experiments must not write to them; use `t.TempDir()` databases or `data/reports/`. For a search or experiment on trimmed data, build a copy of the market DB and pass `-db` (and `-out-dir`).
 - Paths come from `pkg/appenv`. Only `APP_FOLDER` is configurable; `data/`, `refdata/` and `data/reports/` are fixed subfolders (`APP_DATA`, `APP_REF` and `APP_REPORTS` no longer exist). Do not hardcode `data/...` or `reports/...` in Go, including flag defaults; call `appenv.MarketDB()`, `appenv.ReportFile(name)` or `cliutils.GetDefaultMarketDB`.
-- `go vet ./...` currently fails: `pkg/backtest/main_test.go:53` calls `strategy.NewSigVooBuyTecl`, which was removed (it is now the `streak-voo-buy-tecl` row). `pkg/runner` stack tests also look up the removed `sig-voo-buy-tecl`. Fix these before relying on a green `go test ./...`.
 
 ## Layout rules
 
@@ -60,7 +59,7 @@ In `models.Signal`, `TakeProfit` and `StopLoss` are absolute dollar prices (`150
 
 - `backtest` and `backtest stack` hold out the last 12 months by default (`pkg/backtest/holdout.go`: in-sample pass, then one out-of-sample pass into `data/reports/oos/`). Tests or tooling that need a single full-history pass must pass `-holdout-months 0`; single-strategy result DBs otherwise cover only the in-sample window.
 - Walk-forward and stack results depend on the market DB window: a stack found by screening many strategies on the full history is in-sample. Keep a held-out final period and report it separately (see `docs/omnifunds_benchmark.md` for the bar to beat).
-- Daily simulation reads rows with `length(Date) = 10`; minute bars share the same table and are skipped.
+- Hourly bars are the only bars downloaded (Alpaca or Polygon). Daily simulation reads session rows with `length(Date) = 10` that `pkg/sessions` derives from the hourly bars in the same table; there is no daily database and no Yahoo or Stooq path. Do not add one.
 - Result DBs are written per run: `data/reports/<id>.db`, then `<id>_2.db`, `<id>_3.db`. Do not assume a fixed filename.
 - `strateval`'s ledger is `strategies.db` in the run folder (`-run-id`); `STRATEGIES_DB`, then `STRATEVAL_DB`, override it. `walk_forward.db` and `gridsearch.db` also live in the run folder, so a run never sees another run's results.
 - `data/` (except `README.md` and `ignore_over50MB.sh`), `bin/` and `reports/*.html` are gitignored; `data/` also has its own `.git`. Do not commit databases or binaries.

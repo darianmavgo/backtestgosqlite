@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
-// RunDownload fetches missing daily bars for symbols into targetTable of the
-// SQLite DB at targetDb, covering the last `years` years through today. It is
-// cmd/market_history's Yahoo-primary/Stooq-fallback missing-window loop (both keyless)
+// RunDownload fetches missing hourly bars for symbols into targetTable of the
+// SQLite DB at targetDb, covering the last `years` years through today, from
+// Alpaca (ALPACA_KEY / ALPACA_SECRET), and then derives the session rows that
+// signals read (see pkg/sessions). It is cmd/market_history's missing-window loop
 // as a plain function -- only date windows not already cached are fetched --
 // so callers can refresh market data in-process instead of exec'ing a
 // separately built `market_history` binary (or `go run ./cmd/market_history`), which can't
@@ -48,9 +50,8 @@ func RunDownloadContext(ctx context.Context, targetDb, targetTable string, symbo
 		return fmt.Errorf("ensure table %s: %w", targetTable, err)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	primary := datasource.NewYahooDataSource(client)
-	fallback := datasource.NewStooqDataSource(client)
+	client := &http.Client{Timeout: 60 * time.Second}
+	source := datasource.NewAlpacaDataSource("", "", "", client)
 
 	now := time.Now().UTC()
 	start := now.AddDate(-years, 0, 0)
@@ -81,7 +82,7 @@ func RunDownloadContext(ctx context.Context, targetDb, targetTable string, symbo
 			defer func() { <-sem }()
 
 			mu.Lock()
-			cov, covErr := storage.GetSymbolDateCoverageWithTimeframe(db, targetTable, sym, "1d")
+			cov, covErr := storage.GetSymbolDateCoverageWithTimeframe(db, targetTable, sym, "1h")
 			mu.Unlock()
 			if covErr != nil {
 				fail(fmt.Errorf("%s: coverage check: %w", sym, covErr))
@@ -90,25 +91,22 @@ func RunDownloadContext(ctx context.Context, targetDb, targetTable string, symbo
 
 			var windows []datasource.FetchRequest
 			if cov.BarCount == 0 {
-				windows = append(windows, datasource.FetchRequest{Symbol: sym, StartDate: start, EndDate: now, Timeframe: "1d"})
+				windows = append(windows, datasource.FetchRequest{Symbol: sym, StartDate: start, EndDate: now, Timeframe: "1h"})
 			} else {
 				if startStr < cov.MinDate {
 					if dbMin, perr := time.Parse("2006-01-02", cov.MinDate); perr == nil && dbMin.Sub(start) > 4*24*time.Hour {
-						windows = append(windows, datasource.FetchRequest{Symbol: sym, StartDate: start, EndDate: dbMin, Timeframe: "1d"})
+						windows = append(windows, datasource.FetchRequest{Symbol: sym, StartDate: start, EndDate: dbMin, Timeframe: "1h"})
 					}
 				}
 				if cov.MaxDate < endStr {
 					if dbMax, perr := time.Parse("2006-01-02", cov.MaxDate); perr == nil {
-						windows = append(windows, datasource.FetchRequest{Symbol: sym, StartDate: dbMax, EndDate: now, Timeframe: "1d"})
+						windows = append(windows, datasource.FetchRequest{Symbol: sym, StartDate: dbMax, EndDate: now, Timeframe: "1h"})
 					}
 				}
 			}
 
 			for _, win := range windows {
-				bars, ferr := primary.Fetch(ctx, win)
-				if ferr != nil || len(bars) == 0 {
-					bars, ferr = fallback.Fetch(ctx, win)
-				}
+				bars, ferr := source.Fetch(ctx, win)
 				if ferr != nil {
 					if cov.BarCount == 0 {
 						fail(fmt.Errorf("%s: fetch %s..%s: %w", sym, win.StartDate.Format("2006-01-02"), win.EndDate.Format("2006-01-02"), ferr))
@@ -135,6 +133,9 @@ func RunDownloadContext(ctx context.Context, targetDb, targetTable string, symbo
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if _, err := sessions.Derive(db, targetTable); err != nil && firstErr == nil {
+		firstErr = fmt.Errorf("derive sessions: %w", err)
 	}
 	return firstErr
 }

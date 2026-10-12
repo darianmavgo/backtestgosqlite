@@ -13,6 +13,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/barcoverage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
 )
@@ -24,11 +25,11 @@ type UpdateConfig struct {
 	DryRun bool // report what is missing, download nothing
 }
 
-// DefaultUpdateConfig is DefaultConfig with the update defaults: Alpaca daily
+// DefaultUpdateConfig is DefaultConfig with the update defaults: Alpaca hourly
 // bars from the standard backtest start, every symbol (no -limit).
 func DefaultUpdateConfig() UpdateConfig {
 	c := DefaultConfig()
-	c.Source, c.Timeframe, c.Start, c.Limit = "alpaca", "1d", "2021-01-01", 0
+	c.Source, c.Timeframe, c.Start, c.Limit = "alpaca", "1h", "2021-01-01", 0
 	return UpdateConfig{Config: c}
 }
 
@@ -80,14 +81,16 @@ func Update(ctx context.Context, cfg UpdateConfig, symbols []string) ([]string, 
 		return nil, fmt.Errorf("market_history update: no symbols")
 	}
 	if cfg.Timeframe == "" {
-		cfg.Timeframe = "1d"
+		cfg.Timeframe = "1h"
 	}
 	if cfg.Start == "" {
 		cfg.Start = "2021-01-01"
 	}
+	if _, err := sessions.Ensure(appenv.BarDB(cfg.DB, cfg.Timeframe)); err != nil {
+		return nil, fmt.Errorf("derive sessions: %w", err)
+	}
 	copts := barcoverage.CoverageOptions{
-		Symbols: symbols, DailyDB: cfg.DB, BarDB: appenv.BarDB(cfg.DB, cfg.Timeframe),
-		Hourly: appenv.BarDB(cfg.DB, cfg.Timeframe) != cfg.DB, Start: cfg.Start, End: cfg.End,
+		Symbols: symbols, DB: appenv.BarDB(cfg.DB, cfg.Timeframe), Start: cfg.Start, End: cfg.End,
 	}
 	before, err := barcoverage.Coverage(copts)
 	if err != nil {
@@ -146,21 +149,13 @@ func updateMain() {
 	cfg := d
 	bindFlags(&cfg.Config, d.Config)
 	strategies := flag.String("strategy", "", "required: strategy ids and a+b+c stacks, comma-separated; update covers the symbols they need")
-	hourly := flag.Bool("hourly", false, "update hourly bars (market_history_hourly.db) instead of daily; same as -timeframe 1h")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "report the symbols with missing sessions, download nothing")
 	flag.Parse()
-	if *hourly {
-		set := false
-		flag.Visit(func(f *flag.Flag) { set = set || f.Name == "timeframe" })
-		if set && cfg.Timeframe == "1d" {
-			log.Fatal("-hourly and -timeframe 1d disagree")
-		}
-		if !set {
-			cfg.Timeframe = "1h"
-		}
-	}
 	if strings.TrimSpace(*strategies) == "" {
 		log.Fatal("update needs -strategy <id>: it says which symbols to keep complete")
+	}
+	if err := appenv.RequireHourly(cfg.DB); err != nil {
+		log.Fatal(err)
 	}
 	strategy.AutoRegisterSQLStrategies(appenv.Folder(), cfg.DB)
 	stratreg.RegisterFamilies()
@@ -173,4 +168,19 @@ func updateMain() {
 	if _, err := Update(context.Background(), cfg, symbols); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// sessionsMain is `market_history sessions`: rebuild the daily session rows
+// from the hourly bars of the database.
+func sessionsMain() {
+	db := flag.String("db", appenv.MarketDB(), "hourly market database")
+	flag.Parse()
+	if err := appenv.RequireHourly(*db); err != nil {
+		log.Fatal(err)
+	}
+	n, err := sessions.Ensure(*db)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("wrote %d session bars in %s\n", n, *db)
 }

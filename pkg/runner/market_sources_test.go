@@ -8,18 +8,18 @@ import (
 	"testing"
 )
 
-func TestMarketSourcesNameDailyAndHourlyDatabases(t *testing.T) {
+func TestMarketSourcesNamesTheHourlyDatabase(t *testing.T) {
 	dir := t.TempDir()
 	daily := filepath.Join(dir, "market_history.db")
 	if err := os.WriteFile(daily, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	srcs := MarketSources(daily)
-	if len(srcs) != 2 || srcs[0].Path != daily || srcs[1].Path != filepath.Join(dir, "market_history_hourly.db") {
+	if len(srcs) != 1 || srcs[0].Path != filepath.Join(dir, "market_history_hourly.db") {
 		t.Fatalf("sources = %+v", srcs)
 	}
-	if srcs[1].Detail != "not found" || strings.Contains(srcs[0].Detail, "not found") {
-		t.Errorf("details = %q, %q", srcs[0].Detail, srcs[1].Detail)
+	if srcs[0].Detail != "not found" {
+		t.Errorf("detail = %q", srcs[0].Detail)
 	}
 	var out bytes.Buffer
 	PrintMarketSources(&out, daily, "backtest_start")
@@ -32,19 +32,10 @@ func TestMarketSourcesForStatesWhenHourlyIsNotRead(t *testing.T) {
 	daily := filepath.Join(t.TempDir(), "market_history.db")
 	var out bytes.Buffer
 	PrintMarketSourcesFor(&out, daily, "backtest_start", false)
-	if !strings.Contains(out.String(), "not read here") {
+	if !strings.Contains(out.String(), "not read for fills here") {
 		t.Errorf("output:\n%s", out.String())
 	}
-	if got := MarketSourcesFor(daily, true)[1].Use; strings.Contains(got, "not read") {
+	if got := MarketSourcesFor(daily, true)[0].Use; strings.Contains(got, "not read") {
 		t.Errorf("hourly use = %q", got)
-	}
-}
-
-func TestLoadFillBarsIsSkippedWithDailyFills(t *testing.T) {
-	DailyFills = true
-	defer func() { DailyFills = false }()
-	got, err := LoadFillBars(filepath.Join(t.TempDir(), "market_history.db"), []string{"AAA"})
-	if err != nil || got != nil {
-		t.Fatalf("LoadFillBars with -daily-fills = %v, %v; want nil, nil", got, err)
 	}
 }

@@ -265,7 +265,7 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 	cfg := strategy.StrategyConfig{
 		AllocationPct:   t.alloc,
 		TakeProfitPct:   t.tp,
-		StopLossPct:     t.sl,
+		StopLossPct:     stopMultiplier(t.sl),
 		HoldingWindow:   t.hold,
 		PositionCap:     1,
 		CashYieldAnnual: ctx.ParamSpace.CashYield,
@@ -521,7 +521,7 @@ func preparePeriodSweep(db *sqlx.DB, strat strategy.Strategy, space strategy.Par
 		}
 		sort.Strings(syms)
 		if ctx.Intraday, err = runner.LoadFillBars(opts.MarketDB, syms); err != nil {
-			return nil, nil, fmt.Errorf("%s: hourly bars for limit fills: %w (use -daily-fills to sweep on daily bars)", strat.ID(), err)
+			return nil, nil, fmt.Errorf("%s: hourly bars for limit fills: %w", strat.ID(), err)
 		}
 	}
 	var tasks []sweepTask
@@ -553,12 +553,23 @@ func preparePeriodSweep(db *sqlx.DB, strat strategy.Strategy, space strategy.Par
 	return ctx, tasks, nil
 }
 
+// stopMultiplier converts a grid stop (0.05 = 5% under the entry) to the
+// StrategyConfig form, a multiplier of the entry (0.95), with 0 meaning no stop.
+// Passing the raw 0.05 puts the stop at 5% of the entry price, which never
+// triggers, so every stop on the axis gave the same result.
+func stopMultiplier(sl float64) float64 {
+	if sl <= 0 {
+		return 0
+	}
+	return 1 - sl
+}
+
 // evalPeriodTask simulates one period's signals, repriced for the grid point.
 func evalPeriodTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool) (gridResult, bool) {
 	cfg := ctx.PeriodConfigs[t.period]
 	cfg.AllocationPct = t.alloc
 	cfg.TakeProfitPct = t.tp
-	cfg.StopLossPct = t.sl
+	cfg.StopLossPct = stopMultiplier(t.sl)
 	cfg.HoldingWindow = t.hold
 	if t.hold <= 0 {
 		cfg.HoldingWindow = 99999 // no hold limit: the period's last session exits

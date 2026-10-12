@@ -69,8 +69,8 @@ func TestUpdateNeedsSymbols(t *testing.T) {
 	}
 }
 
-func TestUpdateDefaultsToDailyBars(t *testing.T) {
-	if got := DefaultUpdateConfig().Timeframe; got != "1d" {
-		t.Errorf("default timeframe = %q, want 1d", got)
+func TestUpdateDefaultsToHourlyBars(t *testing.T) {
+	if got := DefaultUpdateConfig().Timeframe; got != "1h" {
+		t.Errorf("default timeframe = %q, want 1h", got)
 	}
 }

@@ -195,3 +195,67 @@ func downloadOptionHistory(ctx context.Context, out io.Writer, db *sqlx.DB, barT
 		newContracts, newBars, cached, noQuote, cli.Calls)
 	return nil
 }
+
+// downloadAlpacaOptions pulls every listed call and put (expired ones too) for
+// each underlying, and their daily bars, into option_contracts / option_bars in
+// the market DB. Alpaca's option history starts in early 2024. Contracts whose
+// bars were pulled and have expired are skipped, so reruns only add new work.
+func downloadAlpacaOptions(ctx context.Context, out io.Writer, db *sqlx.DB, underlyings []string, start, end time.Time, key, secret string) error {
+	if err := storage.EnsureOptionTables(db); err != nil {
+		return err
+	}
+	cli := datasource.NewAlpacaOptions(key, secret)
+	today := time.Now().UTC().Format("2006-01-02")
+	from, to := start.Format("2006-01-02"), end.Format("2006-01-02")
+	const batch = 100
+	// Alpaca refuses an end at or after today ("OPRA agreement is not signed":
+	// the newest quotes are not on this plan), but serves the delayed bars when no end is sent.
+	barsTo := to
+	if to >= today {
+		barsTo = ""
+	}
+	for _, u := range underlyings {
+		contracts, err := cli.ListContracts(ctx, u, from)
+		if err != nil {
+			return fmt.Errorf("list %s contracts: %w", u, err)
+		}
+		if err := storage.UpsertOptionContracts(db, contracts); err != nil {
+			return err
+		}
+		var todo []string
+		for _, c := range contracts {
+			if c.Expiry < from {
+				continue
+			}
+			fetched, _, err := storage.ContractFetchState(db, c.Ticker)
+			if err != nil {
+				return err
+			}
+			if fetched && c.Expiry < today {
+				continue
+			}
+			todo = append(todo, c.Ticker)
+		}
+		fmt.Fprintf(out, "Alpaca options %s: %d contracts listed, %d to fetch bars for (%s ➔ %s)\n", u, len(contracts), len(todo), from, to)
+		var bars int
+		for i := 0; i < len(todo); i += batch {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			chunk := todo[i:min(i+batch, len(todo))]
+			got, err := cli.Bars(ctx, chunk, from, barsTo)
+			if err != nil {
+				return fmt.Errorf("bars %s: %w", u, err)
+			}
+			for _, t := range chunk {
+				if err := storage.UpsertOptionBars(db, t, got[t]); err != nil {
+					return err
+				}
+				bars += len(got[t])
+			}
+			fmt.Fprintf(out, "  %s: %d/%d contracts, %d bars so far\n", u, min(i+batch, len(todo)), len(todo), bars)
+		}
+	}
+	fmt.Fprintf(out, "\n✨ Alpaca options done: %d API calls.\n", cli.Calls)
+	return nil
+}

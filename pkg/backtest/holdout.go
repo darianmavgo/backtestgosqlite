@@ -2,13 +2,17 @@ package backtest
 
 import (
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"strings"
 	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
@@ -20,8 +24,9 @@ const DefaultHoldoutMonths = storage.DefaultHoldoutMonths
 
 // stackEvalOutcome is what stack-eval found, for the out-of-sample pass.
 type stackEvalOutcome struct {
-	StackID      string // a+b+c, empty when no stack was built
-	DefaultAsset string // park symbol applied to every run, if any
+	StackID      string                    // a+b+c, empty when no stack was built
+	DefaultAsset string                    // park symbol applied to every run, if any
+	Report       *models.PerformanceReport // the single strategy's report, for the out-of-sample comparison
 }
 
 func holdoutApplies(conf Config) bool {
@@ -66,7 +71,6 @@ func Run(conf Config) error {
 		conf.Concurrency = 1
 	}
 	runner.KeepCalc = conf.KeepCalc
-	runner.DailyFills = conf.DailyFills
 	if conf.CPUProfile != "" {
 		pf, err := os.Create(conf.CPUProfile)
 		if err != nil {
@@ -78,6 +82,7 @@ func Run(conf Config) error {
 		}
 		defer pprof.StopCPUProfile()
 	}
+	ensureSessions(conf.Db)
 	conf, err := prepareRun(conf)
 	if err != nil {
 		return err
@@ -98,6 +103,7 @@ func Run(conf Config) error {
 	in.End = inEnd
 	var outcome stackEvalOutcome
 	in.outcome = &outcome
+	in.phase = "in-sample"
 	banner(fmt.Sprintf("IN-SAMPLE: %s → %s   (last %d months held out; use this window to select and tune)", conf.Start, inEnd, conf.HoldoutMonths))
 	if err := runOnce(in); err != nil {
 		return err
@@ -108,6 +114,8 @@ func Run(conf Config) error {
 	oos.OutDir = filepath.Join(conf.OutDir, "oos")
 	oos.Html = oosPath(conf.Html)
 	oos.outcome = nil
+	oos.phase = "out-of-sample"
+	oos.prior = outcome.Report
 	if conf.Mode == "stack-eval" {
 		if outcome.StackID == "" {
 			fmt.Println("\nstack built no stack, so there is nothing to test out of sample.")
@@ -172,4 +180,16 @@ func prepareRun(conf Config) (Config, error) {
 		conf.Html = filepath.Join(dir, "report.html")
 	}
 	return conf, nil
+}
+
+// ensureSessions brings the derived session rows of the hourly database up to
+// date before a run reads them. A database that is not there is left alone.
+func ensureSessions(marketDB string) {
+	path := appenv.BarDB(marketDB, "1h")
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	if _, err := sessions.Ensure(path); err != nil {
+		log.Printf("Warning: deriving sessions in %s: %v", path, err)
+	}
 }

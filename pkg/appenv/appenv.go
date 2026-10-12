@@ -11,6 +11,7 @@ package appenv
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,39 +89,64 @@ func RefDB() string { return filepath.Join(Ref(), "strategies.db") }
 // UniverseDB is the universe database (all stocks, etfs, categorization, leverage).
 func UniverseDB() string { return filepath.Join(Ref(), "universe.db") }
 
-// MarketDB is the market history database.
-func MarketDB() string { return filepath.Join(Data(), "market_history.db") }
+// MarketDB is the market history database. It is the hourly database: hourly
+// bars (rows with a "YYYY-MM-DD HH:MM:SS" Date, timeframe 1h) are the only bars
+// that are downloaded, and the session rows ("YYYY-MM-DD" Date, timeframe 1d)
+// that signals and the simulation clock read are derived from them in the same
+// table (see pkg/sessions). There is no separate daily database.
+func MarketDB() string { return HourlyDB() }
 
-// HourlyDB is the hourly bars (timeframe 1h); daily bars stay in MarketDB.
+// HourlyDB is the hourly bars and the sessions derived from them.
 func HourlyDB() string { return filepath.Join(Data(), "market_history_hourly.db") }
 
-// MinuteDB is the minute bars (1m, 5m, ...); daily bars stay in MarketDB.
+// MinuteDB is the minute bars (1m, 5m, ...).
 func MinuteDB() string { return filepath.Join(Data(), "market_history_minute.db") }
 
-// BarDB returns the database that holds bars of the timeframe, given the daily
-// market database path: the daily path itself for "1d" (or empty), otherwise
-// the hourly or minute database beside it ("market_history.db" ->
-// "market_history_hourly.db"), so a temp daily database gets temp siblings.
+// BarDB returns the database that holds bars of the timeframe, given the market
+// database path. Hourly bars and their derived sessions share one file, so an
+// hourly path (a name ending in "_hourly") and every daily or hourly timeframe
+// map to it; any other path gets the hourly or minute database beside it
+// ("market_history.db" -> "market_history_hourly.db"), so a temp database gets
+// temp siblings.
 func BarDB(marketDB, timeframe string) string {
-	suffix := ""
+	suffix := "_hourly"
 	switch tf := strings.ToLower(strings.TrimSpace(timeframe)); {
-	case tf == "h" || strings.HasSuffix(tf, "h"):
-		suffix = "_hourly"
-	case strings.HasSuffix(tf, "m"):
+	case strings.HasSuffix(tf, "m") && tf != "":
 		suffix = "_minute"
-	default:
+	case tf == "" || tf == "1d" || tf == "d":
 		return marketDB
 	}
 	ext := filepath.Ext(marketDB)
-	return strings.TrimSuffix(marketDB, ext) + suffix + ext
+	base := strings.TrimSuffix(marketDB, ext)
+	if strings.HasSuffix(base, suffix) {
+		return marketDB
+	}
+	return base + suffix + ext
 }
+
+// RequireHourly rejects a market database path that is not the hourly one, so a
+// leftover daily file is never read by mistake.
+func RequireHourly(path string) error {
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if strings.HasSuffix(base, "_hourly") {
+		return nil
+	}
+	return fmt.Errorf("%s is not an hourly database: daily databases are retired, pass %s", path, HourlyDB())
+}
+
+// MarkovTrainThrough is the last session a live Markov retrain may learn from
+// (MARKOV_TRAIN_THROUGH, YYYY-MM-DD); "" = no limit, the model learns through the latest bar.
+// Set it to the in-sample end of a backtest so the deployed model is the one that was tested.
+func MarkovTrainThrough() string { return strings.TrimSpace(os.Getenv("MARKOV_TRAIN_THROUGH")) }
+
+// MarkovTrainFrom is the first session a live Markov retrain may learn from (MARKOV_TRAIN_FROM).
+func MarkovTrainFrom() string { return strings.TrimSpace(os.Getenv("MARKOV_TRAIN_FROM")) }
 
 // MarkovDB is the trained Markov models (written by train markov, read by backtest).
 func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
 
 // TreeDB is the trained decision trees (written by train tree, read by backtest).
 func TreeDB() string { return filepath.Join(Data(), "tree_models.db") }
-
 
 // DataFile returns a path to name inside the data directory.
 func DataFile(name string) string { return filepath.Join(Data(), name) }

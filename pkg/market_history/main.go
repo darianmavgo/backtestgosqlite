@@ -19,6 +19,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/universe"
 	"github.com/jmoiron/sqlx"
@@ -141,8 +142,8 @@ type Summary struct {
 // DefaultConfig returns the same defaults the market_history CLI uses.
 func DefaultConfig() Config {
 	return Config{
-		DB: appenv.MarketDB(), SettingsDB: appenv.RefDB(), UniverseDB: appenv.UniverseDB(), Source: "yahoo",
-		Table: "leveraged_etf", Limit: 50, Years: 4, Timeframe: "1d",
+		DB: appenv.MarketDB(), SettingsDB: appenv.RefDB(), UniverseDB: appenv.UniverseDB(), Source: "alpaca",
+		Table: "leveraged_etf", Limit: 50, Years: 5, Timeframe: "1h",
 		TargetTable: "backtest_start",
 		Concurrency: runtime.NumCPU(), OTM: "0,2,5", Rate: 5,
 	}
@@ -150,9 +151,9 @@ func DefaultConfig() Config {
 
 // bindFlags registers the download flags on cfg, with d as the defaults.
 func bindFlags(cfg *Config, d Config) {
-	flag.StringVar(&cfg.DB, "db", d.DB, "Daily market history DB (default: APP_FOLDER/data/market_history.db); 1h/minute timeframes go to market_history_hourly.db / market_history_minute.db beside it")
+	flag.StringVar(&cfg.DB, "db", d.DB, "Hourly market history DB (default: APP_FOLDER/data/market_history_hourly.db); the daily sessions that signals read are derived into the same table")
 	flag.StringVar(&cfg.SettingsDB, "settings", d.SettingsDB, "Reference DB path (strategies and symbol tables)")
-	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: yahoo, polygon, alpaca, polygon-options, stooq")
+	flag.StringVar(&cfg.Source, "source", d.Source, "Data source provider: alpaca (default), polygon, polygon-options or alpaca-options (option end-of-day bars into option_contracts / option_bars)")
 	flag.StringVar(&cfg.AlpacaKey, "alpaca-key", d.AlpacaKey, "Alpaca key id (or set ALPACA_KEY in environment or .env)")
 	flag.StringVar(&cfg.AlpacaSecret, "alpaca-secret", d.AlpacaSecret, "Alpaca secret (or set ALPACA_SECRET in environment or .env)")
 	flag.StringVar(&cfg.AlpacaFeed, "alpaca-feed", d.AlpacaFeed, "(alpaca) data feed: sip (consolidated, default; needs a paid data plan) or iex (free plan, one exchange); default ALPACA_FEED or sip")
@@ -163,7 +164,7 @@ func bindFlags(cfg *Config, d Config) {
 	flag.IntVar(&cfg.Years, "years", d.Years, "Number of years of history")
 	flag.StringVar(&cfg.Start, "start", d.Start, "Optional start date (YYYY-MM-DD), overrides -years")
 	flag.StringVar(&cfg.End, "end", d.End, "Optional end date (YYYY-MM-DD), defaults to now")
-	flag.StringVar(&cfg.Timeframe, "timeframe", d.Timeframe, "Bar timeframe (1d, 1h, 5m, 1m)")
+	flag.StringVar(&cfg.Timeframe, "timeframe", d.Timeframe, "Bar timeframe: only 1h (daily sessions are derived from the hourly bars)")
 	flag.StringVar(&cfg.TargetTable, "target-table", d.TargetTable, "Target table name in target SQLite DB")
 	flag.StringVar(&cfg.UniverseDB, "universe-db", d.UniverseDB, "Universe database read by -unleveraged-etfs")
 	flag.BoolVar(&cfg.UnleveragedETFs, "unleveraged-etfs", d.UnleveragedETFs, "Download every active ETF with no leverage from the universe database, most traded first (use with -source polygon -timeframe 1h; hourly history is 2 years on the free tier, so -years defaults to 2 here)")
@@ -192,9 +193,13 @@ func resolveKeys(cfg *Config) {
 func Main() {
 	d := DefaultConfig()
 	cfg := d
-	sub := cliutils.PopSubcommand(map[string]string{"update": "update"})
+	sub := cliutils.PopSubcommand(map[string]string{"update": "update", "sessions": "sessions"})
 	if sub == "update" {
 		updateMain()
+		return
+	}
+	if sub == "sessions" {
+		sessionsMain()
 		return
 	}
 	bindFlags(&cfg, d)
@@ -214,6 +219,11 @@ func Main() {
 		}
 	}
 	cfg.Out = os.Stdout
+	if !isOptionSource(cfg.Source) {
+		if err := appenv.RequireHourly(cfg.DB); err != nil {
+			log.Fatal(err)
+		}
+	}
 	resolveKeys(&cfg)
 	if _, err := Run(context.Background(), cfg); err != nil {
 		log.Fatal(err)
@@ -280,12 +290,20 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		cfg.TargetTable = "backtest_start"
 	}
 	if cfg.Timeframe == "" {
-		cfg.Timeframe = "1d"
+		cfg.Timeframe = "1h"
 	}
 	if cfg.Source == "" {
-		cfg.Source = "yahoo"
+		cfg.Source = "alpaca"
 	}
-	// Hourly and minute bars live beside the daily database, not in it.
+	if !isOptionSource(cfg.Source) {
+		if tf := strings.ToLower(strings.TrimSpace(cfg.Timeframe)); tf != "1h" && tf != "h" {
+			return nil, fmt.Errorf("market_history: timeframe %q is not supported: only hourly bars (-timeframe 1h) are downloaded, and daily sessions are derived from them", cfg.Timeframe)
+		}
+		if src := strings.ToLower(cfg.Source); src != "alpaca" && src != "polygon" {
+			return nil, fmt.Errorf("market_history: source %q is not supported for hourly bars: use alpaca or polygon", cfg.Source)
+		}
+	}
+	// Hourly bars and the sessions derived from them share one database.
 	cfg.DB = appenv.BarDB(cfg.DB, cfg.Timeframe)
 	if cfg.Years <= 0 {
 		cfg.Years = 4
@@ -297,7 +315,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		return nil, fmt.Errorf("market_history: source %s requires Config.PolygonKey", src)
 	}
 
-	if strings.ToLower(cfg.Source) == "alpaca" && (strings.TrimSpace(cfg.AlpacaKey) == "" || strings.TrimSpace(cfg.AlpacaSecret) == "") && !cfg.Status {
+	if src := strings.ToLower(cfg.Source); (src == "alpaca" || src == "alpaca-options") && (strings.TrimSpace(cfg.AlpacaKey) == "" || strings.TrimSpace(cfg.AlpacaSecret) == "") && !cfg.Status {
 		return nil, fmt.Errorf("market_history: source alpaca requires Config.AlpacaKey and Config.AlpacaSecret")
 	}
 
@@ -334,6 +352,36 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 			}
 		}
 		if err := downloadOptionHistory(ctx, out, db, cfg.TargetTable, underlying, start, end, otms, cfg.PolygonKey, cfg.Rate, cfg.MaxCalls); err != nil {
+			return nil, fmt.Errorf("option download: %v", err)
+		}
+		return &Summary{}, nil
+	}
+
+	// 0b. Option history from Alpaca (calls and puts, expired included, daily bars).
+	if strings.ToLower(cfg.Source) == "alpaca-options" {
+		var underlyings []string
+		for _, sym := range strings.Split(cfg.Symbols, ",") {
+			if sym = strings.ToUpper(strings.TrimSpace(sym)); sym != "" {
+				underlyings = append(underlyings, sym)
+			}
+		}
+		if len(underlyings) == 0 {
+			return nil, fmt.Errorf("market_history: -source alpaca-options needs -symbols (the underlyings, e.g. UPRO,SPXU)")
+		}
+		end := time.Now().UTC()
+		start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC) // Alpaca option history starts in early 2024
+		var perr error
+		if cfg.Start != "" {
+			if start, perr = time.Parse("2006-01-02", cfg.Start); perr != nil {
+				return nil, fmt.Errorf("Invalid -start date %q: expected YYYY-MM-DD", cfg.Start)
+			}
+		}
+		if cfg.End != "" {
+			if end, perr = time.Parse("2006-01-02", cfg.End); perr != nil {
+				return nil, fmt.Errorf("Invalid -end date %q: expected YYYY-MM-DD", cfg.End)
+			}
+		}
+		if err := downloadAlpacaOptions(ctx, out, db, underlyings, start, end, cfg.AlpacaKey, cfg.AlpacaSecret); err != nil {
 			return nil, fmt.Errorf("option download: %v", err)
 		}
 		return &Summary{}, nil
@@ -383,19 +431,8 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		}
 		polySource.SetRate(cfg.Rate)
 		primarySource = polySource
-		if cfg.Timeframe == "1d" {
-			// Yahoo has no matching intraday bars: its fallback writes date-only
-			// rows tagged with the intraday timeframe, so only daily falls back.
-			fallbackSource = datasource.NewYahooDataSource(client)
-		}
-	case "alpaca":
-		// Alpaca has no daily-only fallback worth the mixed rows; intraday never falls back.
+	default: // alpaca
 		primarySource = datasource.NewAlpacaDataSource(cfg.AlpacaKey, cfg.AlpacaSecret, cfg.AlpacaFeed, client)
-	case "stooq":
-		primarySource = datasource.NewStooqDataSource(client)
-	default:
-		primarySource = datasource.NewYahooDataSource(client)
-		fallbackSource = datasource.NewStooqDataSource(client)
 	}
 
 	now := time.Now().UTC()
@@ -548,6 +585,11 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		return nil, fmt.Errorf("market_history cancelled: %w", err)
 	}
 
+	if n, err := sessions.Derive(db, cfg.TargetTable); err != nil {
+		fmt.Fprintf(out, "\n⚠️  derive sessions failed: %v\n", err)
+	} else if n > 0 {
+		fmt.Fprintf(out, "\n📆 Derived %d session bars (daily rows read by signals) from the hourly bars.\n", n)
+	}
 	fmt.Fprintf(out, "\n✨ Summary: %s is updated! (%d symbols already up-to-date, %d symbols fetched/updated, %d failed, %d new bars added).\n   %d requested symbols processed against %s.\n",
 		cfg.DB, cachedSymbols, updatedSymbols, failedSymbols, totalNewBars, len(symbols), filepath.Base(cfg.DB))
 	return &Summary{Symbols: len(symbols), CachedSymbols: cachedSymbols, UpdatedSymbols: updatedSymbols, FailedSymbols: failedSymbols, NewBars: totalNewBars}, nil
@@ -602,4 +644,11 @@ func reportStatus(out io.Writer, db *sqlx.DB, cfg Config, symbols []string, star
 		fmt.Fprintln(out)
 	}
 	return sum, nil
+}
+
+// isOptionSource reports whether source downloads option history, which lives in
+// option_contracts / option_bars and needs neither hourly bars nor the hourly timeframe.
+func isOptionSource(source string) bool {
+	src := strings.ToLower(source)
+	return src == "polygon-options" || src == "alpaca-options"
 }

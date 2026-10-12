@@ -110,7 +110,7 @@ Every command in this repo, in the order you use them to take one idea from raw 
 
 | # | Stage | Command | What it does for GOOGL | Reads / writes |
 |---|---|---|---|---|
-| 1 | Get data | `./bin/market_history GOOGL VOO SGOV -years 6` | Downloads daily bars for the signal symbol, a benchmark and a cash park. Run again to fill new sessions. | writes `data/market_history.db` |
+| 1 | Get data | `./bin/market_history GOOGL VOO SGOV -years 5` | Downloads hourly bars (and derives daily sessions) for the signal symbol, a benchmark and a cash park. Run again to fill new sessions. | writes `data/market_history_hourly.db` |
 | 2 | Find symbols (optional) | `./bin/universe -stocks-only` | Rebuilds the stock and ETF universe to pick related tickers. Needs `POLYGON_API_KEY`. | writes `refdata/universe.db` |
 | 3 | See what exists | `./bin/strategy` then `./bin/backtest -strategylist` | Confirms the GOOGL ids above are registered and shows row counts per family. | reads `refdata/strategies.db` |
 | 4 | Explore the idea | `./bin/study -list`, `./bin/study -study hmm_regime -symbol GOOGL`, `./bin/markov_test` | Regime study for GOOGL; `markov_test` prints the bear / sideways / bull matrix and tomorrow's odds. Use `-study googl_market_context` only if a caller supplies a cluster DB. | reads market DB; writes `data/reports/<study>.db` |
@@ -157,8 +157,7 @@ Default files:
 
 | Role | Path |
 |---|---|
-| Market bars | `data/market_history.db`, table `backtest_start` |
-| Hourly bars (1h) | `data/market_history_hourly.db`, table `backtest_start` (`appenv.HourlyDB`) |
+| Market bars | `data/market_history_hourly.db`, table `backtest_start` (`appenv.MarketDB`, `appenv.HourlyDB`). Hourly bars (timeframe 1h, `Date` = `YYYY-MM-DD HH:MM:SS` UTC) are the only bars downloaded. The daily session rows that signals and the simulation clock read (`Date` = `YYYY-MM-DD`, timeframe 1d) are derived from them in the same table. There is no separate daily database |
 | Minute bars (1m, 5m, ...) | `data/market_history_minute.db`, table `backtest_start` (`appenv.MinuteDB`; not created until minute bars are downloaded) |
 | Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`, `rotation_strategy`, and `symbol_lists`: `symbol_list_id`, `list` = comma separated tickers. `etf-pre-2021` is every ETF in `universe.db` first traded before 2021-01-01, from `sql/seed/symbol_lists.sql`. A `rotation_strategy` row whose `symbols` equals a `symbol_list_id` (case and surrounding spaces ignored) uses that list; any other value is a literal ticker list. `strategy export` carries the lists a row names) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
@@ -166,30 +165,30 @@ Default files:
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
 | HTML tear sheet | `data/reports/backtest_report.html` |
 
-Commands that call `cliutils.GetDefaultMarketDB` (`backtest`, `study`, `livescan`) use `data/market_history.db`. `market_history`, `gridsearch` and `scoreboard` also default to it and `market_history` creates it when it writes.
+Every command defaults to `data/market_history_hourly.db`. `backtest`, `gridsearch`, `market_history` and `strategy coverage` refuse a `-db` that is not an hourly database (the name must end in `_hourly`), so a leftover daily file is never read.
 
 The Go `flag` package stops at the first bare argument. Put flags before a positional id or ticker. A subcommand is argument 1: `backtest stack -primary …`, not `backtest -primary … stack`.
 
-Daily simulations load rows with `length(Date) = 10`. Minute bars stay in the same table and are skipped by the daily bar query.
+Daily bars are derived, not downloaded (`pkg/sessions`). A session is built from the regular-session hourly bars (the bars that start 9:00 to 15:00 Eastern): open is the 9:00 bar's open, high and low are the extremes, close is the 15:00 bar's close, volume is the sum. The 9:00 bar includes the half hour before the 9:30 open, so the session open and range can include pre-market trades; the close is exact. An hour with no trade has no bar, which is right for a bar built from trades. `market_history` derives the sessions after every download, `backtest` and `gridsearch` bring them up to date at startup, and `market_history sessions` rebuilds them on demand. Simulations load rows with `length(Date) = 10`.
 
 ---
 
 ## market_history
 
-Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Polygon is opt-in.
+Pull hourly bars into SQLite and derive the daily sessions from them. The source is Alpaca (default) or Polygon. Yahoo and Stooq and any timeframe other than `1h` are retired.
 
 **Reads:** `refdata/strategies.db`. A name in `-symbols` (or a bare argument) that is a `symbol_lists` id, such as `etf-pre-2021-unleveraged`, is replaced by that list's tickers; the other names are tickers. With no symbols at all it reads table `leveraged_etf` (limit 50), which is empty today, so pass tickers or a list id.
 
-**Writes:** `data/market_history.db`, table `backtest_start`. Option history uses the same DB, tables `option_contracts`, `option_bars`, `option_expiry_scan`. Missing dates are filled; `-force` replaces the range.
+**Writes:** `data/market_history_hourly.db`, table `backtest_start` (hourly rows, then the derived session rows). Option history uses the same DB, tables `option_contracts`, `option_bars`, `option_expiry_scan`. Missing dates are filled; `-force` replaces the range.
 
 | Flag | Default |
 |---|---|
-| `-db` | `data/market_history.db` |
+| `-db` | `data/market_history_hourly.db` |
 | `-settings` | `refdata/strategies.db` |
-| `-source` | `yahoo` (`polygon`, `polygon-options`, `stooq`) |
+| `-source` | `alpaca` (`polygon`, `polygon-options`, `alpaca-options`: every call and put, expired too, daily bars from 2024 into `option_contracts` / `option_bars`; `-symbols` are the underlyings) |
 | `-target-table` | `backtest_start` |
-| `-timeframe` | `1d` |
-| `-years` | `4` |
+| `-timeframe` | `1h` (the only value) |
+| `-years` | `5` |
 | `-table` | `leveraged_etf` (settings DB symbol table) |
 | `-limit` | `50` (only the settings-table fallback) |
 | `-otm` | `0,2,5` (polygon-options, percent OTM) |
@@ -204,18 +203,20 @@ Pull bars into SQLite. Default source is Yahoo, with Stooq as the fallback. Poly
 ./bin/market_history -symbols etf-pre-2021-unleveraged -timeframe 1h -years 2 -source polygon -concurrency 1
 ./bin/market_history -source polygon -symbols VOO -timeframe 1m -polygon-key "$POLYGON_API_KEY"
 ./bin/market_history -source polygon-options -symbols VOO
+./bin/market_history -source alpaca-options -symbols UPRO,SPXU
 ./bin/market_history -source polygon -timeframe 1h -unleveraged-etfs -concurrency 1   # hours of runtime at 5 calls/min
 ./bin/market_history -source polygon -timeframe 1h -unleveraged-etfs -status       # what is pulled, what is left
 ./bin/market_history -source alpaca -timeframe 1h -symbols SPY,QQQ -years 5          # Alpaca hourly bars (keys from .env; consolidated sip feed; -alpaca-feed iex on the free plan)
 ```
 
-Hourly and minute bars go to `data/market_history_hourly.db` / `data/market_history_minute.db`, and coverage is checked there first, so a rerun asks the source (Polygon or Alpaca) only for the missing days. Alpaca defaults to the consolidated `sip` feed; with the free plan it answers 403, so pass `-alpaca-feed iex`, which reports one exchange's volume and prices, leaves hours with no IEX trade empty, and differs from consolidated bars. Hourly pulls never fall back to Yahoo.
+Hourly and minute bars go to `data/market_history_hourly.db` / `data/market_history_minute.db`, and coverage is checked there first, so a rerun asks the source (Polygon or Alpaca) only for the missing days. Alpaca defaults to the consolidated `sip` feed; with the free plan it answers 403, so pass `-alpaca-feed iex`, which reports one exchange's volume and prices, leaves hours with no IEX trade empty, and differs from consolidated bars.
 
-**`market_history update -strategy <id>`** keeps the bars of one strategy's symbols complete. It takes the symbols from the strategy (candidates, regime symbol, benchmark; `a+b+c` stacks work), checks with the same completeness test as `strategy coverage` which of them have sessions with no bars, and downloads only those. Defaults: daily bars (`-timeframe 1d`), `-source alpaca`, `-start 2021-01-01`, no `-limit`; add `-hourly` (same as `-timeframe 1h`) for hourly bars in `market_history_hourly.db`. A symbol with a gap is fetched again over the whole window and replaces bars stored at the same time, because a normal run fills only the two ends of a symbol's range, never a gap inside it. Alpaca returns up to 10,000 bars a request and the source pages itself. `-strategy` is required; `-dry-run` lists the symbols with gaps and downloads nothing; the other flags are the download flags above (`-symbols` is ignored).
+**`market_history update -strategy <id>`** keeps the bars of one strategy's symbols complete. It takes the symbols from the strategy (candidates, regime symbol, benchmark; `a+b+c` stacks work), checks with the same completeness test as `strategy coverage` which of them have sessions with no bars, and downloads only those. Defaults: `-timeframe 1h`, `-source alpaca`, `-start 2021-01-01`, no `-limit`. A symbol with a gap is fetched again over the whole window and replaces bars stored at the same time, because a normal run fills only the two ends of a symbol's range, never a gap inside it. Alpaca returns up to 10,000 bars a request and the source pages itself. `-strategy` is required; `-dry-run` lists the symbols with gaps and downloads nothing; the other flags are the download flags above (`-symbols` is ignored).
 
 ```bash
-./bin/market_history update -dry-run -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20           # daily
-./bin/market_history update -hourly -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20           # hourly
+./bin/market_history update -dry-run -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20
+./bin/market_history update -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20
+./bin/market_history sessions                                                                                       # rebuild the derived daily sessions
 ```
 
 
@@ -231,9 +232,11 @@ Run one strategy, many strategies, or a shared cash account.
 
 **Writes:** `data/reports/<id>.db` (next free `data/reports/<id>_N.db` if the name is taken). Tables `signals`, `trades`, `equity_curve`, `performance_summary`, and when relevant `return_breakdown` and `run_metrics`. HTML at `data/reports/backtest_report.html`. Auto-download (`-auto-download`, default on) writes missing bars into the market DB. Window starts `2021-01-01` (`-start`); earlier bars warm up SMAs only. Capital default `$100,000`. `-download-years` default `5`.
 
-Limit entries are judged on the hourly bars by default, in `backtest` and `gridsearch` alike: the fill is the first hour whose low reaches the limit, and only hours after it can book the take-profit or stop (the stop is checked before the target inside one hour). `-daily-fills` turns that off and judges the limit on the daily bar alone, which books a same-day profit exit whenever the day touched both the limit and the target in either order; use it only to see how much that flatters a result. A symbol with no hourly bars is named in a warning and falls back to the daily bar.
+Limit entries are judged on the hourly bars, in `backtest` and `gridsearch` alike: the fill is the first hour whose low reaches the limit, and only hours after it can book the take-profit or stop (the stop is checked before the target inside one hour). A symbol with no hourly bars is named in a warning.
 
-Every run prints the databases it reads bars from, with size and last update, right after startup: the daily `market_history.db` and the hourly `market_history_hourly.db` beside it (used for limit-entry fills and exits; `not found` means those fills fall back to daily rules). The same two paths are in the HTML report's Run parameters as `Market DB (daily)` and `Market DB (hourly)`.
+**Reliability report.** Before the tear sheet, `backtest -strategy <id>` prints a PASS / INFO / WARN / FAIL line for six recognized backtest problems, with the counts behind each, and repeats them in the HTML report's first parameter group. It is computed from the finished trades and the bars in the market databases and does not change the simulation. `INTRABAR`: stop and target (or limit and target) inside one bar so the order is unknown, and same-session exits with no hourly bars to order them (FAIL). `RESOLUTION`: limit entries judged on thin or missing hourly sessions. `LOOKAHEAD`: fills priced outside the session's range, and tree models trained past the holdout cutoff (look-ahead inside a strategy's own signal SQL is not audited). `FILLMODEL`: how many limit fills were a bare touch of the limit, and what a fill assumes (no queue, no partial fills). `DATAGAPS`: sessions with no hourly bars for the symbols the strategy trades. `OVERFIT`: no held-out period, a strategy that was swept, fewer than 30 trades, and in the out-of-sample pass a collapse against the in-sample report (FAIL). In a multi-strategy run only the strategies whose trades are kept get a one-line summary. `backtest stack` does not print it yet.
+
+Every run prints the database it reads bars from, with size and last update, right after startup: `market_history_hourly.db`, whose derived sessions feed signals and whose hourly bars decide limit fills and exits (used for limit-entry fills and exits; `not found` means those fills fall back to daily rules). The same path is in the HTML report's Run parameters as `Market DB`.
 
 ```bash
 ./bin/backtest -strategylist                    # counts per family, then asks before dumping every strategy (y/N)
@@ -309,6 +312,7 @@ Hold one underlying (default `VOO`) and sell a monthly call. Prints the comparis
 
 ```bash
 ./bin/market_history -source polygon-options -symbols VOO
+./bin/market_history -source alpaca-options -symbols UPRO,SPXU
 ./bin/backtest covered-call -symbol VOO -otm 2 -commission 0.65 -opt-slip 0.05
 ```
 
@@ -339,11 +343,11 @@ Same signal generation as `backtest`, window fixed to the last completed session
 
 Sweep hold, take-profit, stop, and the strategy's other axes. One strategy writes HTML. Several strategies share one worker pool and record progress so a rerun skips finished ids.
 
-**Reads:** `data/market_history.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
+**Reads:** `data/market_history_hourly.db`, table `backtest_start`. `-symbols-from` reads a study DB `etf_compare` view (for example `data/reports/voo_up3_etf.db`) ranked by `rank_cagr`.
 
 **Writes:** `gridsearch.db` (`gridsearch_runs`, `gridsearch_results`) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes back into run N, and without it a sweep starts a new run (`stale` and `promote` use the latest). Single-strategy HTML defaults to `<strategy>_gridsearch.html` in the same folder. `stale` and `promote` take `-strategy` to limit to those ids. `-holdout-months` (default 12, the same window `backtest` holds out) stops the sweep at the in-sample cutoff, so the held-out months do not tune the parameters; `-end <date>` sets the stop date directly and `-holdout-months 0` sweeps all history. What it varies per family is in the `strategy_family_param` table of `refdata/strategies.db` (streak: signal days, hold, take-profit, stop, regime. tree and markov: exits only. hold: nothing. rotation period rows: the calendar period, below). Start date `2021-01-01`. Capital `$100,000`. Allocation `0.65`. Cash yield `0.045`. `-min-trades 5`, `-top 10`. `-max-perms 20000` skips a huge generic grid in multi-strategy mode only. `streak-*` strategies loaded from `refdata/strategies.db` are excluded unless `-include-streak`.
 
-A sweep prints the market databases it reads at startup, and the HTML report's Run group lists them as `Market DB (daily)` and `Market DB (hourly)`. Period sweeps with a limit axis load the hourly bars, so a sweep and `backtest` agree on fills (`-daily-fills` for the old behavior).
+A sweep prints the market databases it reads at startup, and the HTML report's Run group lists it as `Market DB`. Period sweeps with a limit axis load the hourly bars, so a sweep and `backtest` agree on fills.
 
 ```bash
 ./bin/gridsearch -list
@@ -385,6 +389,18 @@ Defaults for promote are win rate `0.6`, `30` trades, and `-top 5`. A sweep's ow
 
 The walkthrough for writing a row, backtesting it, sweeping it, and ranking it is [docs/strategies/streak_strategy.md](docs/strategies/streak_strategy.md).
 
+### gridsearch persymbol
+
+Tunes the rotation parameters of every symbol with enough history on its own. Each symbol runs as a one-name rotation row (100% positions, no cash yield) over the family grid (period, buy limit, hold, take profit, stop). The pick in sample is the setting whose resilience score, averaged with its neighbours one step away on each axis, is highest, so a plateau beats a lone spike, with at least 4 trades per year of the in-sample window (about 20; `-min-trades` overrides). The chosen setting and the shared base setting (1w, limit 90%, hold 2d, take profit 5%, no stop) are then read from a sweep over the held-out months. Results go to table `persymbol_results` in the run's `gridsearch.db`, and the summary prints the median in-sample and held-out CAGR of tuned against base.
+
+```bash
+./bin/gridsearch persymbol                      # every ETF with 1000+ sessions
+./bin/gridsearch persymbol -symbol SPXL,UPRO    # just these
+./bin/gridsearch persymbol -write-rows          # store the passing symbols
+```
+
+Flags: `-min-sessions` (1000), `-all-symbols` (not only ETFs, flagged `is_etf` in `refdata/universe.db`), `-write-rows`. A symbol passes with at least 4 trades per year of the held-out window, a held-out profit and a better held-out CAGR than the base; `-write-rows` stores those as `rotation_strategy` rows `persym-<symbol>` in `refdata/strategies.db`.
+
 ### gridsearch apply
 
 Re-run strategies with the highest-resilience row the sweep recorded in the run folder's `gridsearch.db` (`hold_days` must be set, older rows without it are ignored). It goes back into the run that holds the sweep: `-run-id N` names it, and without it the latest run is used. No `-strategy` means every registered strategy. A strategy with no usable sweep runs on its own defaults and is named in the output. The backtest itself is `pkg/backtest`'s, so the holdout and the result files work as for `backtest`.
@@ -402,7 +418,7 @@ Re-run strategies with the highest-resilience row the sweep recorded in the run 
 
 Run every row of `streak_strategy` and `markov_strategy` with leftover cash parked in one symbol. The lists, the window, and the results stay in SQLite. The park symbol for the default config is GOOGL.
 
-**Reads:** `refdata/strategies.db` (`streak_strategy`, `markov_strategy`) and `data/market_history.db`.
+**Reads:** `refdata/strategies.db` (`streak_strategy`, `markov_strategy`) and `data/market_history_hourly.db`.
 
 **Writes:** `data/reports/park_googl.db` (`sweep_config`, `park_asset`, `sweep_strategy`, `strategy_run`). Nothing is inserted into the settings tables, and no per-strategy file is written under `data/reports/`.
 
@@ -424,7 +440,7 @@ Run every row of `streak_strategy` and `markov_strategy` with leftover cash park
 
 Backtest every registered strategy that lacks a usable result, then rank them.
 
-**Reads:** `data/market_history.db` (`backtest_start`) and existing `data/reports/<id>[_N].db`.
+**Reads:** `data/market_history_hourly.db` (`backtest_start`) and existing `data/reports/<id>[_N].db`.
 
 **Writes:** per-strategy `data/reports/<id>[_N].db` for anything it has to run, then `data/reports/scoreboard.db`. If that file is locked it writes `data/reports/scoreboard_N.db`. Capital `$100,000`, start `2021-01-01`, download horizon 5 years. No `-db` or `-out-dir` flag; both follow `APP_FOLDER`.
 
@@ -470,7 +486,7 @@ Registered ids: `market_context_20d`, `cluster_5pct`, `googl_market_context`, `g
 
 In-sample / out-of-sample ledger. It does not edit `STRATEGY_ALLOWLIST` or live jobs.
 
-**Reads:** `data/market_history.db`, table `backtest_start`. Allowlist from `-allowlist` or `STRATEGY_ALLOWLIST` (comma-separated ids).
+**Reads:** `data/market_history_hourly.db`, table `backtest_start`. Allowlist from `-allowlist` or `STRATEGY_ALLOWLIST` (comma-separated ids).
 
 **Writes:** `strategies.db` (`strategies`, `strategy_evals`, `deployments`) in a run folder, `data/reports/<run_id>/`, unless `STRATEGIES_DB` or `STRATEVAL_DB` is set. `-run-id N` uses run N and without it an evaluation starts a new run (`report`, `status`, `path` use the latest). `report` and `status` take `-strategy` to show only those ids. Scratch artifacts under `strateval_runs/` in the same folder. Held-out window `-oos-months 12`. Capital `$100,000`. Start `2021-01-01`. Tier A gates: at least 12 OOS trades, win rate 0.55, max drawdown 0.15.
 
@@ -553,7 +569,7 @@ Is the strategy real or overfit? Walks it through rolling train / test folds (24
 ./bin/validate verdict -run-id 12 -strategy streak-googl-down3         # only the verdict, from run 12
 ```
 
-**Reads:** `data/market_history.db`, table `backtest_start`.
+**Reads:** `data/market_history_hourly.db`, table `backtest_start`.
 
 **Writes:** `walk_forward.db` (`walk_forward_fold`, `walk_forward_summary`, and `check_overfit_gate` with the gates) in a run folder, `data/reports/<run_id>/`. `-run-id N` goes into run N. Without it the folds start a new run and a verdict alone uses the latest. `-db` names a file instead. `-strategy` is required for the folds, and for a verdict it limits the output to those ids.
 
@@ -599,13 +615,13 @@ Average daily share volume (ADTV) of every symbol in the market database, over o
 ./bin/universe avgvol -days 20,60     # two windows
 ```
 
-**Reads:** `data/market_history.db` (`-market-db`), table `backtest_start`, daily bars only.
+**Reads:** `data/market_history_hourly.db` (`-market-db`), table `backtest_start`, daily bars only.
 
 **Writes:** table `avg_volume` in `refdata/universe.db` (`-db`): `symbol`, `window_days`, `avg_volume`, `bars_used`, `first_date`, `last_date`, `computed_at`, one row per symbol and window. A symbol with fewer bars than the window is averaged over the bars it has and `bars_used` says how many. A rerun replaces the rows of the windows it computes and leaves other windows alone. The calculation is SQL (`sql/stages/avgvol`): a slice table `avgvol_window_bars` of each symbol's last N bars, then the average. Join to `universe` on `symbol` to filter by liquidity.
 
 ## train
 
-`train <family> [flags] [symbols]` trains a strategy family's model and saves it in SQLite. `backtest` only reads a saved model; it never trains one, so run this first, and again when the market data has advanced. Every model trains on the daily bars in `data/market_history.db`, and the command prints the last bar date it trained through.
+`train <family> [flags] [symbols]` trains a strategy family's model and saves it in SQLite. `backtest` only reads a saved model; it never trains one, so run this first, and again when the market data has advanced. Every model trains on the daily bars in `data/market_history_hourly.db`, and the command prints the last bar date it trained through.
 
 | Family | Result |
 |---|---|
@@ -616,9 +632,9 @@ Average daily share volume (ADTV) of every symbol in the market database, over o
 
 `markov_hmm_*` strategies read `data/reports/hmm_regime.db`, which `study hmm_regime` writes; that is a study, not a `train` family.
 
-**markov.** A bar is bull at +5% or more over 20 bars, bear at -5% or less, otherwise sideways. For each date the model stores the walk-forward chance that the next bar is bull or bear, using only transitions known by that date. The calculation is SQL (`sql/stages/markov_train`, one slice table per stage). **Reads:** `data/market_history.db`, and `refdata/strategies.db` (`markov_strategy.signal_symbol`) when no symbols are given. Symbols already in the model are replaced. A symbol with fewer than 21 bars gets no model. A markov strategy whose signal symbol has no model produces no signals and logs which `train markov` command to run.
+**markov.** A bar is bull at +5% or more over 20 bars, bear at -5% or less, otherwise sideways. For each date the model stores the walk-forward chance that the next bar is bull or bear, using only transitions known by that date. The calculation is SQL (`sql/stages/markov_train`, one slice table per stage). **Reads:** `data/market_history_hourly.db`, and `refdata/strategies.db` (`markov_strategy.signal_symbol`) when no symbols are given. Symbols already in the model are replaced. A symbol with fewer than 21 bars gets no model. A markov strategy whose signal symbol has no model produces no signals and logs which `train markov` command to run.
 
-**tree.** Each bar is labelled with the next bar's return in 5 buckets: class -2 at or below -5%, -1 above -5% and below -1%, 0 from -1% to 1% inclusive, 1 above 1% and below 5%, 2 at or above 5%. The features are 13 values per bar (returns over 1, 3, 5 and 10 bars, RSI, distance from the 20, 50 and 200 bar averages, volume ratio, range against ATR, close within the day's range, consecutive down closes), calculated in SQL by `sql/stages/tree_features`. The neutral class usually dominates, so the tree is grown on every bar of the four other classes plus an evenly spaced sample of neutral bars no larger than the biggest of those four, with the classes weighted to balance the grown set. A symbol needs 250 labelled bars (the first 200 bars of history are warm-up) and at least 10 bars of class 2, otherwise it is skipped and the reason is printed. The tree is stored one row per node, addressed by CloudForest's L/R path from the root. A `tree_strategy` row buys its trade symbol on every bar the saved tree of its signal symbol predicts class 2; a row whose signal symbol has no saved tree produces no signals and logs which `train tree` command to run. Its `coil_range_max`, `sma_bounce_min` and `sma_bounce_max` columns are no longer read (role `legacy` in `strategy_family_param`). **Reads:** `data/market_history.db`, and `refdata/strategies.db` (`tree_strategy.signal_symbol`) when no symbols are given. The last bar of a symbol has no next return, so it is scored but not trained on: the "through" date printed is the last labelled bar.
+**tree.** Each bar is labelled with the next bar's return in 5 buckets: class -2 at or below -5%, -1 above -5% and below -1%, 0 from -1% to 1% inclusive, 1 above 1% and below 5%, 2 at or above 5%. The features are 13 values per bar (returns over 1, 3, 5 and 10 bars, RSI, distance from the 20, 50 and 200 bar averages, volume ratio, range against ATR, close within the day's range, consecutive down closes), calculated in SQL by `sql/stages/tree_features`. The neutral class usually dominates, so the tree is grown on every bar of the four other classes plus an evenly spaced sample of neutral bars no larger than the biggest of those four, with the classes weighted to balance the grown set. A symbol needs 250 labelled bars (the first 200 bars of history are warm-up) and at least 10 bars of class 2, otherwise it is skipped and the reason is printed. The tree is stored one row per node, addressed by CloudForest's L/R path from the root. A `tree_strategy` row buys its trade symbol on every bar the saved tree of its signal symbol predicts class 2; a row whose signal symbol has no saved tree produces no signals and logs which `train tree` command to run. Its `coil_range_max`, `sma_bounce_min` and `sma_bounce_max` columns are no longer read (role `legacy` in `strategy_family_param`). **Reads:** `data/market_history_hourly.db`, and `refdata/strategies.db` (`tree_strategy.signal_symbol`) when no symbols are given. The last bar of a symbol has no next return, so it is scored but not trained on: the "through" date printed is the last labelled bar.
 
 ```bash
 ./bin/train markov                      # every signal_symbol in markov_strategy
@@ -654,12 +670,11 @@ Print every strategy that has its own `sql/strategies` pipeline, then a row coun
 Report how complete the bar history is for the symbols a strategy needs, so a backtest on thin data is caught before it is trusted.
 
 ```bash
-./bin/strategy coverage -id rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20            # daily bars
-./bin/strategy coverage -id rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20 -hourly    # market_history_hourly.db
+./bin/strategy coverage -id rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20
 ./bin/strategy coverage -symbols SPY,QQQ -start 2023-01-01
 ```
 
-`-id` takes strategy ids and `a+b+c` stacks and reports every symbol they need (candidates, regime symbol, benchmark); `-symbols` adds more. For each symbol it prints first and last session with a bar, sessions expected, sessions present, missing, the longest run of missing sessions and the coverage percent. A session is a day SPY traded, counted from the symbol's first to its last daily bar, so a later listing is not a gap. `-hourly` counts a session as present when it has at least one hourly bar and adds the average bars per covered day (a regular session is about 7). Flags: `-start` (default `2021-01-01`), `-end`, `-db`.
+`-id` takes strategy ids and `a+b+c` stacks and reports every symbol they need (candidates, regime symbol, benchmark); `-symbols` adds more. For each symbol it prints first and last session with a bar, sessions expected, sessions present, missing, the longest run of missing sessions and the coverage percent. A session is a day any of the listed symbols (or SPY) traded, counted from the symbol's first to its last session, so a later listing is not a gap. A session is present when the symbol has at least one regular-session hourly bar, and the table adds the average bars per covered day (a full session is 7). A day with no trade in any hour looks the same as a missing download, which is where the thin names show gaps. Flags: `-start` (default `2021-01-01`), `-end`, `-db`.
 
 ### strategy derive
 

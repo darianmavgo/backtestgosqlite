@@ -16,6 +16,7 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/reliability"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -55,7 +56,6 @@ type Config struct {
 	Concurrency         int      // -concurrency
 	Serial              bool     // -serial
 	KeepCalc            bool     // -keep-calc
-	DailyFills          bool     // -daily-fills
 	Force               bool     // -force
 	GridsearchDb        string   // -gridsearch-db
 	IncludeUniverse     bool     // -include-universe
@@ -74,7 +74,9 @@ type Config struct {
 	Mode                string   // subcommand (empty = default)
 	Args                []string // positional arguments
 
-	outcome *stackEvalOutcome // set by runOnce for stack-eval
+	outcome *stackEvalOutcome         // set by runOnce for stack-eval
+	phase   string                    // "in-sample" or "out-of-sample" for the two holdout passes, "" for one pass
+	prior   *models.PerformanceReport // the in-sample report, set for the out-of-sample pass
 }
 
 // DefaultConfig returns the CLI defaults.
@@ -221,7 +223,6 @@ func Main() {
 	flag.IntVar(&conf.DownloadYears, "download-years", d.DownloadYears, "Number of years of history to fetch when downloading missing data")
 	flag.IntVar(&conf.Concurrency, "concurrency", d.Concurrency, "Max concurrent strategies when running more than one (defaults to all CPU cores; bounds memory use for large -strategy all runs)")
 	flag.BoolVar(&conf.Serial, "serial", d.Serial, "Run one strategy at a time instead of -concurrency workers writing their family result databases in parallel")
-	flag.BoolVar(&conf.DailyFills, "daily-fills", d.DailyFills, "Judge limit entries on the daily bar alone instead of the hourly bars (the default). For comparison only: a daily bar books a same-day exit whenever the day touched both the limit and the target, in either order")
 	flag.BoolVar(&conf.KeepCalc, "keep-calc", d.KeepCalc, "Keep each SQL strategy's calculation database (slice tables) under <out-dir>/calc/ instead of deleting it after the run")
 	flag.BoolVar(&conf.Force, "force", d.Force, "(multi-strategy runs only) with -run-id, redo every strategy even if it already has a usable result in that run")
 	flag.StringVar(&conf.GridsearchDb, "gridsearch-db", d.GridsearchDb, "(optimized subcommand only) SQLite DB of gridsearch results to read best configs from")
@@ -252,6 +253,9 @@ func Main() {
 	flag.Parse()
 	conf.Args = flag.Args()
 	defer storage.CloseSharedResults()
+	if err := appenv.RequireHourly(conf.Db); err != nil {
+		log.Fatal(err)
+	}
 	if err := Run(conf); err != nil {
 		log.Fatal(err)
 	}
@@ -261,6 +265,7 @@ func Main() {
 // stores the stack it found in conf.outcome so the caller can test it out of
 // sample.
 func runOnce(conf Config) error {
+	var reliabilityGroups []models.ParamGroup // shown first in the HTML report
 	backtestStart = conf.Start
 	backtestEnd = conf.End
 	reinvestDividends := !conf.NoReinvestDividends
@@ -728,6 +733,16 @@ func runOnce(conf Config) error {
 		}
 		results = []runner.RunResult{res}
 
+		findings := reliability.Assess(reliability.Input{
+			MarketDB: conf.Db, Table: conf.Table, Strategy: strat, Config: cfg, Trades: res.Trades, Report: res.Report,
+			HoldoutMonths: conf.HoldoutMonths, Phase: conf.phase, Prior: conf.prior,
+		})
+		reliability.Print(os.Stdout, reliabilityTitle(conf, strat), findings)
+		reliabilityGroups = reliability.Groups(findings)
+		if conf.outcome != nil {
+			conf.outcome.Report = &res.Report
+		}
+
 		fmt.Printf("Generated %d entry signals.\n", res.SignalCount)
 		fmt.Printf("💾 Persisted %d generated entry signals to SQLite 'signals' table.\n", res.SignalCount)
 		fmt.Printf("💾 Persisted %d completed trades to SQLite 'trades' table.\n", len(res.Trades))
@@ -796,6 +811,27 @@ func runOnce(conf Config) error {
 			}
 			if c, ok := existing[s.ID()]; ok {
 				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+			}
+		}
+
+		var kept []runner.RunResult
+		for _, r := range results {
+			if r.Err == nil && len(r.Trades) > 0 {
+				kept = append(kept, r)
+			}
+		}
+		if len(kept) > 0 {
+			fmt.Printf("\n🔎 BACKTEST RELIABILITY (strategies whose trades were kept; run one with -strategy <id> for the full report)\n")
+			for _, r := range kept {
+				cfg := runOverride(conf).Apply(r.Strat.DefaultConfig())
+				fs := reliability.Assess(reliability.Input{
+					MarketDB: conf.Db, Table: conf.Table, Strategy: r.Strat, Config: cfg, Trades: r.Trades, Report: r.Report,
+					HoldoutMonths: conf.HoldoutMonths, Phase: conf.phase, Prior: conf.prior,
+				})
+				reliability.PrintCompact(os.Stdout, r.Strat.ID(), fs)
+			}
+			if len(kept) < len(results) {
+				fmt.Printf("  %d other strategies were not assessed: their trades are not kept in a bulk run.\n", len(results)-len(kept))
 			}
 		}
 
@@ -883,7 +919,7 @@ func runOnce(conf Config) error {
 			EquityCurves:   eqCurves,
 			DrawdownCurves: ddCurves,
 			CashFlows:      cashFlows,
-			Params:         runner.DescribeRun(runSettings(conf, "backtest", sortedDates), selectedStrategies),
+			Params:         append(reliabilityGroups, runner.DescribeRun(runSettings(conf, "backtest", sortedDates), selectedStrategies)...),
 		}
 
 		err := analytics.GenerateComparisonHTML(conf.Html, htmlData)
@@ -894,4 +930,13 @@ func runOnce(conf Config) error {
 		}
 	}
 	return nil
+}
+
+// reliabilityTitle names the pass a reliability block belongs to.
+func reliabilityTitle(conf Config, strat strategy.Strategy) string {
+	title := "(" + strat.ID()
+	if conf.phase != "" {
+		title += ", " + conf.phase
+	}
+	return title + ")"
 }

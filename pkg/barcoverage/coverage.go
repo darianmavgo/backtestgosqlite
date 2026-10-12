@@ -11,37 +11,35 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
-// calendarSymbol is the session calendar for daily completeness: a day SPY
-// traded is a session every symbol that was listed should have a bar for.
+// calendarSymbol is added to the session calendar when it is in the database.
 const calendarSymbol = "SPY"
 
 // CoverageOptions selects what coverage reports on.
 type CoverageOptions struct {
 	Symbols []string // relevant symbols
-	DailyDB string   // market_history.db, the session calendar and the daily bars
-	BarDB   string   // database holding the bars to judge: DailyDB, or the hourly database
-	Hourly  bool
-	Start   string // first session, YYYY-MM-DD
-	End     string // last session; "" = latest bar
+	DB      string   // the hourly market database (hourly bars and the sessions derived from them)
+	Start   string   // first session, YYYY-MM-DD
+	End     string   // last session; "" = latest bar
 }
 
 // SymbolCoverage is one symbol's completeness over its own listed window.
 type SymbolCoverage struct {
 	Symbol      string
-	First, Last string  // first and last session with a bar (daily bars, or hourly bars when Hourly)
-	Expected    int     // sessions the symbol should have a bar for
-	Have        int     // of those, sessions with a bar
+	First, Last string  // first and last session with hourly bars
+	Expected    int     // sessions the symbol should have bars for
+	Have        int     // of those, sessions with hourly bars
 	Missing     int     // Expected - Have
 	LongestGap  int     // longest run of consecutive missing sessions
-	BarsPerDay  float64 // hourly only: average bars on a session that has any
+	BarsPerDay  float64 // average regular-session hourly bars on a session that has any (a full session is 7)
 	Bars        int
 	Note        string
 }
 
-// Pct is the share of expected sessions that have a bar.
+// Pct is the share of expected sessions that have bars.
 func (c SymbolCoverage) Pct() float64 {
 	if c.Expected == 0 {
 		return 0
@@ -49,108 +47,88 @@ func (c SymbolCoverage) Pct() float64 {
 	return 100 * float64(c.Have) / float64(c.Expected)
 }
 
-// Coverage judges, for each symbol, how many sessions in the window have bars.
-// A session is a day SPY has a daily bar (any symbol's own days when SPY is
-// absent). A symbol is only expected from its first to its last daily bar, so
-// a later listing is not counted as missing history. Daily mode compares the
-// symbol's daily bars with that; hourly mode asks which of the symbol's daily
-// sessions have at least one hourly bar.
+// Coverage judges, for each symbol, how many sessions in the window have hourly
+// bars. A session is a day any of the symbols (or SPY) traded, so a day the
+// whole set is missing cannot be seen, and a symbol is only expected from its
+// first to its last session, so a later listing is not counted as missing
+// history. A symbol that did not trade in any hour of a day looks the same as a
+// missing download; the thin names are where that happens.
 func Coverage(opts CoverageOptions) ([]SymbolCoverage, error) {
 	start := opts.Start
 	if start == "" {
 		start = "2021-01-01"
 	}
-	daily, err := storage.OpenSQLite(opts.DailyDB)
+	db, err := storage.OpenSQLite(opts.DB)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", opts.DailyDB, err)
+		return nil, fmt.Errorf("open %s: %w", opts.DB, err)
 	}
-	defer daily.Close()
+	defer db.Close()
 
 	sessionsOf := func(symbol string) ([]string, error) {
 		q := `SELECT DISTINCT substr(Date, 1, 10) FROM backtest_start
-			WHERE symbol = ? AND length(Date) = 10 AND substr(Date, 1, 10) >= ?`
+			WHERE symbol = ? AND timeframe = '1d' AND length(Date) = 10 AND substr(Date, 1, 10) >= ?`
 		args := []any{symbol, start}
 		if opts.End != "" {
 			q += ` AND substr(Date, 1, 10) <= ?`
 			args = append(args, opts.End)
 		}
 		var days []string
-		err := daily.Select(&days, q+` ORDER BY 1`, args...)
+		err := db.Select(&days, q+` ORDER BY 1`, args...)
 		return days, err
 	}
 
-	calendar, err := sessionsOf(calendarSymbol)
-	if err != nil {
-		return nil, err
-	}
 	own := map[string][]string{}
-	for _, sym := range opts.Symbols {
-		if own[sym], err = sessionsOf(sym); err != nil {
+	calSet := map[string]bool{}
+	for _, sym := range append(append([]string(nil), opts.Symbols...), calendarSymbol) {
+		days, err := sessionsOf(sym)
+		if err != nil {
 			return nil, err
 		}
-	}
-	if len(calendar) == 0 { // no SPY: the union of the symbols' own days
-		set := map[string]bool{}
-		for _, days := range own {
-			for _, d := range days {
-				set[d] = true
-			}
+		if sym != calendarSymbol {
+			own[sym] = days
 		}
-		for d := range set {
-			calendar = append(calendar, d)
+		for _, d := range days {
+			calSet[d] = true
 		}
-		sort.Strings(calendar)
 	}
-
-	bars := daily
-	if opts.Hourly {
-		bars, err = storage.OpenSQLite(opts.BarDB)
-		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", opts.BarDB, err)
-		}
-		defer bars.Close()
+	calendar := make([]string, 0, len(calSet))
+	for d := range calSet {
+		calendar = append(calendar, d)
 	}
+	sort.Strings(calendar)
 
 	out := make([]SymbolCoverage, 0, len(opts.Symbols))
 	for _, sym := range opts.Symbols {
 		c := SymbolCoverage{Symbol: sym}
 		days := own[sym]
 		if len(days) == 0 {
-			c.Note = "no daily bars in window"
+			c.Note = "no sessions in window"
 			out = append(out, c)
 			continue
 		}
 		listed, last := days[0], days[len(days)-1]
-
-		// Per-session bar counts in the database being judged.
-		type dayCount struct {
-			Day string `db:"day"`
-			N   int    `db:"n"`
+		have := map[string]bool{}
+		for _, d := range days {
+			have[d] = true
 		}
-		var counts []dayCount
-		q := `SELECT substr(Date, 1, 10) AS day, COUNT(*) AS n FROM backtest_start
-			WHERE symbol = ? AND substr(Date, 1, 10) >= ? AND substr(Date, 1, 10) <= ?`
-		if opts.Hourly {
-			q += ` AND length(Date) > 10`
-		} else {
-			q += ` AND length(Date) = 10`
-		}
-		if err := bars.Select(&counts, q+` GROUP BY day`, sym, listed, last); err != nil {
+		var hours []string
+		if err := db.Select(&hours, `SELECT CAST(Date AS TEXT) FROM backtest_start
+			WHERE symbol = ? AND timeframe = '1h' AND length(Date) = 19 AND Date >= ? AND Date < ?`,
+			sym, listed+" 00:00:00", nextDay(last)+" 12:00:00"); err != nil {
 			return nil, err
 		}
-		have := map[string]int{}
-		for _, dc := range counts {
-			have[dc.Day] = dc.N
-			c.Bars += dc.N
+		for _, h := range hours {
+			if d, ok := sessions.Regular(h); ok && d >= listed && d <= last {
+				c.Bars++
+			}
 		}
-
 		run := 0
 		for _, d := range calendar {
 			if d < listed || d > last {
 				continue
 			}
 			c.Expected++
-			if have[d] > 0 {
+			if have[d] {
 				c.Have++
 				run = 0
 				if c.First == "" {
@@ -169,37 +147,26 @@ func Coverage(opts CoverageOptions) ([]SymbolCoverage, error) {
 		}
 		if c.Have == 0 {
 			c.Note = "no bars"
-		} else if c.First > listed {
-			c.Note = "starts " + shortDays(listed, c.First) + " after listing"
 		}
 		out = append(out, c)
 	}
 	return out, nil
 }
 
-func shortDays(from, to string) string {
-	a, e1 := time.Parse("2006-01-02", from)
-	b, e2 := time.Parse("2006-01-02", to)
-	if e1 != nil || e2 != nil {
-		return to
+func nextDay(d string) string {
+	t, err := time.Parse("2006-01-02", d)
+	if err != nil {
+		return d
 	}
-	return fmt.Sprintf("%dd", int(b.Sub(a).Hours()/24))
+	return t.AddDate(0, 0, 1).Format("2006-01-02")
 }
 
 // WriteCoverage prints the report table.
 func WriteCoverage(w io.Writer, opts CoverageOptions, rows []SymbolCoverage) {
-	kind := "daily"
-	if opts.Hourly {
-		kind = "hourly"
-	}
-	fmt.Fprintf(w, "\n%s bar completeness from %s (%d symbols, bars in %s)\n", kind, opts.Start, len(rows), opts.BarDB)
-	fmt.Fprintf(w, "Expected = sessions %s traded between the symbol's first and last daily bar.\n", calendarSymbol)
+	fmt.Fprintf(w, "\nhourly bar completeness from %s (%d symbols, bars in %s)\n", opts.Start, len(rows), opts.DB)
+	fmt.Fprintf(w, "Expected = sessions any of the symbols traded between this symbol's first and last session.\n")
 	table := tablewriter.NewWriter(w)
-	header := []string{"SYMBOL", "FIRST", "LAST", "EXPECTED", "HAVE", "MISSING", "LONGEST GAP", "COVERAGE"}
-	if opts.Hourly {
-		header = append(header, "BARS/DAY")
-	}
-	header = append(header, "NOTE")
+	header := []string{"SYMBOL", "FIRST", "LAST", "EXPECTED", "HAVE", "MISSING", "LONGEST GAP", "COVERAGE", "BARS/DAY", "NOTE"}
 	table.SetHeader(header)
 	table.SetBorder(true)
 	var expected, have int
@@ -207,10 +174,7 @@ func WriteCoverage(w io.Writer, opts CoverageOptions, rows []SymbolCoverage) {
 		expected += c.Expected
 		have += c.Have
 		row := []string{c.Symbol, c.First, c.Last, fmt.Sprint(c.Expected), fmt.Sprint(c.Have), fmt.Sprint(c.Missing),
-			fmt.Sprint(c.LongestGap), fmt.Sprintf("%.1f%%", c.Pct())}
-		if opts.Hourly {
-			row = append(row, fmt.Sprintf("%.1f", c.BarsPerDay))
-		}
+			fmt.Sprint(c.LongestGap), fmt.Sprintf("%.1f%%", c.Pct()), fmt.Sprintf("%.1f", c.BarsPerDay)}
 		table.Append(append(row, c.Note))
 	}
 	table.Render()

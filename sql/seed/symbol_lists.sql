@@ -72,3 +72,9 @@ FROM (
 --   XPP  FXP   China
 INSERT OR REPLACE INTO symbol_lists (symbol_list_id, list)
 VALUES ('etf-2x-sector-pairs', 'AGQ,BIB,BIS,BOIL,DDM,DUST,DXD,EET,EEV,ERX,ERY,EWV,EZJ,FXP,GLL,KOLD,NUGT,QID,QLD,REW,ROM,RXD,RXL,SCC,SCO,SDP,SDS,SIJ,SKF,SMN,SRS,SSG,SSO,SZK,TBT,TWM,UBT,UCC,UCO,UGE,UGL,UPW,URE,USD,UWM,UXI,UYG,UYM,XPP,ZSL');
+
+
+-- spx-3x: the two 3x S&P 500 bull funds. SPXL is Direxion Daily S&P 500 Bull 3X
+-- Shares; UPRO is ProShares UltraPro S&P500. Both aim for 3x the daily S&P 500 return.
+INSERT OR REPLACE INTO symbol_lists (symbol_list_id, list)
+VALUES ('spx-3x', 'SPXL,UPRO');

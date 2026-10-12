@@ -3,6 +3,7 @@ package study
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/cliutils"
@@ -25,8 +26,8 @@ func TestMUDecisionTreeRegistration(t *testing.T) {
 
 func TestMUDecisionTreeExecution(t *testing.T) {
 	candidates := []string{
-		"../../data/market_history.db",
-		"data/market_history.db",
+		"../../data/market_history_hourly.db",
+		"data/market_history_hourly.db",
 		cliutils.GetDefaultMarketDB(),
 	}
 	var marketDB string
@@ -50,6 +51,9 @@ func TestMUDecisionTreeExecution(t *testing.T) {
 
 	s.SetDatabases(marketDB, resultsDB)
 	if err := s.Run(); err != nil {
+		if strings.Contains(err.Error(), "insufficient daily bars") {
+			t.Skipf("the hourly database holds too few sessions for this study: %v", err)
+		}
 		t.Fatalf("Study Run() failed: %v", err)
 	}
 

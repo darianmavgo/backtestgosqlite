@@ -52,7 +52,7 @@ func TestRunStopsOnCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var out bytes.Buffer
-	_, err := Run(ctx, Config{DB: filepath.Join(t.TempDir(), "m.db"), Symbols: "SPY,QQQ", Out: &out})
+	_, err := Run(ctx, Config{DB: filepath.Join(t.TempDir(), "m.db"), Symbols: "SPY,QQQ", AlpacaKey: "k", AlpacaSecret: "s", Out: &out})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("want context.Canceled, got %v", err)
 	}

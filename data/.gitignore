@@ -14,8 +14,6 @@ reports/data/reports/*/backtest_report.html
 
 # BEGIN ignore-over-50MB
 # Files larger than 52428800 bytes. Rewritten by ignore_over50MB.sh.
-/market_history.db
-/market_history.db.sz
 /market_history_hourly.db
 /markov_models.db
 /reports/1/markov.db
@@ -26,14 +24,12 @@ reports/data/reports/*/backtest_report.html
 /reports/1/report_oos.html
 /reports/1/streak.db
 /reports/1/tree.db
-/reports/2/hold.db
 /reports/2/hold_bail.db
 /reports/2/markov.db
 /reports/2/tree.db
 /reports/22/strateval_runs/optimize_scratch/streak.db
 /reports/23/oos/streak.db
 /reports/23/streak.db
-/reports/3/hold.db
 /reports/3/hold_bail.db
 /reports/3/markov.db
 /reports/3/oos/hold.db
@@ -43,14 +39,11 @@ reports/data/reports/*/backtest_report.html
 /reports/3/oos/tree.db
 /reports/3/streak.db
 /reports/3/tree.db
-/reports/40/hold.db
 /reports/41/hold.db
 /reports/41/markov.db
 /reports/41/streak.db
-/reports/41/streak.db-wal
 /reports/41/tree.db
 /reports/results.db
-/reports/results.db-wal
 /reports/strateval_runs/optimize_scratch/markov.db
 /reports/strateval_runs/optimize_scratch/streak.db
 /reports/strateval_runs/optimize_scratch/tree.db

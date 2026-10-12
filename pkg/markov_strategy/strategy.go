@@ -82,7 +82,8 @@ func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 	if err := os.MkdirAll(filepath.Dir(modelDB), 0o755); err != nil {
 		return err
 	}
-	res, err := train.TrainMarkov(ctx, train.MarkovConfig{MarketDB: marketDB, ModelDB: modelDB, Symbols: []string{sym}})
+	res, err := train.TrainMarkov(ctx, train.MarkovConfig{MarketDB: marketDB, ModelDB: modelDB, Symbols: []string{sym},
+		Through: appenv.MarkovTrainThrough(), From: appenv.MarkovTrainFrom()})
 	if err != nil {
 		return fmt.Errorf("train markov %s: %w", sym, err)
 	}

@@ -458,3 +458,14 @@ func Register() { RegisterFrom(refdb.DefaultPath) }
 func RegisterFrom(path string) {
 	strategy.RegisterFamily(NewFamily(func() string { return path }))
 }
+
+// FromRow builds the strategy for a row that is not (yet) in the reference
+// database, validated like a stored one. Gridsearch's per-symbol mode sweeps one
+// such row per symbol.
+func FromRow(row refdb.RotationStrategy) (strategy.Strategy, error) {
+	s := &Strategy{Row: row}
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
