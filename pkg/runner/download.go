@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
@@ -30,6 +31,39 @@ func RunDownload(targetDb, targetTable string, symbols []string, years int) erro
 	return RunDownloadContext(context.Background(), targetDb, targetTable, symbols, years)
 }
 
+// DailyBarSource, when set, replaces the Alpaca hourly download: it returns up to
+// `years` of finished daily session bars ("YYYY-MM-DD", timeframe 1d, oldest first)
+// for one symbol. Signals read only those daily rows, so a deployment whose live
+// broker already serves daily history (the orchestrator's Schwab client) can refresh
+// the market DB without Alpaca keys or hourly bars.
+var DailyBarSource func(ctx context.Context, symbol string, years int) ([]models.Bar, error)
+
+// runDailyDownload refreshes every symbol from DailyBarSource. Every symbol must
+// succeed: a stale or missing symbol is refused here rather than scanned.
+func runDailyDownload(ctx context.Context, targetDb, targetTable string, symbols []string, years int) error {
+	db, err := storage.OpenSQLite(targetDb)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", targetDb, err)
+	}
+	defer db.Close()
+	if err := storage.EnsureBarTable(db, targetTable); err != nil {
+		return fmt.Errorf("ensure table %s: %w", targetTable, err)
+	}
+	for _, sym := range symbols {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		bars, err := DailyBarSource(ctx, sym, years)
+		if err != nil {
+			return fmt.Errorf("%s: daily history: %w", sym, err)
+		}
+		if err := storage.UpsertBars(db, targetTable, bars); err != nil {
+			return fmt.Errorf("%s: save bars: %w", sym, err)
+		}
+	}
+	return nil
+}
+
 // RunDownloadContext is RunDownload with cancellation: once ctx is done no
 // further symbols are started, in-flight fetches are aborted, and ctx's error
 // is returned.
@@ -39,6 +73,9 @@ func RunDownloadContext(ctx context.Context, targetDb, targetTable string, symbo
 	}
 	if targetTable == "" {
 		targetTable = "backtest_start"
+	}
+	if DailyBarSource != nil {
+		return runDailyDownload(ctx, targetDb, targetTable, symbols, years)
 	}
 
 	db, err := storage.OpenSQLite(targetDb)
