@@ -31,6 +31,27 @@ type CompiledResult struct {
 	Engine, Suspect string
 }
 
+// LegacyEngineNote is the suspect reason of a stored run that records no engine: it was made before
+// runs.engine existed, by the daily simulator, whose same-session fills and exits use the day's range.
+const LegacyEngineNote = "made by the daily simulator, before the hourly engine"
+
+// NeedsRedo says a stored run should be run again rather than skipped as already done: it predates
+// the hourly engine.
+func (c CompiledResult) NeedsRedo() bool { return c.Engine == "" }
+
+// DropStale removes from byStrategy the runs that NeedsRedo, so a bulk command runs those strategies
+// again, and returns how many it removed.
+func DropStale(byStrategy map[string]CompiledResult) int {
+	n := 0
+	for id, c := range byStrategy {
+		if c.NeedsRedo() {
+			delete(byStrategy, id)
+			n++
+		}
+	}
+	return n
+}
+
 // ScanAndValidate reads the newest finished run of every strategy from the
 // family result databases (*.db) of one run directory. This is the one shared
 // "what's already been backtested, and can I trust it?" pass every
@@ -90,6 +111,9 @@ func ScanAndValidate(runDir string, concurrency int) (byStrategy map[string]Comp
 			continue
 		}
 		for _, r := range sc.runs {
+			if r.Engine == "" && r.Suspect == "" {
+				r.Suspect = LegacyEngineNote
+			}
 			byStrategy[r.StrategyID] = CompiledResult{
 				StrategyID: r.StrategyID, Report: r.Report, DbPath: sc.path,
 				Increment: int(r.RunID), ComputedAt: r.CreatedAt, Engine: r.Engine, Suspect: r.Suspect,

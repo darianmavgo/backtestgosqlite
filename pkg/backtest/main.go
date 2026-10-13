@@ -648,6 +648,9 @@ func runOnce(conf Config) error {
 	if len(selectedStrategies) > 1 && !conf.Force {
 		fmt.Println("🔎 Checking", conf.OutDir, "for strategies that already have a usable result...")
 		existing, _, _, _, _ = runner.ScanAndValidate(conf.OutDir, conf.Concurrency)
+		if n := runner.DropStale(existing); n > 0 {
+			fmt.Printf("   %d earlier results were made by the daily simulator and are redone on the hourly one.\n", n)
+		}
 		toRun = nil
 		for _, s := range selectedStrategies {
 			if _, ok := existing[s.ID()]; !ok {

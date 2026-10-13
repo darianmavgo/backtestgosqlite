@@ -200,6 +200,9 @@ func runAll(concurrency int, force bool, arg string, detail int) error {
 	if !force {
 		fmt.Println("🔎 Checking data/reports/ for strategies that already have a usable result...")
 		existing, _, _, _, _ = runner.ScanAndValidate(outDir, concurrency)
+		if n := runner.DropStale(existing); n > 0 {
+			fmt.Printf("   %d earlier results were made by the daily simulator and are redone on the hourly one.\n", n)
+		}
 	}
 
 	var toRun []strategy.Strategy

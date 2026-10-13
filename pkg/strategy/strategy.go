@@ -235,4 +235,9 @@ type StrategyConfig struct {
 	OneFillPerMonth bool `json:"one_fill_per_month,omitempty"`
 	// ReentryCooldownDays is the number of trading days to wait after exiting a position before re-entering that symbol.
 	ReentryCooldownDays int `json:"reentry_cooldown_days,omitempty"`
+
+	// MaxBarVolumeShare caps an entry at this share of the shares traded in the hour it fills
+	// (0.05 = 5%), so a small stock is not bought in sizes it never traded. 0 = no cap. Only the
+	// hourly simulator applies it. backtestgo ran with 0.05.
+	MaxBarVolumeShare float64 `json:"max_bar_volume_share,omitempty"`
 }

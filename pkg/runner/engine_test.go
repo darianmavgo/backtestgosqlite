@@ -159,3 +159,14 @@ func TestFreshCalcFileRemovesWhatAnEarlierRunLeft(t *testing.T) {
 		}
 	}
 }
+
+// A stored run with no engine was made by the daily simulator: it is flagged and never skipped as done.
+func TestRunsFromBeforeTheHourlyEngineAreRedone(t *testing.T) {
+	m := map[string]CompiledResult{"old": {StrategyID: "old"}, "new": {StrategyID: "new", Engine: storage.EngineHourly}, "legacy": {StrategyID: "legacy", Engine: storage.EngineDaily}}
+	if n := DropStale(m); n != 1 {
+		t.Fatalf("dropped %d, want only the run with no engine", n)
+	}
+	if _, ok := m["old"]; ok || len(m) != 2 {
+		t.Fatalf("left %v", m)
+	}
+}

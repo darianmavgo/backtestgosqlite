@@ -234,3 +234,19 @@ func TestFixedSharesAndDollarSizingAreHonoured(t *testing.T) {
 		t.Errorf("fixed_dollar trades %+v", tr)
 	}
 }
+
+// An entry is cut to the share of the hour's volume the config allows.
+func TestMaxBarVolumeShareCutsAnEntry(t *testing.T) {
+	daily := map[string][]models.Bar{"X": {
+		dbar("2026-03-02", 10, 10, 10, 10), dbar("2026-03-03", 10, 10, 10, 10), dbar("2026-03-04", 10, 10, 10, 10),
+	}}
+	cfg := strategy.StrategyConfig{AllocationPct: 0.5, PositionCap: 1, HoldingWindow: 1, MaxBarVolumeShare: 0.05} // dbar volume is 10000
+	out, err := Run(Input{Signals: []models.Signal{{Symbol: "X", Date: "2026-03-02", Entry: 1, Direction: "LONG"}},
+		Daily: daily, Dates: []string{"2026-03-02", "2026-03-03", "2026-03-04"}, Config: cfg, Capital: 100000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Trades) != 1 || out.Trades[0].Shares != 500 {
+		t.Fatalf("trades %+v, want 500 shares (5%% of 10000), not the 5000 the allocation would buy", out.Trades)
+	}
+}

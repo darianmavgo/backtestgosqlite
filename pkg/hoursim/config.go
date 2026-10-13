@@ -60,6 +60,7 @@ func Config(cfg strategy.StrategyConfig, capital float64) sim.Config {
 		OneFillPerMonth:     cfg.OneFillPerMonth,
 		ShortBorrowAnnual:   cfg.ShortBorrowAnnual,
 		CrisisStop:          CrisisStop,
+		MaxBarVolumeShare:   cfg.MaxBarVolumeShare,
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.PositionSizing)) {
 	case "fixed_shares":

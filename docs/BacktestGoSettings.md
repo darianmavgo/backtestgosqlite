@@ -1,6 +1,6 @@
 # backtestgo settings table (snapshot, 2026-10-13)
 
-Kept for reference when backtestgo is retired. `backtestgosqlite` has no settings table; the ones ported are marked **(ported)** in the last column of `docs/BacktestConsolidation` Phase 3: `split_jump_ratio` (split detection) and `max_bar_volume_share` (cap an entry at a share of the hour's volume).
+Kept for reference when backtestgo is retired. `backtestgosqlite` has no settings table; two have a home here: `split_jump_ratio` is `sessions.DefaultSplitJumpRatio`, and `max_bar_volume_share` is `StrategyConfig.MaxBarVolumeShare` (off by default; backtestgo ran with 0.05, which changes results in thinly traded names).
 
 | key | value | meaning |
 |---|---|---|

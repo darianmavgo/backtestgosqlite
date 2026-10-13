@@ -173,6 +173,23 @@ Daily bars are derived, not downloaded (`pkg/sessions`). A session is built from
 
 ---
 
+## Simulator, engine and checks
+
+Backtests, grid searches, walk-forward folds and stacks (with or without a parked default asset) run on the **hourly simulator** (`pkg/sim`, driven through `pkg/hoursim`): every fill and exit is judged on the hour it can happen, and nothing exits on the bar that entered it. A session with no hourly bars is played as its daily bar (one bar) and the log names the symbols. The legacy daily-range simulator (`pkg/simulator`) runs only margin, ATR-stop, Kelly-sized and total-return strategies, and says so in the log.
+
+Each stored run records its engine in `runs.engine` (`hourly` or `daily`; none means it predates the column and was made by the daily simulator, so `scoreboard` and `backtest` redo it). A run that traded a symbol with an unadjusted split (a close-to-close move beyond 1.8x between sessions, `sessions.SplitJumps`) records why in `runs.suspect` and is left out of `scoreboard` unless `-include-suspect`. A row that can never fill (entry limit at or below its stop) fails with that reason instead of reporting zero trades.
+
+`docs/HourlyEngineParity.md` shows what changed against the daily engine and how to measure it (`pkg/hoursim/parity_test.go`).
+
+### check
+
+```sh
+./bin/check -results data/reports/<run>/streak.db           # the newest run in that file
+./bin/check -results <db> -run-id 3 -markov -through 2025-10-09
+```
+
+Asks, in SQL (`sql/stages/check/`), whether every trade started from a signal, each signal bought at most once, trades exit on or after entry with a size and prices, and a strategy never held a symbol twice at once. With `-markov` it also checks the model database: every model records a cutoff not past `-through`, the signal is `prob_bull - prob_bear`, probabilities are probabilities, and every model has predictions. Exits 1 when a checkpoint fails.
+
 ## market_history
 
 Pull hourly bars into SQLite and derive the daily sessions from them. The source is Alpaca (default) or Polygon. Yahoo and Stooq and any timeframe other than `1h` are retired.
