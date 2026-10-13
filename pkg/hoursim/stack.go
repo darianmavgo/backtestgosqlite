@@ -3,9 +3,9 @@ package hoursim
 import (
 	"math"
 
-	"backtestgo/pkg/sim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 

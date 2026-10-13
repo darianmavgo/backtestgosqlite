@@ -3,8 +3,8 @@ package hoursim
 import (
 	"sort"
 
-	"backtestgo/pkg/sim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sim"
 )
 
 // dailyStamp is the clock time a session with no hourly bars is played at.
