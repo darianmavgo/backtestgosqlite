@@ -130,7 +130,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		if err := os.MkdirAll(calcDirPath, 0755); err != nil {
 			return SharedRunResult{Err: fmt.Errorf("failed to create calc dir %s: %w", calcDirPath, err)}
 		}
-		req.Primary.SetDatabases(req.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", req.Primary.ID())))
+		req.Primary.SetDatabases(req.MarketDBPath, freshCalcFile(filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", req.Primary.ID()))))
 		primSignals := req.Primary.GenerateSignals(req.BarsBySymbol)
 		for i := range primSignals {
 			primSignals[i].StrategyID = req.Primary.ID()
@@ -139,7 +139,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		allSignals = append(allSignals, primSignals...)
 
 		for secIdx, sec := range req.Secondaries {
-			sec.SetDatabases(req.MarketDBPath, filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", sec.ID())))
+			sec.SetDatabases(req.MarketDBPath, freshCalcFile(filepath.Join(calcDirPath, fmt.Sprintf("calc_%s.db", sec.ID()))))
 			secSignals := sec.GenerateSignals(req.BarsBySymbol)
 			for i := range secSignals {
 				secSignals[i].StrategyID = sec.ID()

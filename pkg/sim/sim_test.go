@@ -504,3 +504,63 @@ func TestAPositionOpenedInTheFinalHourIsReportedOpen(t *testing.T) {
 		t.Fatalf("trades %+v open %+v, want no trade and one open position", r.Trades, r.Open)
 	}
 }
+
+func parkBars() (map[string][]Bar, []string) {
+	p := series(session("2025-01-02", 50, nil), session("2025-01-03", 50, nil), session("2025-01-06", 50, nil))
+	a := series(session("2025-01-02", 100, nil), session("2025-01-03", 100, nil), session("2025-01-06", 100, nil))
+	return map[string][]Bar{"A": a, "P": p}, calendar(a)
+}
+
+func TestParkHoldsLeftoverCashInTheDefaultAsset(t *testing.T) {
+	bars, days := parkBars()
+	r := RunPortfolioWith([]Sleeve{{Cfg: Config{PositionCap: 1, InitialCapital: 100000}}}, bars, days,
+		&Park{Symbol: "P", Dividends: map[string]float64{"2025-01-03": 1}})
+	if len(r.Trades) != 0 {
+		t.Fatalf("the park booked a trade: %+v", r.Trades)
+	}
+	if r.Park.Symbol != "P" || !near(r.Park.Dividends, 2000) {
+		t.Fatalf("park %+v, want symbol P and $2000 of dividends (2000 shares x $1)", r.Park)
+	}
+	if r.Park.AvgWeight < 0.99 || r.Park.DaysUnparked != 0 {
+		t.Errorf("park %+v, want fully invested every session", r.Park)
+	}
+	for _, pt := range r.Curve {
+		if pt.Cash > 100 || pt.OpenPositions != 1 {
+			t.Errorf("%s: cash %.2f open %d, want the cash swept into the park lot", pt.Date, pt.Cash, pt.OpenPositions)
+		}
+	}
+}
+
+func TestAnEntrySellsParkSharesForTheCashItNeeds(t *testing.T) {
+	bars, days := parkBars()
+	cfg := Config{PositionCap: 1, InitialCapital: 100000, Allocation: 0.5}
+	r := RunPortfolioWith([]Sleeve{{Cfg: cfg, Sigs: []Signal{sig("2025-01-03", 100)}}}, bars, days, &Park{Symbol: "P"})
+	if len(r.Trades) != 1 || r.Trades[0].Shares != 500 {
+		t.Fatalf("trades %+v, want one trade of 500 shares (half of $100000 at $100)", r.Trades)
+	}
+	if got := r.Curve[1]; got.OpenPositions != 2 || got.Equity < 99900 {
+		t.Errorf("after the entry %+v, want the trade and the remaining park lot, equity intact", got)
+	}
+}
+
+func TestNoParkLeavesTheRunUnchanged(t *testing.T) {
+	bars, days := parkBars()
+	cfg := Config{PositionCap: 1, InitialCapital: 100000, Allocation: 0.5}
+	with := RunPortfolioWith([]Sleeve{{Cfg: cfg, Sigs: []Signal{sig("2025-01-03", 100)}}}, bars, days, nil)
+	without := RunPortfolio([]Sleeve{{Cfg: cfg, Sigs: []Signal{sig("2025-01-03", 100)}}}, bars, days)
+	if len(with.Trades) != len(without.Trades) || with.Park != (ParkResult{}) {
+		t.Fatalf("a nil park changed the run: %+v vs %+v", with, without)
+	}
+}
+
+func TestFixedDollarBuysThatManyDollarsAndIsCutToTheCash(t *testing.T) {
+	bs := series(session("2025-01-02", 100, nil), session("2025-01-03", 100, nil), session("2025-01-06", 100, nil))
+	r := one(bs, []Signal{sig("2025-01-02", 100)}, Config{PositionCap: 1, InitialCapital: 1_000_000, FixedDollar: 2500, HoldingWindow: 1})
+	if len(r.Trades) != 1 || r.Trades[0].Shares != 25 {
+		t.Fatalf("trades %+v, want 25 shares ($2500 at $100)", r.Trades)
+	}
+	r = one(bs, []Signal{sig("2025-01-02", 100)}, Config{PositionCap: 1, InitialCapital: 1000, FixedDollar: 2500, HoldingWindow: 1})
+	if len(r.Trades) != 1 || r.Trades[0].Shares != 9 {
+		t.Fatalf("trades %+v, want 9 shares (95%% of $1000 at $100)", r.Trades)
+	}
+}

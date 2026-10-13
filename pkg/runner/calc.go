@@ -16,7 +16,17 @@ var KeepCalc bool
 // function to call when the run is done.
 func calcDBPath(outDir, id string) (string, func()) {
 	dir, cleanup := calcDir(outDir)
-	return filepath.Join(dir, fmt.Sprintf("calc_%s.db", id)), cleanup
+	return freshCalcFile(filepath.Join(dir, fmt.Sprintf("calc_%s.db", id))), cleanup
+}
+
+// freshCalcFile removes a calculation database (and its WAL and SHM files) left by an earlier run
+// and returns its path. The pipelines build their tables IF NOT EXISTS, so a kept file from an
+// earlier run would hand its rows to this one (see "No shared or lasting scratch tables").
+func freshCalcFile(path string) string {
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		_ = os.Remove(path + suffix)
+	}
+	return path
 }
 
 // calcDir returns a directory for calc databases and its cleanup function. With

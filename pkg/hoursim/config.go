@@ -36,7 +36,7 @@ func Supported(cfg strategy.StrategyConfig) error {
 		return UnsupportedError{"exit at market open"}
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.PositionSizing)) {
-	case "", "fixed_pct":
+	case "", "fixed_pct", "fixed_shares", "fixed_dollar":
 	default:
 		return UnsupportedError{fmt.Sprintf("position sizing %q", cfg.PositionSizing)}
 	}
@@ -60,6 +60,12 @@ func Config(cfg strategy.StrategyConfig, capital float64) sim.Config {
 		OneFillPerMonth:     cfg.OneFillPerMonth,
 		ShortBorrowAnnual:   cfg.ShortBorrowAnnual,
 		CrisisStop:          CrisisStop,
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.PositionSizing)) {
+	case "fixed_shares":
+		c.FixedShares = cfg.FixedShares
+	case "fixed_dollar":
+		c.FixedDollar = cfg.FixedDollar
 	}
 	if cfg.HoldingWindow >= strategy.NoHoldLimit {
 		c.HoldingWindow = sim.NoHoldLimit

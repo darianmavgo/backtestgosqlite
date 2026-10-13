@@ -2,12 +2,16 @@ package gridsearch
 
 import (
 	"fmt"
+	"log"
 	"math"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
@@ -68,9 +72,9 @@ type sweepContext struct {
 	PeriodConfigs map[string]strategy.StrategyConfig
 	AllBars       map[string][]models.Bar
 
-	// Hourly bars that decide limit fills in a period sweep (nil with -daily-fills
-	// or when no grid point has a limit). Read-only, shared by the workers.
-	Intraday simulator.Intraday
+	// Hourly bars every grid point is played on (nil: each session is played as its daily bar).
+	// Read-only, shared by the workers.
+	Intraday map[string][]models.Bar
 }
 
 // estimatePerms computes a strategy's generic parameter grid size without
@@ -202,6 +206,9 @@ func prepareSweep(db *sqlx.DB, strat strategy.Strategy, opts sweepOptions) (*swe
 		TotalPerms:  totalPerms,
 		StartedAt:   time.Now(),
 	}
+	if ctx.Intraday, err = hourlyFor(opts.MarketDB, append([]string{paramSpace.SignalSymbol}, paramSpace.Symbols...)); err != nil {
+		return nil, nil, fmt.Errorf("%s: hourly bars: %w", strat.ID(), err)
+	}
 
 	var tasks []sweepTask
 	for _, sym := range paramSpace.Symbols {
@@ -297,8 +304,7 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 		return gridResult{}, false
 	}
 
-	sim := simulator.NewPortfolioSimulator(cfg, opts.Capital)
-	report, trades, curve := sim.Run(sigs, barsBySymbol, ctx.SortedDates)
+	report, trades, curve := ctx.play(cfg, sigs, barsBySymbol, opts.Capital)
 
 	if report.TotalTrades < opts.MinTrades {
 		return gridResult{}, false
@@ -514,14 +520,14 @@ func preparePeriodSweep(db *sqlx.DB, strat strategy.Strategy, space strategy.Par
 		TotalPerms: space.Perms(), StartedAt: time.Now(),
 		PeriodSignals: signals, PeriodConfigs: configs, AllBars: bars,
 	}
-	if space.HasLimit() {
+	{
 		syms := make([]string, 0, len(bars))
 		for sym := range bars {
 			syms = append(syms, sym)
 		}
 		sort.Strings(syms)
 		if ctx.Intraday, err = runner.LoadFillBars(opts.MarketDB, syms); err != nil {
-			return nil, nil, fmt.Errorf("%s: hourly bars for limit fills: %w", strat.ID(), err)
+			return nil, nil, fmt.Errorf("%s: hourly bars: %w", strat.ID(), err)
 		}
 	}
 	var tasks []sweepTask
@@ -602,11 +608,7 @@ func evalPeriodTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetai
 	if len(sigs) < opts.MinTrades {
 		return gridResult{}, false
 	}
-	sim := simulator.NewPortfolioSimulator(cfg, opts.Capital)
-	if t.limit > 0 {
-		sim.Intraday = ctx.Intraday
-	}
-	report, trades, curve := sim.Run(sigs, ctx.AllBars, ctx.SortedDates)
+	report, trades, curve := ctx.play(cfg, sigs, ctx.AllBars, opts.Capital)
 	if report.TotalTrades < opts.MinTrades {
 		return gridResult{}, false
 	}
@@ -628,3 +630,38 @@ func evalPeriodTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetai
 		Allocation: t.alloc,
 	}, true
 }
+
+// hourlyFor loads the hourly bars of symbols from the market database beside opts.MarketDB; none
+// is not an error (the grid plays each session as its daily bar and the log says so).
+func hourlyFor(marketDB string, symbols []string) (map[string][]models.Bar, error) {
+	seen := map[string]bool{}
+	var syms []string
+	for _, s := range symbols {
+		if s = strings.ToUpper(strings.TrimSpace(s)); s != "" && !seen[s] {
+			seen[s] = true
+			syms = append(syms, s)
+		}
+	}
+	sort.Strings(syms)
+	if _, err := os.Stat(appenv.BarDB(marketDB, "1h")); err != nil {
+		return nil, nil
+	}
+	return runner.LoadFillBars(marketDB, syms)
+}
+
+// play runs one grid point on the hourly simulator. A configuration it does not model runs on the
+// daily simulator, which says so once in the log.
+func (c *sweepContext) play(cfg strategy.StrategyConfig, sigs []models.Signal, daily map[string][]models.Bar, capital float64) (models.PerformanceReport, []models.Trade, []models.DailyEquityPoint) {
+	out, err := hoursim.Run(hoursim.Input{Signals: sigs, Daily: daily, Hourly: c.Intraday, Dates: c.SortedDates, Config: cfg, Capital: capital})
+	if err == nil {
+		return out.Report, out.Trades, out.Curve
+	}
+	legacyOnce.Do(func() { log.Printf("gridsearch: daily simulator (legacy) for some grid points: %v", err) })
+	sim := simulator.NewPortfolioSimulator(cfg, capital)
+	if cfg.EntryLimitPct > 0 {
+		sim.Intraday = c.Intraday
+	}
+	return sim.Run(sigs, daily, c.SortedDates)
+}
+
+var legacyOnce sync.Once

@@ -51,6 +51,16 @@ type account struct {
 	dailyYield  float64
 	dailyBorrow float64
 	allowNeg    bool
+
+	park         *Park
+	parkSlip     float64
+	parkComm     float64
+	parkShares   int
+	parkLast     float64 // last park-symbol close seen
+	parkDivCash  float64
+	parkWeight   float64 // sum of the park's share of equity over the sessions
+	parkSessions int
+	parkEmpty    int // sessions that ended with no park shares
 }
 
 // Run plays one strategy's signals over hourly bars: a portfolio of one sleeve. See
@@ -72,6 +82,11 @@ func Run(sigs []Signal, bars map[string][]Bar, sessions []string, cfg Config) *R
 // sleeve's own position at the close. Positions still open on the last session are
 // closed at its last close.
 func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *Result {
+	return RunPortfolioWith(sleeves, bars, sessions, nil)
+}
+
+// RunPortfolioWith is RunPortfolio with a parked leftover-cash book (see Park); nil parks nothing.
+func RunPortfolioWith(sleeves []Sleeve, bars map[string][]Bar, sessions []string, park *Park) *Result {
 	sls := make([]*sleeve, len(sleeves))
 	var initial, yield, borrow float64
 	for i, sv := range sleeves {
@@ -96,6 +111,10 @@ func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *R
 	}
 	a := &account{cash: initial, pos: map[string]*position{},
 		lastExit: map[string]int{}, filled: map[string]string{}}
+	if park != nil && park.Symbol != "" && bars[park.Symbol] != nil {
+		a.park = park
+		a.parkSlip, a.parkComm = sls[0].cfg.Slippage, sls[0].cfg.Commission
+	}
 	if yield > 0 {
 		a.dailyYield = math.Pow(1+yield, 1.0/252) - 1
 	}
@@ -133,6 +152,7 @@ func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *R
 		if a.dailyYield > 0 && a.cash > 0 {
 			a.cash += a.cash * a.dailyYield
 		}
+		a.payParkDividend(session)
 		// positions held into this session age by one
 		for _, p := range a.pos {
 			if _, ok := ix[p.symbol].span[session]; ok {
@@ -144,6 +164,9 @@ func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *R
 		active := map[string]bool{}
 		for sym := range a.pos {
 			active[sym] = true
+		}
+		if a.park != nil {
+			active[a.park.Symbol] = true
 		}
 		todays := orders[session]
 		sort.SliceStable(todays, func(i, j int) bool {
@@ -193,6 +216,11 @@ func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *R
 
 		for _, t := range ts {
 			a.hour = t
+			if a.park != nil {
+				if b, ok, _, _ := barAt(a.park.Symbol, t); ok {
+					a.parkLast = b.Close
+				}
+			}
 			// 1. every open position is judged on this hour and exit signals sell at the
 			//    session close, before any order fills (cash from a sale is spendable)
 			for _, sym := range syms {
@@ -234,10 +262,17 @@ func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *R
 			}
 		}
 
+		if a.park != nil {
+			if _, traded := ix[a.park.Symbol].span[session]; traded {
+				a.sweepIntoPark()
+			}
+		}
 		eq := a.equity()
-		res.Curve = append(res.Curve, Point{Date: session, Equity: eq, Cash: a.cash, OpenPositions: len(a.pos)})
+		a.recordParkSession(eq)
+		res.Curve = append(res.Curve, Point{Date: session, Equity: eq, Cash: a.cash, OpenPositions: a.openCount()})
 	}
 
+	a.sellPark(a.parkShares) // the lot is turned back into cash, and is not a trade
 	// still open on the last session: closed at the last close seen
 	for _, sym := range a.sortedHeld() {
 		p := a.pos[sym]
@@ -254,6 +289,7 @@ func RunPortfolio(sleeves []Sleeve, bars map[string][]Bar, sessions []string) *R
 		a.close(p, p.lastT, slip(p.current, p.sl.cfg.Slippage, p.short), "end", len(sessions)-1)
 	}
 	res.Trades = a.trades
+	res.Park = a.parkResult()
 	return res
 }
 
@@ -437,8 +473,11 @@ func (a *account) enter(o order, fill float64, b Bar, si int) *position {
 	// subordinate positions, longest held first. Everyone else sizes to the cash left.
 	subs := o.sl.prio == 0 && a.hasSubordinates()
 	budget := a.cash
-	if subs {
+	switch {
+	case o.sl.prio == 0 && (subs || a.parkShares > 0):
 		budget = equity
+	case a.parkShares > 0: // a subordinate may spend the park too
+		budget = a.cash + a.parkBuyingPower()
 	}
 	shares := cfg.shares(budget, equity, entry, sig.Alloc)
 	if cfg.MaxBarVolumeShare > 0 {
@@ -449,15 +488,18 @@ func (a *account) enter(o order, fill float64, b Bar, si int) *position {
 	}
 	cost := float64(shares) * entry
 	commission := float64(shares) * cfg.Commission
+	if cost+commission > a.cash && a.parkShares > 0 { // the park is sold before anyone's position is
+		a.raiseFromPark(cost + commission)
+	}
 	if subs && cost+commission > a.cash {
 		a.raiseCash(cost+commission, si)
-		if cost+commission > a.cash { // still short: take what the cash buys
-			shares = min(shares, int(a.cash/(entry+cfg.Commission)))
-			if shares <= 0 {
-				return nil
-			}
-			cost, commission = float64(shares)*entry, float64(shares)*cfg.Commission
+	}
+	if cost+commission > a.cash { // still short: take what the cash buys
+		shares = min(shares, int(a.cash/(entry+cfg.Commission)))
+		if shares <= 0 {
+			return nil
 		}
+		cost, commission = float64(shares)*entry, float64(shares)*cfg.Commission
 	}
 	if cost+commission > a.cash {
 		return nil
@@ -539,6 +581,7 @@ func (a *account) equity() float64 {
 			eq += float64(p.shares) * p.current
 		}
 	}
+	eq += float64(a.parkShares) * a.parkLast
 	if eq < 0 && a.allowNeg {
 		return eq
 	}
@@ -557,6 +600,13 @@ func (c Config) shares(cash, equity, entry, override float64) int {
 			return int(cash * 0.95 / entry)
 		}
 		return c.FixedShares
+	}
+	if c.FixedDollar > 0 {
+		target := c.FixedDollar
+		if target > cash {
+			target = cash * 0.95
+		}
+		return int(target / entry)
 	}
 	alloc := c.Allocation
 	if override > 0 {
@@ -584,4 +634,96 @@ func slip(raw, slippage float64, adverseUp bool) float64 {
 		return raw * (1 + slippage)
 	}
 	return raw * (1 - slippage)
+}
+
+// openCount is the positions held plus the park lot, which counts as one.
+func (a *account) openCount() int {
+	n := len(a.pos)
+	if a.parkShares > 0 {
+		n++
+	}
+	return n
+}
+
+// parkUnitSell is the cash one park share raises at the last park price, after slippage and commission.
+func (a *account) parkUnitSell() float64 {
+	return a.parkLast*(1-a.parkSlip) - a.parkComm
+}
+
+// parkBuyingPower is the cash the whole park lot would raise now.
+func (a *account) parkBuyingPower() float64 {
+	if a.parkShares <= 0 || a.parkUnitSell() <= 0 {
+		return 0
+	}
+	return float64(a.parkShares) * a.parkUnitSell()
+}
+
+// raiseFromPark sells just enough park shares for the cash to cover need.
+func (a *account) raiseFromPark(need float64) {
+	unit := a.parkUnitSell()
+	if a.parkShares <= 0 || unit <= 0 || need <= a.cash {
+		return
+	}
+	a.sellPark(int(math.Ceil((need - a.cash) / unit)))
+}
+
+// sellPark sells shares (at most the lot) at the last park price.
+func (a *account) sellPark(shares int) {
+	shares = min(shares, a.parkShares)
+	if shares <= 0 || a.parkLast <= 0 {
+		return
+	}
+	a.cash += float64(shares)*a.parkLast*(1-a.parkSlip) - float64(shares)*a.parkComm
+	a.parkShares -= shares
+}
+
+// sweepIntoPark buys as many park shares as the cash holds, at the park's last close.
+func (a *account) sweepIntoPark() {
+	unit := a.parkLast*(1+a.parkSlip) + a.parkComm
+	if unit <= 0 {
+		return
+	}
+	n := int(a.cash / unit)
+	if n <= 0 {
+		return
+	}
+	a.cash -= float64(n) * unit
+	a.parkShares += n
+}
+
+// payParkDividend pays the dividend of the session on the shares held coming into it.
+func (a *account) payParkDividend(session string) {
+	if a.park == nil || a.parkShares <= 0 {
+		return
+	}
+	if d := a.park.Dividends[session]; d > 0 {
+		pay := float64(a.parkShares) * d
+		a.cash += pay
+		a.parkDivCash += pay
+	}
+}
+
+// recordParkSession adds the session to the park's averages.
+func (a *account) recordParkSession(equity float64) {
+	if a.park == nil {
+		return
+	}
+	a.parkSessions++
+	if equity > 0 {
+		a.parkWeight += float64(a.parkShares) * a.parkLast / equity
+	}
+	if a.parkShares == 0 {
+		a.parkEmpty++
+	}
+}
+
+func (a *account) parkResult() ParkResult {
+	if a.park == nil {
+		return ParkResult{}
+	}
+	r := ParkResult{Symbol: a.park.Symbol, Dividends: a.parkDivCash, DaysUnparked: a.parkEmpty}
+	if a.parkSessions > 0 {
+		r.AvgWeight = a.parkWeight / float64(a.parkSessions)
+	}
+	return r
 }

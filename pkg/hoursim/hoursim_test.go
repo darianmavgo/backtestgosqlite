@@ -184,3 +184,53 @@ func TestStackPrimaryPreemptsSubordinate(t *testing.T) {
 		t.Errorf("sub report counts %d trades, want 1", got)
 	}
 }
+
+// Leftover cash sits in the default asset, an entry sells some of it, and the park is reported.
+func TestStackParksLeftoverCashInTheDefaultAsset(t *testing.T) {
+	flat := func(px float64) []models.Bar {
+		return []models.Bar{dbar("2026-03-02", px, px, px, px), dbar("2026-03-03", px, px, px, px), dbar("2026-03-04", px, px, px, px), dbar("2026-03-05", px, px, px, px)}
+	}
+	out, err := RunStack(StackInput{
+		Members: []Member{{ID: "s", Config: strategy.StrategyConfig{AllocationPct: 0.5, PositionCap: 1, HoldingWindow: 1},
+			Signals: []models.Signal{{Symbol: "X", Date: "2026-03-03", Entry: 1, Direction: "LONG"}}}},
+		Daily:        map[string][]models.Bar{"X": flat(100), "PARK": flat(50)},
+		Dates:        []string{"2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"},
+		Capital:      100000,
+		DefaultAsset: "PARK",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Park.Symbol != "PARK" || out.Park.AvgWeight < 0.4 {
+		t.Fatalf("park %+v, want PARK holding most of the cash", out.Park)
+	}
+	if len(out.Trades) != 1 || out.Trades[0].Shares != 500 {
+		t.Fatalf("trades %+v, want one trade of 500 shares funded by selling park shares", out.Trades)
+	}
+	for _, tr := range out.Trades {
+		if tr.Symbol == "PARK" {
+			t.Errorf("the park appeared as a trade: %+v", tr)
+		}
+	}
+}
+
+func TestFixedSharesAndDollarSizingAreHonoured(t *testing.T) {
+	daily := map[string][]models.Bar{"X": {
+		dbar("2026-03-02", 10, 10, 10, 10), dbar("2026-03-03", 10, 10, 10, 10), dbar("2026-03-04", 10, 10, 10, 10),
+	}}
+	run := func(cfg strategy.StrategyConfig) []models.Trade {
+		cfg.PositionCap, cfg.HoldingWindow = 1, 1
+		out, err := Run(Input{Signals: []models.Signal{{Symbol: "X", Date: "2026-03-02", Entry: 1, Direction: "LONG"}},
+			Daily: daily, Dates: []string{"2026-03-02", "2026-03-03", "2026-03-04"}, Config: cfg, Capital: 100000})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out.Trades
+	}
+	if tr := run(strategy.StrategyConfig{PositionSizing: "fixed_shares", FixedShares: 1}); len(tr) != 1 || tr[0].Shares != 1 {
+		t.Errorf("fixed_shares trades %+v", tr)
+	}
+	if tr := run(strategy.StrategyConfig{PositionSizing: "fixed_dollar", FixedDollar: 500}); len(tr) != 1 || tr[0].Shares != 50 {
+		t.Errorf("fixed_dollar trades %+v", tr)
+	}
+}

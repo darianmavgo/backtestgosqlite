@@ -79,6 +79,10 @@ type Config struct {
 	// cash buys), so a one-share replay of a single signal does not depend on the account size.
 	FixedShares int
 
+	// FixedDollar, when > 0 (and FixedShares is not set), buys that many dollars of the stock per
+	// position, cut to 95% of the cash when the cash is short.
+	FixedDollar float64
+
 	ShortBorrowAnnual float64
 	CrisisStop        float64 // stop distance when a strategy has none (live pipeline: 0.20)
 }
@@ -108,6 +112,8 @@ type Result struct {
 	Initial float64
 	Trades  []Trade
 	Curve   []Point
+	// Park summarizes the parked leftover-cash book (zero value when no Park was set).
+	Park ParkResult
 	// Open holds positions entered in the final hour of the data. They are not trades (no later
 	// bar to exit on), but a caller replaying one signal needs to tell them from an unfilled order.
 	Open []OpenPosition
@@ -119,4 +125,25 @@ type OpenPosition struct {
 	Entry                       string
 	EntryPrice                  float64
 	Shares                      int
+}
+
+// Park holds a run's leftover cash in one symbol (the default asset). After each session's last
+// hour the cash is swept into it at that session's close; an entry that needs cash sells just
+// enough of it at the symbol's last price; a dividend on the shares is paid into cash. The lot is
+// not a sleeve position, so a sleeve may hold the same symbol at the same time. Slippage and
+// commission are the primary sleeve's. The lot is sold back to cash when the data ends, and that
+// sale is not a trade.
+type Park struct {
+	Symbol string
+	// Dividends maps a session (YYYY-MM-DD) to the cash dividend per share paid on it.
+	Dividends map[string]float64
+}
+
+// ParkResult summarizes the parked book: its average share of equity, the dividends it paid and the
+// sessions that ended with no park shares.
+type ParkResult struct {
+	Symbol       string
+	AvgWeight    float64
+	Dividends    float64
+	DaysUnparked int
 }

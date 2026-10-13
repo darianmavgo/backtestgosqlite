@@ -28,6 +28,10 @@ type StackInput struct {
 	Dates     []string
 	Capital   float64
 	Benchmark map[string]models.Bar
+	// DefaultAsset, when set, holds leftover cash (see sim.Park). Dividends maps a session to the
+	// cash dividend per share it pays. Its daily and hourly bars must be in Daily and Hourly.
+	DefaultAsset string
+	Dividends    map[string]float64
 }
 
 // StackOutput is the combined run and each member's own report.
@@ -36,6 +40,8 @@ type StackOutput struct {
 	PerStrategy map[string]models.PerformanceReport
 	// Preempted counts the positions the primary sold to make room.
 	Preempted int
+	// Park summarizes the parked leftover-cash book (zero value without a DefaultAsset).
+	Park sim.ParkResult
 }
 
 // RunStack plays the members' signals over hourly bars in one shared account.
@@ -53,8 +59,15 @@ func RunStack(in StackInput) (StackOutput, error) {
 	if len(in.Members) > 0 {
 		first = in.Members[0].Config
 	}
+	if in.DefaultAsset != "" {
+		all = append(all, models.Signal{Symbol: in.DefaultAsset}) // its bars are built too
+	}
 	bars, daily := barsFor(Input{Daily: in.Daily, Hourly: in.Hourly}, all)
-	res := sim.RunPortfolio(sleeves, bars, in.Dates)
+	var park *sim.Park
+	if in.DefaultAsset != "" {
+		park = &sim.Park{Symbol: in.DefaultAsset, Dividends: in.Dividends}
+	}
+	res := sim.RunPortfolioWith(sleeves, bars, in.Dates, park)
 	out := finish(Input{Config: first, Benchmark: in.Benchmark}, res, daily)
 
 	// Commission is per sleeve; finish used the primary's rate for every trade.
@@ -67,7 +80,7 @@ func RunStack(in StackInput) (StackOutput, error) {
 	}
 	out.Report = analytics.CalculatePerformanceMetricsWithBenchmark(res.Initial, out.Trades, out.Curve, in.Benchmark)
 
-	so := StackOutput{Output: out, PerStrategy: map[string]models.PerformanceReport{}}
+	so := StackOutput{Output: out, PerStrategy: map[string]models.PerformanceReport{}, Park: res.Park}
 	for _, t := range res.Trades {
 		if t.Reason == "preempted" {
 			so.Preempted++

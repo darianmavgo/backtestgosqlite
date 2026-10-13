@@ -11,11 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/markov_strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
+	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/streak_strategy"
@@ -29,8 +31,39 @@ var markovMu sync.Mutex
 // Run simulates every pending strategy (or only those in ids, when ids is not empty) with the park symbol. Failed and
 // running rows from an earlier process are claimed again. A failure during
 // this process stays failed until the next Run.
-// legacyNote logs once that the sweep runs on the daily simulator.
-var legacyNote sync.Once
+// hourlyStore caches each symbol's hourly bars across the many strategies of a sweep.
+var (
+	hourlyMu    sync.Mutex
+	hourlyStore = map[string][]models.Bar{}
+)
+
+// hourlyCached returns the hourly bars of symbols (those the database has), loading each once.
+func hourlyCached(marketPath string, symbols []string) map[string][]models.Bar {
+	hourlyMu.Lock()
+	defer hourlyMu.Unlock()
+	out := map[string][]models.Bar{}
+	// Opening a SQLite path creates it; with no hourly database beside the market one there is
+	// nothing to load and the sessions are played as daily bars.
+	if _, err := os.Stat(appenv.BarDB(marketPath, "1h")); err != nil {
+		return out
+	}
+	for _, sym := range symbols {
+		key := marketPath + "|" + sym
+		bars, ok := hourlyStore[key]
+		if !ok {
+			if got, err := runner.LoadFillBars(marketPath, []string{sym}); err != nil {
+				log.Printf("park_sweep: no hourly bars for %s: %v", sym, err)
+			} else {
+				bars = got[sym]
+			}
+			hourlyStore[key] = bars
+		}
+		if len(bars) > 0 {
+			out[sym] = bars
+		}
+	}
+	return out
+}
 
 func Run(sweepPath, marketPath string, concurrency int, ids []string) error {
 	sweep, err := Open(sweepPath)
@@ -176,17 +209,19 @@ func runOne(sweep, market *sqlx.DB, marketPath, id string, cfg Config, holdEquit
 	simCfg := strat.DefaultConfig()
 	simCfg.AllocationPct = alloc
 	simCfg.PositionSizing = "fixed_pct"
-	// The hourly simulator has no residual-cash book (a park), so this sweep still runs on the
-	// daily simulator, whose same-session fills and exits use the day's range.
-	legacyNote.Do(func() {
-		log.Printf("park_sweep: the daily simulator (legacy) plays these runs; the hourly simulator cannot park leftover cash yet")
+	out, err := hoursim.RunStack(hoursim.StackInput{
+		Members:      []hoursim.Member{{ID: id, Config: simCfg, Signals: kept}},
+		Daily:        bars,
+		Hourly:       hourlyCached(marketPath, uniqueUpper(syms)),
+		Dates:        dates,
+		Capital:      cfg.Capital,
+		DefaultAsset: cfg.ParkSymbol,
+		Dividends:    options.DividendsFromAdjClose(bars[cfg.ParkSymbol]),
 	})
-	sim := simulator.NewSharedAccountSimulator([]simulator.StrategyPriorityEntry{{
-		Strategy: strat, Priority: 0, Config: simCfg,
-	}}, cfg.Capital)
-	sim.SetDefaultAsset(cfg.ParkSymbol, options.DividendsFromAdjClose(bars[cfg.ParkSymbol]))
-	report, _, trades, _ := sim.Run(kept, bars, dates)
-	parked := sim.DefaultAssetResult()
+	if err != nil {
+		return fmt.Errorf("%s: %w", id, err)
+	}
+	report, trades, parked := out.Report, out.Trades, out.Park
 	var sleeve float64
 	for _, t := range trades {
 		sleeve += t.NetPnL

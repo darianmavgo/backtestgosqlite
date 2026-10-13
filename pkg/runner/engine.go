@@ -122,9 +122,8 @@ type stackRun struct {
 }
 
 // simulateStack plays the members' signals in one shared account. It uses the hourly simulator
-// unless a member uses a setting that simulator does not model, or the run parks leftover cash in
-// a default asset (the hourly simulator has no residual-cash book yet): those run on the daily
-// simulator, and the log says why.
+// unless a member uses a setting that simulator does not model: those run on the daily simulator,
+// and the log says why. A default asset parks leftover cash (sim.Park).
 func simulateStack(
 	entries []simulator.StrategyPriorityEntry,
 	signals []models.Signal,
@@ -136,30 +135,32 @@ func simulateStack(
 	benchmark map[string]models.Bar,
 ) stackRun {
 	var why error
-	if defaultAsset != "" {
-		why = hoursim.UnsupportedError{Feature: "a default asset (parked leftover cash)"}
-	} else {
-		byID := map[string][]models.Signal{}
-		for _, s := range signals {
-			byID[s.StrategyID] = append(byID[s.StrategyID], s)
-		}
-		members := make([]hoursim.Member, 0, len(entries))
-		for _, e := range entries {
-			members = append(members, hoursim.Member{ID: e.Strategy.ID(), Priority: e.Priority, Config: e.Config, Signals: byID[e.Strategy.ID()]})
-		}
-		out, err := hoursim.RunStack(hoursim.StackInput{
-			Members: members, Daily: daily, Hourly: hourlyBars(marketDB, signals),
-			Dates: dates, Capital: capital, Benchmark: benchmark,
-		})
-		if err == nil {
-			if len(out.DailySessions) > 0 {
-				log.Printf("hourly simulator: no hourly bars for %v on some sessions, played as daily bars", hoursim.SortedSymbols(out.DailySessions))
-			}
-			return stackRun{combined: out.Report, perStrategy: out.PerStrategy, trades: out.Trades, curve: out.Curve,
-				preempted: out.Preempted, engine: storage.EngineHourly}
-		}
-		why = err
+	byID := map[string][]models.Signal{}
+	for _, s := range signals {
+		byID[s.StrategyID] = append(byID[s.StrategyID], s)
 	}
+	members := make([]hoursim.Member, 0, len(entries))
+	for _, e := range entries {
+		members = append(members, hoursim.Member{ID: e.Strategy.ID(), Priority: e.Priority, Config: e.Config, Signals: byID[e.Strategy.ID()]})
+	}
+	hourlySyms := signals
+	if defaultAsset != "" {
+		hourlySyms = append(append([]models.Signal{}, signals...), models.Signal{Symbol: defaultAsset})
+	}
+	out, err := hoursim.RunStack(hoursim.StackInput{
+		Members: members, Daily: daily, Hourly: hourlyBars(marketDB, hourlySyms),
+		Dates: dates, Capital: capital, Benchmark: benchmark,
+		DefaultAsset: defaultAsset, Dividends: options.DividendsFromAdjClose(daily[defaultAsset]),
+	})
+	if err == nil {
+		if len(out.DailySessions) > 0 {
+			log.Printf("hourly simulator: no hourly bars for %v on some sessions, played as daily bars", hoursim.SortedSymbols(out.DailySessions))
+		}
+		return stackRun{combined: out.Report, perStrategy: out.PerStrategy, trades: out.Trades, curve: out.Curve,
+			preempted: out.Preempted, engine: storage.EngineHourly,
+			parked: simulator.DefaultAssetResult{Symbol: out.Park.Symbol, AvgWeight: out.Park.AvgWeight, Dividends: out.Park.Dividends, DaysUnparked: out.Park.DaysUnparked}}
+	}
+	why = err
 	log.Printf("stack: daily simulator (legacy): %v", why)
 
 	sim := simulator.NewSharedAccountSimulator(entries, capital)
@@ -207,4 +208,18 @@ func splitSuspect(marketDB string, symbols, dates []string) string {
 		parts = append(parts, j.String())
 	}
 	return "unadjusted split? " + strings.Join(parts, ", ")
+}
+
+// RowProblem says why a strategy cannot trade at all, or "" when it can. Such a row would run and
+// report zero trades, which reads as "never signalled" when the truth is "never could".
+//
+// An entry limit at or below the stop (as fractions of the previous close) puts the stop at or
+// above the fill price, so the position would exit on the next bar at a price it never traded and
+// the hourly simulator refuses the fill.
+func RowProblem(cfg strategy.StrategyConfig) string {
+	if cfg.EntryLimitPct > 0 && cfg.StopLossPct > 0 && cfg.StopLossPct < 1 && cfg.EntryLimitPct <= cfg.StopLossPct+1e-9 {
+		return fmt.Sprintf("entry limit %.1f%% of the previous close is at or below the stop (%.1f%%): the stop would sit at or above the fill, so the order can never fill",
+			100*cfg.EntryLimitPct, 100*cfg.StopLossPct)
+	}
+	return ""
 }

@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -121,5 +123,39 @@ func TestRunThroughAnUnadjustedSplitIsSuspect(t *testing.T) {
 func TestACleanRunIsNotSuspect(t *testing.T) {
 	if res := runEngine(t, false); res.Suspect != "" {
 		t.Fatalf("suspect %q on clean bars", res.Suspect)
+	}
+}
+
+func TestRowProblemNamesARowThatCanNeverFill(t *testing.T) {
+	cfg := streakRow("x", "AAA", 1, 0.5, 0.05, 0.10).DefaultConfig() // a 10% stop: 90% of the entry
+	cfg.EntryLimitPct = 0.85                                         // limit at 85%: under the stop
+	if RowProblem(cfg) == "" {
+		t.Fatal("a limit under its stop was not flagged")
+	}
+	cfg.EntryLimitPct = 0.95
+	if why := RowProblem(cfg); why != "" {
+		t.Fatalf("a limit over its stop was flagged: %s", why)
+	}
+	cfg.EntryLimitPct = 0
+	if why := RowProblem(cfg); why != "" {
+		t.Fatalf("no limit was flagged: %s", why)
+	}
+}
+
+// A kept calculation database from an earlier run is removed before the next run uses its path.
+func TestFreshCalcFileRemovesWhatAnEarlierRunLeft(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "calc_x.db")
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.WriteFile(path+suffix, []byte("old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := freshCalcFile(path); got != path {
+		t.Fatalf("path %q", got)
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); err == nil {
+			t.Errorf("%s survived", path+suffix)
+		}
 	}
 }
