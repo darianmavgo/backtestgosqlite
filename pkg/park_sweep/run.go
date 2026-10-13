@@ -3,6 +3,7 @@ package park_sweep
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,6 +29,9 @@ var markovMu sync.Mutex
 // Run simulates every pending strategy (or only those in ids, when ids is not empty) with the park symbol. Failed and
 // running rows from an earlier process are claimed again. A failure during
 // this process stays failed until the next Run.
+// legacyNote logs once that the sweep runs on the daily simulator.
+var legacyNote sync.Once
+
 func Run(sweepPath, marketPath string, concurrency int, ids []string) error {
 	sweep, err := Open(sweepPath)
 	if err != nil {
@@ -172,6 +176,11 @@ func runOne(sweep, market *sqlx.DB, marketPath, id string, cfg Config, holdEquit
 	simCfg := strat.DefaultConfig()
 	simCfg.AllocationPct = alloc
 	simCfg.PositionSizing = "fixed_pct"
+	// The hourly simulator has no residual-cash book (a park), so this sweep still runs on the
+	// daily simulator, whose same-session fills and exits use the day's range.
+	legacyNote.Do(func() {
+		log.Printf("park_sweep: the daily simulator (legacy) plays these runs; the hourly simulator cannot park leftover cash yet")
+	})
 	sim := simulator.NewSharedAccountSimulator([]simulator.StrategyPriorityEntry{{
 		Strategy: strat, Priority: 0, Config: simCfg,
 	}}, cfg.Capital)

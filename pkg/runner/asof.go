@@ -2,29 +2,19 @@ package runner
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/calendar"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 )
 
 // LastCompletedEquitySession is the most recent session date at or before now
 // in America/New_York. Before the regular close (16:00 ET), the prior day is
 // treated as last completed. Weekends and exchange holidays walk backward.
 func LastCompletedEquitySession(now time.Time) time.Time {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		loc = time.FixedZone("ET", -5*3600)
-	}
-	et := now.In(loc)
-	if et.Hour() < 16 {
-		et = et.AddDate(0, 0, -1)
-	}
-	day := time.Date(et.Year(), et.Month(), et.Day(), 0, 0, 0, 0, time.UTC)
-	for !calendar.IsSession(day) {
-		day = day.AddDate(0, 0, -1)
-	}
-	return day
+	return calendar.LastCompletedSession(now)
 }
 
 // NextEquitySession returns the next session after last completed (the
@@ -56,4 +46,29 @@ func ResolveLiveAsOf(tipYYYYMMDD string, now time.Time) (asOf string, nextSessio
 		return "", "", fmt.Errorf("STALE_MARKET_DATA: market DB tip as-of %s but last completed session is %s (entries would target %s). Refresh failed to bring history current — fix the download source and retry", tip, expected, next)
 	}
 	return tip, next, nil
+}
+
+// DropUnfinishedSessions removes the bars dated after the last completed session as of now.
+// A daily row for a session that is still open is provisional: one derived from the hours
+// traded so far (sessions.Derive) looks like a finished day and would make the scan decide on
+// half a session. It returns the bars and the sorted dates that remain.
+func DropUnfinishedSessions(bySymbol map[string][]models.Bar, now time.Time) (map[string][]models.Bar, []string) {
+	last := LastCompletedEquitySession(now).Format("2006-01-02")
+	kept := make(map[string][]models.Bar, len(bySymbol))
+	seen := map[string]bool{}
+	var dates []string
+	for sym, bars := range bySymbol {
+		for _, b := range bars {
+			if b.Date > last {
+				continue
+			}
+			kept[sym] = append(kept[sym], b)
+			if !seen[b.Date] {
+				seen[b.Date] = true
+				dates = append(dates, b.Date)
+			}
+		}
+	}
+	sort.Strings(dates)
+	return kept, dates
 }

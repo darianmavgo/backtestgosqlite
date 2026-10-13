@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/calendar"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
@@ -57,15 +59,20 @@ func (s *Strategy) RequiredSymbols() []string {
 	return []string{sig, tr}
 }
 
-// MinHistoryBars is about five and a half years of sessions. The live scan downloads this much
-// history so the model trained from it has seen enough transitions to match the backtest.
+// MinHistoryBars is the bars a live scan needs per symbol. The saved model already holds its
+// predictions and Prepare only scores the new sessions, from their 20-bar return, so about a
+// month of closes is enough. Fitting a model needs far more (train markov), and that is a
+// separate, deliberate run.
 func (s *Strategy) MinHistoryBars() int {
-	return 1300
+	return 25
 }
 
-// Prepare trains the model for the signal symbol through the latest bar in the market database,
-// unless the saved model is already that current. A live scan calls it each session, because the
-// model holds one prediction per date and has none for a session it was not trained through.
+// Prepare brings the saved model up to the last completed session, unless it is already there.
+// A live scan calls it each session, because the model holds one prediction per date and has none
+// for a session it was not trained through. It never refits an existing model: it scores the new
+// sessions with the counts frozen at the model's trained_through, which is how an out-of-sample
+// backtest scores the sessions after its cutoff, so live and out-of-sample agree. Only a symbol
+// with no model at all is trained here (MARKOV_TRAIN_THROUGH and MARKOV_TRAIN_FROM apply then).
 func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 	sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
 	last, err := storage.SymbolLastDate(marketDB, sym)
@@ -75,8 +82,24 @@ func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 	if last == "" {
 		return fmt.Errorf("no daily bars for %s in %s", sym, marketDB)
 	}
+	// A bar for a session still open is provisional and must not enter the saved model.
+	done := calendar.LastCompletedSession(time.Now()).Format("2006-01-02")
+	if last > done {
+		last = done
+	}
 	modelDB := appenv.MarkovDB()
-	if trained, ok := ModelLastDate(modelDB, sym); ok && trained >= last {
+	trained, ok := ModelLastDate(modelDB, sym)
+	if ok && trained >= last {
+		return nil
+	}
+	if ok {
+		got, err := train.ExtendMarkov(ctx, train.ExtendConfig{MarketDB: marketDB, ModelDB: modelDB, Symbols: []string{sym}, Through: done})
+		if err != nil {
+			return fmt.Errorf("extend markov %s: %w", sym, err)
+		}
+		if len(got) == 0 {
+			return fmt.Errorf("extend markov %s: no bars after %s in %s (the model is behind the market data)", sym, trained, marketDB)
+		}
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(modelDB), 0o755); err != nil {
@@ -185,9 +208,12 @@ func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []model
 			log.Printf("markov_strategy %s: no trained model for %s in %s; run `train markov -symbols %s`", s.ID(), sym, appenv.MarkovDB(), sym)
 			return nil
 		}
-		if market, err := storage.SymbolLastDate(s.marketDBPath, sym); err == nil && market > trained {
-			log.Printf("markov_strategy %s: the model for %s was trained through %s but the market data runs to %s; run `train markov -symbols %s`", s.ID(), sym, trained, market, sym)
+		// A bar for the session still open is not expected in the model.
+		done := calendar.LastCompletedSession(time.Now()).Format("2006-01-02")
+		if market, err := storage.SymbolLastDate(s.marketDBPath, sym); err == nil && market > trained && trained < done {
+			log.Printf("markov_strategy %s: the model for %s was trained through %s but the market data runs to %s; it is brought up to date by Prepare (live scan) or `train markov -symbols %s`", s.ID(), sym, trained, market, sym)
 		}
+
 	}
 	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "limit", barsBySymbol)
 }

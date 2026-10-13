@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
+	"github.com/jmoiron/sqlx"
 )
 
 // Many workers writing runs into one results.db at the same time must all
@@ -148,5 +149,41 @@ func TestNewRunNumbersAndFamilyFiles(t *testing.T) {
 	files, err := ResultFiles(dir)
 	if err != nil || len(files) != 2 || filepath.Base(files[0]) != "markov.db" || filepath.Base(files[1]) != "tree.db" {
 		t.Fatalf("result files %v (err %v)", files, err)
+	}
+}
+
+// A results file made before runs.engine existed gets the column, and its old runs read as no
+// engine (the daily simulator) while new ones record theirs.
+func TestOpenResultsAddsEngineColumnToAnOlderFile(t *testing.T) {
+	dir := t.TempDir()
+	old, err := sqlx.Open("sqlite", resultsPath(dir, "single"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Exec(`CREATE TABLE runs (run_id INTEGER PRIMARY KEY AUTOINCREMENT, strategy_id TEXT NOT NULL,
+		kind TEXT NOT NULL DEFAULT 'single', window_start TEXT, window_end TEXT, capital REAL, alloc_pct REAL,
+		default_asset TEXT, market_max_date TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+		INSERT INTO runs (strategy_id) VALUES ('before')`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	r, err := OpenResults(dir, "single")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	if _, err := r.WriteRun(RunMeta{StrategyID: "after", Kind: "single", Engine: EngineHourly}, RunPayload{}); err != nil {
+		t.Fatal(err)
+	}
+	var got []struct {
+		Strategy string  `db:"strategy_id"`
+		Engine   *string `db:"engine"`
+	}
+	if err := r.DB.Select(&got, `SELECT strategy_id, engine FROM runs ORDER BY run_id`); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Engine != nil || got[1].Engine == nil || *got[1].Engine != EngineHourly {
+		t.Fatalf("runs %+v, want the old run with no engine and the new one hourly", got)
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/olekukonko/tablewriter"
@@ -28,6 +27,9 @@ type RunResult struct {
 	RunID       int64
 	SignalCount int
 	Err         error
+	// Engine is the simulator that produced the run: storage.EngineHourly, or storage.EngineDaily
+	// for a strategy that uses a setting the hourly simulator does not model.
+	Engine string
 
 	// Set for strategies simulated on total-return (dividend-adjusted) prices.
 	// Buy-and-hold decomposition, before fees/slippage, entry signal → last bar.
@@ -442,26 +444,7 @@ func ExecuteStrategyWithDividends(
 	// strategy trading a young ticker (e.g. 2021+) gets its CAGR diluted by decades
 	// of idle time from unrelated long-history symbols sharing the same database.
 	scopedDates := scopeDatesToStrategy(strat, cfg, barsBySymbol, sortedDates)
-	sim := simulator.NewPortfolioSimulator(cfg, capital)
-	if tr != nil {
-		sim.Dividends = tr.divs
-	}
-	if cfg.EntryLimitPct > 0 {
-		// Limit entries are judged on hourly bars where the market DB has them.
-		seen := map[string]bool{}
-		var syms []string
-		for _, sg := range signals {
-			if !seen[sg.Symbol] {
-				seen[sg.Symbol] = true
-				syms = append(syms, sg.Symbol)
-			}
-		}
-		if sim.Intraday, err = LoadFillBars(marketDBPath, syms); err != nil {
-			log.Printf("Warning: no intraday bars for %s: %v", strat.ID(), err)
-			sim.Intraday = nil
-		}
-	}
-	report, trades, equityCurve := sim.Run(signals, barsBySymbol, scopedDates)
+	extras, engine, report, trades, equityCurve := simulateRun(strat.ID(), cfg, signals, barsBySymbol, scopedDates, capital, marketDBPath, tr)
 
 	// 5. Persist the whole run in one transaction.
 	savedCurve := equityCurve
@@ -483,7 +466,7 @@ func ExecuteStrategyWithDividends(
 	runID, werr := results.WriteRun(storage.RunMeta{
 		StrategyID: strat.ID(), Kind: "single",
 		WindowStart: report.StartDate, WindowEnd: report.EndDate,
-		Capital: capital, AllocPct: cfg.AllocationPct, MarketMaxDate: lastDate(sortedDates),
+		Capital: capital, AllocPct: cfg.AllocationPct, MarketMaxDate: lastDate(sortedDates), Engine: engine,
 	}, payload)
 	if werr != nil {
 		log.Printf("Warning: Failed to save results for %s to %s: %v", strat.ID(), outDBPath, werr)
@@ -497,11 +480,12 @@ func ExecuteStrategyWithDividends(
 		DbPath:              outDBPath,
 		RunID:               runID,
 		SignalCount:         len(signals),
-		TotalMarginInterest: sim.TotalMarginInterest,
+		TotalMarginInterest: extras.marginInterest,
+		Engine:              engine,
 	}
 	if bd != nil {
 		b := bd.b
-		rr.DividendsReinvested, rr.DividendCash = tr.reinvest, sim.DividendCash
+		rr.DividendsReinvested, rr.DividendCash = tr.reinvest, extras.dividendCash
 		rr.TotalReturn, rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct = true, b.price, b.total-b.price, b.total
 		rr.BreakdownSymbol, rr.BreakdownStart, rr.BreakdownEnd = bd.sym, b.start, b.end
 	}

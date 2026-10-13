@@ -44,6 +44,17 @@ const (
 	regimeLabelPlaceholder     = "__REGIME_LABEL__"
 )
 
+const directionPlaceholder = "__DIRECTION__"
+
+// SignalDirection maps a strategy row's direction ("long", "short") to the value a signal
+// carries: "SHORT" for a short row and "LONG" for everything else.
+func SignalDirection(rowDirection string) string {
+	if strings.EqualFold(strings.TrimSpace(rowDirection), "short") {
+		return "SHORT"
+	}
+	return "LONG"
+}
+
 // streakSymbolRe is the ticker whitelist for SQL substitution. A row that
 // fails it is not written into the query.
 var streakSymbolRe = regexp.MustCompile(`^[A-Z][A-Z0-9.\-]{0,9}$`)
@@ -145,6 +156,10 @@ func substitutePlaceholders(sqlText, id, fileName string, cfg StrategyConfig) st
 		}
 	}
 	sqlText = substituteStreakPlaceholders(sqlText, id, fileName, cfg)
+	// The markov pipelines stamp each entry with the row's side. A signal left as the literal
+	// placeholder is read by the live scan as neither LONG nor BUY and is dropped, so every
+	// markov entry would be reported NO_SIGNAL.
+	sqlText = strings.ReplaceAll(sqlText, directionPlaceholder, SignalDirection(cfg.StreakDirection))
 	// Trained-model databases the markov pipelines attach (read only).
 	sqlText = strings.ReplaceAll(sqlText, "__MARKOV_DB__", appenv.MarkovDB())
 	sqlText = strings.ReplaceAll(sqlText, "__TREE_DB__", appenv.TreeDB())

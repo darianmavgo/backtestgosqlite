@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -25,6 +26,19 @@ type SignalScanRow struct {
 	Status       string `json:"status"` // "ENTER" or "NO_SIGNAL"
 	Symbols      string `json:"symbols"`
 	SignalDate   string `json:"signal_date"`
+	// Trace says why the strategy did or did not enter on each of its latest sessions. It comes
+	// from the pipeline's own signal_trace table, so it is empty for a pipeline without one.
+	Trace []TraceRow `json:"trace,omitempty"`
+}
+
+// TraceRow is one session of a strategy's explanation: the verdict, the reason in a sentence and
+// the numbers behind it (Facts is a JSON object whose keys depend on the strategy family).
+type TraceRow struct {
+	Symbol string          `json:"symbol"`
+	Date   string          `json:"date"`
+	Entry  bool            `json:"entry"`
+	Reason string          `json:"reason"`
+	Facts  json.RawMessage `json:"facts,omitempty"`
 }
 
 // SignalDetail is one ENTER-eligible signal on the as-of bar (priced).
@@ -98,8 +112,17 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 		outDir = "."
 	}
 	livescanDBPath := filepath.Join(outDir, "livescan.db")
+	// Each strategy computes in its own scratch database, recreated for this scan. The pipelines
+	// build their slice tables with CREATE TABLE IF NOT EXISTS, so a database shared by several
+	// strategies (or kept from an earlier scan) would hand one strategy another's rows.
+	calcByID := make(map[string]string, len(opts.Strategies))
 	for _, s := range opts.Strategies {
-		s.SetDatabases(opts.MarketDB, livescanDBPath)
+		calc, err := freshCalcDB(outDir, s.ID())
+		if err != nil {
+			return nil, err
+		}
+		calcByID[s.ID()] = calc
+		s.SetDatabases(opts.MarketDB, calc)
 	}
 
 	var knownSymbols []string
@@ -160,6 +183,7 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load recent bars from %s (%s): %w", opts.MarketDB, opts.Table, err)
 	}
+	barsBySymbol, sortedDates = DropUnfinishedSessions(barsBySymbol, now)
 	if len(barsBySymbol) == 0 || len(sortedDates) == 0 {
 		return nil, fmt.Errorf("no historical bars in %s (%s) after refresh", opts.MarketDB, opts.Table)
 	}
@@ -205,6 +229,7 @@ func RunSignalScan(opts SignalScanOptions) (*SignalScanResult, error) {
 				}
 				sigs := strat.GenerateSignals(barsBySymbol)
 				row, details := buildSignalScanRow(strat, sigs, asOf)
+				row.Trace = ReadSignalTrace(calcByID[strat.ID()])
 				resultsChan <- scanOut{row: row, sigs: details}
 			}
 		}()
@@ -431,4 +456,59 @@ func SaveSignalDetails(dbPath string, details []SignalDetail) error {
 // MarshalSignalScanJSON is the machine-readable livescan contract for orchestrator.
 func MarshalSignalScanJSON(res *SignalScanResult) ([]byte, error) {
 	return json.MarshalIndent(res, "", "  ")
+}
+
+var calcNameUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// freshCalcDB returns the path of strategy id's scratch database under outDir/calc, with any file
+// left by an earlier scan removed.
+func freshCalcDB(outDir, id string) (string, error) {
+	dir := filepath.Join(outDir, "calc")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create scratch dir %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, calcNameUnsafe.ReplaceAllString(id, "_")+".db")
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("remove old scratch database %s: %w", path+suffix, err)
+		}
+	}
+	return path, nil
+}
+
+// ReadSignalTrace returns the signal_trace rows a pipeline left in its scratch database, oldest
+// session first. A database without the table, or one that cannot be read, gives none: the trace
+// explains a decision and must never stop a scan.
+func ReadSignalTrace(calcDB string) []TraceRow {
+	if calcDB == "" {
+		return nil
+	}
+	if _, err := os.Stat(calcDB); err != nil {
+		return nil
+	}
+	db, err := storage.OpenSQLiteReadOnly(calcDB)
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+	rows, err := db.Queryx(`SELECT symbol, date, entry, coalesce(reason, ''), coalesce(facts, '') FROM signal_trace ORDER BY date, symbol`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []TraceRow
+	for rows.Next() {
+		var t TraceRow
+		var entry int
+		var facts string
+		if err := rows.Scan(&t.Symbol, &t.Date, &entry, &t.Reason, &facts); err != nil {
+			return out
+		}
+		t.Entry = entry != 0
+		if json.Valid([]byte(facts)) {
+			t.Facts = json.RawMessage(facts)
+		}
+		out = append(out, t)
+	}
+	return out
 }

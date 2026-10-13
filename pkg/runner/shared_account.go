@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -38,6 +37,8 @@ type SharedRunResult struct {
 	// ParkContribution is ending equity minus starting capital minus sleeve net PnL.
 	ParkContribution float64
 	Err              error
+	// Engine is the simulator that produced the run (storage.EngineHourly or storage.EngineDaily).
+	Engine string
 }
 
 // SharedAccountID builds the combined-portfolio strategy_id used to persist and
@@ -168,27 +169,23 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		})
 	}
 
-	sim := simulator.NewSharedAccountSimulator(entries, req.Capital)
-	if defaultAsset != "" {
-		sim.SetDefaultAsset(defaultAsset, options.DividendsFromAdjClose(req.BarsBySymbol[defaultAsset]))
-	}
-
 	bmSymbol := req.Primary.DefaultConfig().Benchmark
 	if bmSymbol == "" {
 		bmSymbol = "SPY"
 	}
+	var bmMap map[string]models.Bar
 	if bBars, hasBm := req.BarsBySymbol[bmSymbol]; hasBm {
-		bmMap := make(map[string]models.Bar)
+		bmMap = make(map[string]models.Bar)
 		for _, b := range bBars {
 			bmMap[b.Date] = b
 		}
-		sim.SetBenchmarkBars(bmMap)
 	}
 
-	combinedReport, perStratReports, trades, equityCurve := sim.Run(allSignals, req.BarsBySymbol, req.SortedDates)
+	ran := simulateStack(entries, allSignals, req.BarsBySymbol, req.SortedDates, req.Capital, req.MarketDBPath, defaultAsset, bmMap)
+	combinedReport, perStratReports, trades, equityCurve := ran.combined, ran.perStrategy, ran.trades, ran.curve
 	combinedID := SharedAccountID(req.Primary, req.Secondaries)
 	idle := simulator.CalculateIdleStats(equityCurve)
-	parked := sim.DefaultAssetResult()
+	parked := ran.parked
 	var sleeveNet float64
 	for _, t := range trades {
 		sleeveNet += t.NetPnL
@@ -207,7 +204,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 			PrimaryStrategyID:   req.Primary.ID(),
 			PrimaryStrategyName: req.Primary.Name(),
 			PositionSizePct:     req.Override.AllocPct,
-			PreemptedTrades:     sim.PreemptedTradeCount,
+			PreemptedTrades:     ran.preempted,
 			AvgIdleCashPct:      idle.AvgCashPct,
 			FullyIdlePct:        idle.FullyIdlePct,
 			AvgDeployedPct:      idle.AvgDeployedPct,
@@ -232,7 +229,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 			StrategyID: combinedID, Kind: "stack",
 			WindowStart: combinedReport.StartDate, WindowEnd: combinedReport.EndDate,
 			Capital: req.Capital, AllocPct: req.Override.AllocPct, DefaultAsset: parked.Symbol,
-			MarketMaxDate: lastDate(req.SortedDates),
+			MarketMaxDate: lastDate(req.SortedDates), Engine: ran.engine,
 		}, storage.RunPayload{
 			Signals: allSignals, Trades: trades, Equity: equityCurve, Reports: reports,
 			Audit: &audit, Priorities: priorities,
@@ -253,11 +250,12 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		Signals:            allSignals,
 		DbPath:             outDBPath,
 		RunID:              runID,
-		PreemptedCount:     sim.PreemptedTradeCount,
+		PreemptedCount:     ran.preempted,
 		Idle:               idle,
 		AllocPct:           req.Override.AllocPct,
 		Default:            parked,
 		ParkContribution:   parkContribution,
+		Engine:             ran.engine,
 	}
 }
 

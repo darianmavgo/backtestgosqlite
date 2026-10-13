@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
 	alloc_pct       REAL,
 	default_asset   TEXT,
 	market_max_date TEXT,
+	engine          TEXT,
 	created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_runs_strategy ON runs(strategy_id, run_id);
@@ -158,8 +159,26 @@ func (r *ResultsDB) ensureSchema() error {
 	if _, err := r.DB.Exec(resultsSchema); err != nil {
 		return fmt.Errorf("create results schema in %s: %w", r.Path, err)
 	}
+	// A results file made before the engine column existed. Its runs have a NULL engine, which
+	// means the daily simulator.
+	var has int
+	if err := r.DB.Get(&has, `SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name = 'engine'`); err != nil {
+		return err
+	}
+	if has == 0 {
+		if _, err := r.DB.Exec(`ALTER TABLE runs ADD COLUMN engine TEXT`); err != nil {
+			return fmt.Errorf("add runs.engine in %s: %w", r.Path, err)
+		}
+	}
 	return nil
 }
+
+// The simulator that produced a run. A run with no engine recorded was made before the column
+// existed, by the daily simulator, whose same-day fills and exits use the day's range.
+const (
+	EngineHourly = "hourly"
+	EngineDaily  = "daily"
+)
 
 // RunMeta identifies a run. StrategyID is the strategy, or the a+b+c stack id.
 type RunMeta struct {
@@ -171,6 +190,9 @@ type RunMeta struct {
 	AllocPct      float64
 	DefaultAsset  string
 	MarketMaxDate string
+	// Engine is EngineHourly or EngineDaily (the legacy simulator, still used for settings the
+	// hourly one does not model).
+	Engine string
 }
 
 // NamedReport is one performance_summary row of a run.
@@ -210,9 +232,9 @@ func (r *ResultsDB) WriteRun(meta RunMeta, p RunPayload) (int64, error) {
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`INSERT INTO runs (strategy_id, kind, window_start, window_end, capital, alloc_pct, default_asset, market_max_date)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		meta.StrategyID, meta.Kind, meta.WindowStart, meta.WindowEnd, meta.Capital, meta.AllocPct, meta.DefaultAsset, meta.MarketMaxDate)
+	res, err := tx.Exec(`INSERT INTO runs (strategy_id, kind, window_start, window_end, capital, alloc_pct, default_asset, market_max_date, engine)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		meta.StrategyID, meta.Kind, meta.WindowStart, meta.WindowEnd, meta.Capital, meta.AllocPct, meta.DefaultAsset, meta.MarketMaxDate, meta.Engine)
 	if err != nil {
 		return 0, err
 	}

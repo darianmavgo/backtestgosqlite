@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/darianmavgo/backtestgosqlite/pkg/stratreg"
@@ -93,7 +94,14 @@ func Run(ctx context.Context, out io.Writer, conf Config) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", strat.ID(), err)
 		}
-		rows, err := RunStrategy(ctx, strat, bars, nil, conf.Options)
+		opt := conf.Options
+		if opt.Hourly == nil {
+			if opt.Hourly, err = runner.LoadFillBars(conf.MarketDB, symbols); err != nil {
+				fmt.Fprintf(out, "no hourly bars for %s (%v): sessions are played as daily bars\n", strat.ID(), err)
+				opt.Hourly = nil
+			}
+		}
+		rows, err := RunStrategy(ctx, strat, bars, nil, opt)
 		if err != nil {
 			if conf.KeepGoing {
 				fmt.Fprintf(out, "SKIP %s: %v\n", strat.ID(), err)

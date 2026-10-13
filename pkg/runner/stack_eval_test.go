@@ -54,6 +54,9 @@ func TestExecuteStackAllocOverrideSizesTenPercent(t *testing.T) {
 		return []models.Bar{
 			{Date: "2026-01-02", Open: price, High: price, Low: price, Close: price},
 			{Date: "2026-01-05", Open: price, High: price, Low: price, Close: price},
+			// The hourly engine does not count a position entered on the last bar of the data as
+			// a trade (nothing can exit it), so the data runs one session past the entry.
+			{Date: "2026-01-06", Open: price, High: price, Low: price, Close: price},
 		}
 	}
 	sig := func(id, sym string, priority int) models.Signal {
@@ -68,7 +71,7 @@ func TestExecuteStackAllocOverrideSizesTenPercent(t *testing.T) {
 		Primary:      primary,
 		Secondaries:  []strategy.Strategy{secondary},
 		BarsBySymbol: map[string][]models.Bar{"AAA": bar("AAA"), "BBB": bar("BBB")},
-		SortedDates:  []string{"2026-01-02", "2026-01-05"},
+		SortedDates:  []string{"2026-01-02", "2026-01-05", "2026-01-06"},
 		Capital:      100000,
 		Persist:      false,
 		Signals:      []models.Signal{sig("primary", "AAA", 0), sig("secondary", "BBB", 1)},

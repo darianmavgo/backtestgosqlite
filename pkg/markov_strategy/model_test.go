@@ -157,3 +157,58 @@ func TestPrepareTrainsThroughTheLatestBarOnlyWhenBehind(t *testing.T) {
 		t.Fatal("a symbol with no bars must fail Prepare, not pass as a quiet day")
 	}
 }
+
+// Every entry carries the row's side. A signal left with the SQL placeholder as its direction is
+// read by the live scan as neither LONG nor BUY, so the scan reports NO_SIGNAL on a real entry.
+// The pipeline also leaves its reasoning in signal_trace, and that agrees with the entries.
+func TestSignalsCarryDirectionAndTrace(t *testing.T) {
+	app := t.TempDir()
+	t.Setenv("APP_FOLDER", app)
+	market := realbars.Copy(t, "GOOGL")
+	if _, err := train.TrainMarkov(context.Background(), train.MarkovConfig{MarketDB: market, ModelDB: filepath.Join(app, "data", "markov_models.db"), Symbols: []string{"GOOGL"}}); err != nil {
+		t.Fatal(err)
+	}
+	row := refdb.MarkovStrategy{
+		ID: "markov_model_googl", Name: "GOOGL markov", SignalSymbol: "GOOGL", TradeSymbol: "GOOGL",
+		Direction: "long", TargetState: "bull", HoldDays: 5, TakeProfitPct: 0.05, StopLossPct: 0.05, AllocationPct: 0.5,
+	}
+	calc := filepath.Join(t.TempDir(), "calc.db")
+	s := &Strategy{Row: row}
+	s.SetDatabases(market, calc)
+	sigs := s.GenerateSignals(nil)
+	if len(sigs) == 0 {
+		t.Fatal("no entries; the series does not exercise the strategy")
+	}
+	entered := map[string]bool{}
+	for _, sig := range sigs {
+		if sig.Direction != "LONG" {
+			t.Fatalf("signal on %s has direction %q, want LONG", sig.Date, sig.Direction)
+		}
+		entered[sig.Date] = true
+	}
+
+	db, err := storage.OpenSQLiteReadOnly(calc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var trace []struct {
+		Date   string `db:"date"`
+		Entry  int    `db:"entry"`
+		Reason string `db:"reason"`
+	}
+	if err := db.Select(&trace, "SELECT date, entry, reason FROM signal_trace ORDER BY date"); err != nil {
+		t.Fatal(err)
+	}
+	if len(trace) != 5 {
+		t.Fatalf("trace has %d sessions, want the latest 5", len(trace))
+	}
+	for _, tr := range trace {
+		if (tr.Entry == 1) != entered[tr.Date] {
+			t.Errorf("trace for %s says entry=%d but the signals say %v (%s)", tr.Date, tr.Entry, entered[tr.Date], tr.Reason)
+		}
+		if tr.Reason == "" {
+			t.Errorf("trace for %s has no reason", tr.Date)
+		}
+	}
+}

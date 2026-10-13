@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -45,6 +47,9 @@ type Options struct {
 	TestMonths  int
 	StepMonths  int
 	Capital     float64
+	// Hourly are the symbols' hourly bars (Eastern "YYYY-MM-DD HH:MM", regular hours), so fills and
+	// exits are judged hour by hour. Nil plays each session as its daily bar.
+	Hourly map[string][]models.Bar
 }
 
 func (o Options) norm() Options {
@@ -95,8 +100,8 @@ func RunStrategy(ctx context.Context, strat strategy.Strategy, bars map[string][
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		isRep := simulate(cfg, signals, bars, between(dates, f.ISStart, f.ISEnd), opt.Capital)
-		oosRep := simulate(cfg, signals, bars, between(dates, f.OOSStart, f.OOSEnd), opt.Capital)
+		isRep := simulate(cfg, signals, bars, opt.Hourly, between(dates, f.ISStart, f.ISEnd), opt.Capital)
+		oosRep := simulate(cfg, signals, bars, opt.Hourly, between(dates, f.OOSStart, f.OOSEnd), opt.Capital)
 		rows = append(rows, FoldRow{
 			StrategyID: strat.ID(), Fold: f.Index,
 			ISStart: f.ISStart, ISEnd: f.ISEnd, OOSStart: f.OOSStart, OOSEnd: f.OOSEnd,
@@ -112,10 +117,17 @@ func RunStrategy(ctx context.Context, strat strategy.Strategy, bars map[string][
 	return rows, nil
 }
 
-func simulate(cfg strategy.StrategyConfig, signals []models.Signal, bars map[string][]models.Bar, dates []string, capital float64) models.PerformanceReport {
+// simulate plays one window on the hourly simulator. A strategy that uses a setting it does not
+// model runs on the daily simulator instead (the fold table does not say which, the log does).
+func simulate(cfg strategy.StrategyConfig, signals []models.Signal, bars, hourly map[string][]models.Bar, dates []string, capital float64) models.PerformanceReport {
 	if len(dates) == 0 {
 		return models.PerformanceReport{}
 	}
+	out, err := hoursim.Run(hoursim.Input{Signals: signals, Daily: bars, Hourly: hourly, Dates: dates, Config: cfg, Capital: capital})
+	if err == nil {
+		return out.Report
+	}
+	log.Printf("walk_forward %s: daily simulator (legacy): %v", cfg.ID, err)
 	sim := simulator.NewPortfolioSimulator(cfg, capital)
 	rep, _, _ := sim.Run(signals, bars, dates)
 	return rep
