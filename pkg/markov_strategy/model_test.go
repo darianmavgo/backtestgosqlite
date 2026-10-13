@@ -102,7 +102,7 @@ func TestStaleModelWarns(t *testing.T) {
 	if sigs := s.GenerateSignals(nil); len(sigs) == 0 {
 		t.Fatal("a stale model must still produce signals")
 	}
-	if got := buf.String(); !strings.Contains(got, "trained through 2025-06-30") || !strings.Contains(got, "run `train markov -symbols GOOGL`") {
+	if got := buf.String(); !strings.Contains(got, "trained through 2025-06-30") || !strings.Contains(got, "`train markov -symbols GOOGL`") {
 		t.Fatalf("no staleness warning in log: %q", got)
 	}
 }

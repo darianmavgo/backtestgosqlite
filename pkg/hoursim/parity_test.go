@@ -23,19 +23,24 @@ import (
 // hourly one and prints how they differ. The two are expected to disagree (that is the point of
 // the hourly engine), so the test checks the hourly run's own guarantees and reports the gap.
 //
-// HOURSIM_PARITY_DB is a market database holding hourly rows (the backtestgo one by default) and
+// HOURSIM_PARITY_DB is a market database holding hourly rows (data/market_history_hourly.db by default) and
 // HOURSIM_PARITY_STRATEGIES a comma list of strategy ids; the test is skipped without the data.
 func TestParityWithDailySimulator(t *testing.T) {
 	src := os.Getenv("HOURSIM_PARITY_DB")
 	if src == "" {
-		src = filepath.Join("..", "..", "..", "backtestgo", "data", "market_history_hourly.db")
+		src = filepath.Join("..", "..", "data", "market_history_hourly.db")
 	}
 	if fi, err := os.Stat(src); err != nil || fi.Size() == 0 {
 		t.Skipf("hourly market data %s not present", src)
 	}
 	ids := strings.Split(envOr("HOURSIM_PARITY_STRATEGIES", "streak-voo-buy-tecl,streak-shpu-down3"), ",")
 
-	t.Setenv("APP_FOLDER", t.TempDir())
+	// The repository root: the Markov models are read from its data/ (read only here).
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APP_FOLDER", root)
 	stratreg.RegisterFamiliesAt(realbars.StrategiesDB(t))
 
 	var strats []strategy.Strategy

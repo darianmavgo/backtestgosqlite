@@ -2,13 +2,12 @@
 
 Backtests now run on `backtestgo/pkg/sim` through `pkg/hoursim`. The old daily-range engine
 (`pkg/simulator`) runs only what `hoursim.Supported` refuses and the parked-cash runs. This is
-what the switch changes, measured by `pkg/hoursim/parity_test.go` on real hourly bars (the
-`backtestgo` market database, 2024-10 to 2026-10).
+what the switch changes, measured by `pkg/hoursim/parity_test.go` on real hourly bars (`data/market_history_hourly.db`).
 
 Run it yourself:
 
 ```
-HOURSIM_PARITY_STRATEGIES=streak-voo-buy-tecl,streak-shpu-down3 HOURSIM_PARITY_VERBOSE=1 \
+HOURSIM_PARITY_STRATEGIES=streak-voo-buy-tecl,markov_model_mull HOURSIM_PARITY_VERBOSE=1 \
   go test ./pkg/hoursim -run Parity -v
 ```
 
@@ -20,6 +19,12 @@ HOURSIM_PARITY_STRATEGIES=streak-voo-buy-tecl,streak-shpu-down3 HOURSIM_PARITY_V
 | streak-voo-buy-tecl | hourly | 27 | 74.1 | 60.5 | 26.5 |
 | streak-shpu-down3 | daily | 25 | 96.0 | 61.3 | 4.2 |
 | streak-shpu-down3 | hourly | 23 | 100.0 | 51.7 | 2.1 |
+| markov_model_mull | daily | 88 | 88.6 | 130.5 | 18.5 |
+| markov_model_mull | hourly | 88 | 88.6 | 131.0 | 18.5 |
+| markov_model_amd | daily | 123 | 77.2 | 115.4 | 18.4 |
+| markov_model_amd | hourly | 123 | 77.2 | 115.4 | 18.4 |
+| markov_model_amuu | daily | 64 | 85.9 | 87.8 | 17.8 |
+| markov_model_amuu | hourly | 64 | 85.9 | 87.8 | 17.8 |
 
 ## Why they differ
 
@@ -34,6 +39,8 @@ Every entry price matched. The differences are all exits and what they do to the
 3. **Position cap and hour order.** SHPU 2025-09-29 and 2026-09-21: the previous position was
    still open at the 9:00 entry hour and exited at 13:00, so with a cap of 1 the new entry is
    refused. The daily engine runs exits before entries for the whole day, so it took both.
+
+The Markov strategies (the ones on the live allowlist) barely move: they enter at the signal price and mostly leave on the hold window, so a day's range has little to mislead. The streak strategies, which exit on a take-profit hit soon after the entry, are where the daily engine overstated.
 
 None of these is a bug in the hourly engine. Each is the daily engine seeing the whole day at once.
 
