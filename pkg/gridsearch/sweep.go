@@ -14,7 +14,6 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/runner"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/jmoiron/sqlx"
@@ -304,7 +303,10 @@ func evalTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetail bool
 		return gridResult{}, false
 	}
 
-	report, trades, curve := ctx.play(cfg, sigs, barsBySymbol, opts.Capital)
+	report, trades, curve, ok := ctx.play(cfg, sigs, barsBySymbol, opts.Capital)
+	if !ok {
+		return gridResult{}, false
+	}
 
 	if report.TotalTrades < opts.MinTrades {
 		return gridResult{}, false
@@ -608,7 +610,10 @@ func evalPeriodTask(ctx *sweepContext, t sweepTask, opts sweepOptions, keepDetai
 	if len(sigs) < opts.MinTrades {
 		return gridResult{}, false
 	}
-	report, trades, curve := ctx.play(cfg, sigs, ctx.AllBars, opts.Capital)
+	report, trades, curve, ok := ctx.play(cfg, sigs, ctx.AllBars, opts.Capital)
+	if !ok {
+		return gridResult{}, false
+	}
 	if report.TotalTrades < opts.MinTrades {
 		return gridResult{}, false
 	}
@@ -649,19 +654,15 @@ func hourlyFor(marketDB string, symbols []string) (map[string][]models.Bar, erro
 	return runner.LoadFillBars(marketDB, syms)
 }
 
-// play runs one grid point on the hourly simulator. A configuration it does not model runs on the
-// daily simulator, which says so once in the log.
-func (c *sweepContext) play(cfg strategy.StrategyConfig, sigs []models.Signal, daily map[string][]models.Bar, capital float64) (models.PerformanceReport, []models.Trade, []models.DailyEquityPoint) {
+// play runs one grid point on the hourly simulator. A grid point that uses a setting the simulator
+// does not model is skipped, and the log says why once.
+func (c *sweepContext) play(cfg strategy.StrategyConfig, sigs []models.Signal, daily map[string][]models.Bar, capital float64) (models.PerformanceReport, []models.Trade, []models.DailyEquityPoint, bool) {
 	out, err := hoursim.Run(hoursim.Input{Signals: sigs, Daily: daily, Hourly: c.Intraday, Dates: c.SortedDates, Config: cfg, Capital: capital})
-	if err == nil {
-		return out.Report, out.Trades, out.Curve
+	if err != nil {
+		skipOnce.Do(func() { log.Printf("gridsearch: grid points skipped: %v", err) })
+		return models.PerformanceReport{}, nil, nil, false
 	}
-	legacyOnce.Do(func() { log.Printf("gridsearch: daily simulator (legacy) for some grid points: %v", err) })
-	sim := simulator.NewPortfolioSimulator(cfg, capital)
-	if cfg.EntryLimitPct > 0 {
-		sim.Intraday = c.Intraday
-	}
-	return sim.Run(sigs, daily, c.SortedDates)
+	return out.Report, out.Trades, out.Curve, true
 }
 
-var legacyOnce sync.Once
+var skipOnce sync.Once

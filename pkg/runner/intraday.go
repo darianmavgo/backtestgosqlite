@@ -7,7 +7,6 @@ import (
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
@@ -16,9 +15,9 @@ import (
 // the daily market database (appenv.BarDB). They
 // are returned in Eastern time, keeping only the hours that start from 9:00 to
 // 15:00 (the 9:00 hour holds the half hour before the open, see
-// simulator.intradaySession). A database with no hourly bars gives an empty map.
-func LoadIntraday(marketDBPath string, symbols []string) (simulator.Intraday, error) {
-	out := simulator.Intraday{}
+// hoursim.Bars). A database with no hourly bars gives an empty map.
+func LoadIntraday(marketDBPath string, symbols []string) (map[string][]models.Bar, error) {
+	out := map[string][]models.Bar{}
 	if len(symbols) == 0 {
 		return out, nil
 	}

@@ -1,4 +1,4 @@
-package simulator
+package analytics
 
 import (
 	"testing"

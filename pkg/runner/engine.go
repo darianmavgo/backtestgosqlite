@@ -1,11 +1,9 @@
 package runner
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
@@ -13,14 +11,17 @@ import (
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
 	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 )
 
-// legacyExtras are the figures only the daily simulator produces.
-type legacyExtras struct {
-	marginInterest, dividendCash float64
+// StrategyPriorityEntry is one member of a shared-account stack: the strategy, its priority (0 is
+// the primary, which may preempt subordinates for cash or a symbol) and the config it runs with.
+type StrategyPriorityEntry struct {
+	Strategy strategy.Strategy
+	Priority int
+	Config   strategy.StrategyConfig
 }
 
 // signalSymbols lists the distinct symbols the signals name, in order of first appearance.
@@ -56,10 +57,10 @@ func hourlyBars(marketDB string, signals []models.Signal) map[string][]models.Ba
 	return in
 }
 
-// simulateRun plays a strategy's signals and returns the engine used. The hourly simulator is the
-// default: it judges every fill and exit on the hour it can happen. A strategy that uses a setting
-// it does not model (margin, ATR stops, dividends, other position sizing) runs on the daily
-// simulator instead and says so, in the log and in the stored run.
+// simulateRun plays a strategy's signals on the hourly simulator, which judges every fill and exit
+// on the hour it can happen. A strategy that uses a setting the simulator does not model (margin,
+// ATR stops, Kelly sizing) is refused with that reason rather than run on something that would
+// mislead.
 func simulateRun(
 	id string,
 	cfg strategy.StrategyConfig,
@@ -68,46 +69,18 @@ func simulateRun(
 	dates []string,
 	capital float64,
 	marketDB string,
-	tr *totalReturnInfo,
-) (legacyExtras, string, models.PerformanceReport, []models.Trade, []models.DailyEquityPoint) {
-	var why error
-	if tr != nil {
-		why = hoursim.UnsupportedError{Feature: "dividends on total-return prices"}
-	} else {
-		out, err := hoursim.Run(hoursim.Input{
-			Signals: signals, Daily: daily, Hourly: hourlyBars(marketDB, signals),
-			Dates: dates, Config: cfg, Capital: capital,
-		})
-		if err == nil {
-			if n := len(out.DailySessions); n > 0 {
-				log.Printf("[%s] hourly simulator: no hourly bars for %v on some sessions, played as daily bars", id, hoursim.SortedSymbols(out.DailySessions))
-			}
-			return legacyExtras{}, storage.EngineHourly, out.Report, out.Trades, out.Curve
-		}
-		var u hoursim.UnsupportedError
-		if !errors.As(err, &u) {
-			log.Printf("[%s] hourly simulator failed: %v", id, err)
-		}
-		why = err
+) (string, models.PerformanceReport, []models.Trade, []models.DailyEquityPoint, error) {
+	out, err := hoursim.Run(hoursim.Input{
+		Signals: signals, Daily: daily, Hourly: hourlyBars(marketDB, signals),
+		Dates: dates, Config: cfg, Capital: capital,
+	})
+	if err != nil {
+		return "", models.PerformanceReport{}, nil, nil, fmt.Errorf("%s: %w", id, err)
 	}
-	log.Printf("[%s] daily simulator (legacy): %v", id, why)
-
-	sim := simulator.NewPortfolioSimulator(cfg, capital)
-	if tr != nil {
-		sim.Dividends = tr.divs
+	if n := len(out.DailySessions); n > 0 {
+		log.Printf("[%s] hourly simulator: no hourly bars for %v on some sessions, played as daily bars", id, hoursim.SortedSymbols(out.DailySessions))
 	}
-	if cfg.EntryLimitPct > 0 {
-		// Limit entries are judged on hourly bars where the market DB has them.
-		syms := signalSymbols(signals)
-		sort.Strings(syms)
-		var err error
-		if sim.Intraday, err = LoadFillBars(marketDB, syms); err != nil {
-			log.Printf("Warning: no intraday bars for %s: %v", id, err)
-			sim.Intraday = nil
-		}
-	}
-	report, trades, curve := sim.Run(signals, daily, dates)
-	return legacyExtras{marginInterest: sim.TotalMarginInterest, dividendCash: sim.DividendCash}, storage.EngineDaily, report, trades, curve
+	return storage.EngineHourly, out.Report, out.Trades, out.Curve, nil
 }
 
 // stackRun is a finished shared-account run.
@@ -117,15 +90,15 @@ type stackRun struct {
 	trades      []models.Trade
 	curve       []models.DailyEquityPoint
 	preempted   int
-	parked      simulator.DefaultAssetResult
+	parked      sim.ParkResult
 	engine      string
 }
 
-// simulateStack plays the members' signals in one shared account. It uses the hourly simulator
-// unless a member uses a setting that simulator does not model: those run on the daily simulator,
-// and the log says why. A default asset parks leftover cash (sim.Park).
+// simulateStack plays the members' signals in one shared account on the hourly simulator. A default
+// asset parks leftover cash (sim.Park). A member that uses a setting the simulator does not model is
+// refused with that reason.
 func simulateStack(
-	entries []simulator.StrategyPriorityEntry,
+	entries []StrategyPriorityEntry,
 	signals []models.Signal,
 	daily map[string][]models.Bar,
 	dates []string,
@@ -133,8 +106,7 @@ func simulateStack(
 	marketDB string,
 	defaultAsset string,
 	benchmark map[string]models.Bar,
-) stackRun {
-	var why error
+) (stackRun, error) {
 	byID := map[string][]models.Signal{}
 	for _, s := range signals {
 		byID[s.StrategyID] = append(byID[s.StrategyID], s)
@@ -152,27 +124,14 @@ func simulateStack(
 		Dates: dates, Capital: capital, Benchmark: benchmark,
 		DefaultAsset: defaultAsset, Dividends: options.DividendsFromAdjClose(daily[defaultAsset]),
 	})
-	if err == nil {
-		if len(out.DailySessions) > 0 {
-			log.Printf("hourly simulator: no hourly bars for %v on some sessions, played as daily bars", hoursim.SortedSymbols(out.DailySessions))
-		}
-		return stackRun{combined: out.Report, perStrategy: out.PerStrategy, trades: out.Trades, curve: out.Curve,
-			preempted: out.Preempted, engine: storage.EngineHourly,
-			parked: simulator.DefaultAssetResult{Symbol: out.Park.Symbol, AvgWeight: out.Park.AvgWeight, Dividends: out.Park.Dividends, DaysUnparked: out.Park.DaysUnparked}}
+	if err != nil {
+		return stackRun{}, fmt.Errorf("stack: %w", err)
 	}
-	why = err
-	log.Printf("stack: daily simulator (legacy): %v", why)
-
-	sim := simulator.NewSharedAccountSimulator(entries, capital)
-	if defaultAsset != "" {
-		sim.SetDefaultAsset(defaultAsset, options.DividendsFromAdjClose(daily[defaultAsset]))
+	if len(out.DailySessions) > 0 {
+		log.Printf("hourly simulator: no hourly bars for %v on some sessions, played as daily bars", hoursim.SortedSymbols(out.DailySessions))
 	}
-	if benchmark != nil {
-		sim.SetBenchmarkBars(benchmark)
-	}
-	combined, per, trades, curve := sim.Run(signals, daily, dates)
-	return stackRun{combined: combined, perStrategy: per, trades: trades, curve: curve,
-		preempted: sim.PreemptedTradeCount, parked: sim.DefaultAssetResult(), engine: storage.EngineDaily}
+	return stackRun{combined: out.Report, perStrategy: out.PerStrategy, trades: out.Trades, curve: out.Curve,
+		preempted: out.Preempted, engine: storage.EngineHourly, parked: out.Park}, nil
 }
 
 // splitSuspect says why a run should not be ranked: a symbol it traded has a close-to-close jump

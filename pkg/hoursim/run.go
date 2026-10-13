@@ -26,7 +26,7 @@ type Input struct {
 	Dividends map[string]map[string]float64
 }
 
-// Output is the finished run in the daily simulator's types.
+// Output is the finished run in the types reports and storage use.
 type Output struct {
 	Report models.PerformanceReport
 	Trades []models.Trade

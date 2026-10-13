@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"io"
 	"log"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 )
 
 // MarketSource is one market_history database a run reads.
@@ -66,7 +66,7 @@ func PrintMarketSourcesFor(w io.Writer, marketDB, table string, hourly bool) {
 // the hourly market database.
 // Symbols with no hourly bars at all are named in the warning: their fills
 // fall back to the daily bar.
-func LoadFillBars(marketDB string, symbols []string) (simulator.Intraday, error) {
+func LoadFillBars(marketDB string, symbols []string) (map[string][]models.Bar, error) {
 	in, err := LoadIntraday(marketDB, symbols)
 	if err != nil {
 		return nil, err

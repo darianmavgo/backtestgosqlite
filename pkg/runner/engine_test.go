@@ -71,15 +71,17 @@ func TestBacktestUsesTheHourlySimulatorAndRecordsIt(t *testing.T) {
 	}
 }
 
-// A setting the hourly simulator does not model is run on the daily one, and that is recorded
-// too, so a result is never passed off as hourly.
-func TestUnsupportedSettingFallsBackToDailyAndRecordsIt(t *testing.T) {
-	res := runEngine(t, true)
-	if res.Engine != storage.EngineDaily {
-		t.Fatalf("engine %q, want %q", res.Engine, storage.EngineDaily)
-	}
-	if got := storedEngine(t, res); got != storage.EngineDaily {
-		t.Fatalf("stored engine %q", got)
+// A setting the hourly simulator does not model is refused with its name, never run on something that
+// would mislead.
+func TestUnsupportedSettingIsRefusedWithItsName(t *testing.T) {
+	bars, dates := engineBars()
+	market := marketDB(t, map[string][]models.Bar{"AAA": bars})
+	strat := streakRow("engine_test", "AAA", 1, 0.5, 0.05, 0.5)
+	cfg := strat.DefaultConfig()
+	cfg.UseMargin = true
+	res := ExecuteStrategy(strat, cfg, map[string][]models.Bar{"AAA": bars}, dates, 100000, "", t.TempDir(), market)
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "margin") {
+		t.Fatalf("err %v, want a refusal naming margin", res.Err)
 	}
 }
 

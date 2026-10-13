@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/olekukonko/tablewriter"
@@ -28,12 +29,12 @@ type SharedRunResult struct {
 	DbPath             string
 	RunID              int64
 	PreemptedCount     int
-	Idle               simulator.IdleStats
+	Idle               analytics.IdleStats
 	// AllocPct is the per-position equity fraction applied to every member.
 	// 0 means each strategy kept its own DefaultConfig allocation.
 	AllocPct float64
 	// Default is set when leftover cash was parked in a symbol.
-	Default simulator.DefaultAssetResult
+	Default sim.ParkResult
 	// ParkContribution is ending equity minus starting capital minus sleeve net PnL.
 	ParkContribution float64
 	Err              error
@@ -160,11 +161,11 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		allSignals = filtered
 	}
 
-	entries := []simulator.StrategyPriorityEntry{
+	entries := []StrategyPriorityEntry{
 		{Strategy: req.Primary, Priority: 0, Config: req.Override.Apply(req.Primary.DefaultConfig())},
 	}
 	for secIdx, sec := range req.Secondaries {
-		entries = append(entries, simulator.StrategyPriorityEntry{
+		entries = append(entries, StrategyPriorityEntry{
 			Strategy: sec,
 			Priority: secIdx + 1,
 			Config:   req.Override.Apply(sec.DefaultConfig()),
@@ -184,10 +185,13 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 	}
 
 	suspect := splitSuspect(req.MarketDBPath, signalSymbols(allSignals), req.SortedDates)
-	ran := simulateStack(entries, allSignals, req.BarsBySymbol, req.SortedDates, req.Capital, req.MarketDBPath, defaultAsset, bmMap)
+	ran, serr := simulateStack(entries, allSignals, req.BarsBySymbol, req.SortedDates, req.Capital, req.MarketDBPath, defaultAsset, bmMap)
+	if serr != nil {
+		return SharedRunResult{Err: serr}
+	}
 	combinedReport, perStratReports, trades, equityCurve := ran.combined, ran.perStrategy, ran.trades, ran.curve
 	combinedID := SharedAccountID(req.Primary, req.Secondaries)
-	idle := simulator.CalculateIdleStats(equityCurve)
+	idle := analytics.CalculateIdleStats(equityCurve)
 	parked := ran.parked
 	var sleeveNet float64
 	for _, t := range trades {

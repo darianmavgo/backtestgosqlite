@@ -4,13 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	sqlfiles "github.com/darianmavgo/backtestgosqlite/sql"
 )
@@ -100,8 +98,14 @@ func RunStrategy(ctx context.Context, strat strategy.Strategy, bars map[string][
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		isRep := simulate(cfg, signals, bars, opt.Hourly, between(dates, f.ISStart, f.ISEnd), opt.Capital)
-		oosRep := simulate(cfg, signals, bars, opt.Hourly, between(dates, f.OOSStart, f.OOSEnd), opt.Capital)
+		isRep, err := simulate(cfg, signals, bars, opt.Hourly, between(dates, f.ISStart, f.ISEnd), opt.Capital)
+		if err != nil {
+			return nil, err
+		}
+		oosRep, err := simulate(cfg, signals, bars, opt.Hourly, between(dates, f.OOSStart, f.OOSEnd), opt.Capital)
+		if err != nil {
+			return nil, err
+		}
 		rows = append(rows, FoldRow{
 			StrategyID: strat.ID(), Fold: f.Index,
 			ISStart: f.ISStart, ISEnd: f.ISEnd, OOSStart: f.OOSStart, OOSEnd: f.OOSEnd,
@@ -118,19 +122,16 @@ func RunStrategy(ctx context.Context, strat strategy.Strategy, bars map[string][
 }
 
 // simulate plays one window on the hourly simulator. A strategy that uses a setting it does not
-// model runs on the daily simulator instead (the fold table does not say which, the log does).
-func simulate(cfg strategy.StrategyConfig, signals []models.Signal, bars, hourly map[string][]models.Bar, dates []string, capital float64) models.PerformanceReport {
+// model is an error naming the setting.
+func simulate(cfg strategy.StrategyConfig, signals []models.Signal, bars, hourly map[string][]models.Bar, dates []string, capital float64) (models.PerformanceReport, error) {
 	if len(dates) == 0 {
-		return models.PerformanceReport{}
+		return models.PerformanceReport{}, nil
 	}
 	out, err := hoursim.Run(hoursim.Input{Signals: signals, Daily: bars, Hourly: hourly, Dates: dates, Config: cfg, Capital: capital})
-	if err == nil {
-		return out.Report
+	if err != nil {
+		return models.PerformanceReport{}, fmt.Errorf("%s: %w", cfg.ID, err)
 	}
-	log.Printf("walk_forward %s: daily simulator (legacy): %v", cfg.ID, err)
-	sim := simulator.NewPortfolioSimulator(cfg, capital)
-	rep, _, _ := sim.Run(signals, bars, dates)
-	return rep
+	return out.Report, nil
 }
 
 func between(dates []string, start, end string) []string {

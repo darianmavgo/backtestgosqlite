@@ -27,7 +27,7 @@ type RunResult struct {
 	RunID       int64
 	SignalCount int
 	Err         error
-	// Engine is the simulator that produced the run: storage.EngineHourly, or storage.EngineDaily
+	// Engine is the simulator that produced the run: storage.EngineHourly
 	// for a strategy that uses a setting the hourly simulator does not model.
 	Engine string
 	// Suspect is why the run should not be ranked: a symbol it traded has an unadjusted split
@@ -172,7 +172,7 @@ func PrintStrategyList(out io.Writer, in io.Reader) {
 // FormatTargetDisplay and FormatStopDisplay render a strategy's baseline
 // target/stop for a -list table, honoring the same TargetPct (multiplier,
 // legacy) / TakeProfitPct (offset, preferred) and StopLossPct (multiplier)
-// conventions as pkg/simulator/portfolio.go. A plain (cfg.TargetPct-1)*100 or
+// conventions as pkg/sim. A plain (cfg.TargetPct-1)*100 or
 // (1-cfg.StopLossPct)*100 renders garbage ("+99800.0%", "-100.0%") for any
 // strategy that sets only TakeProfitPct or has StopLossPct == 0
 // (intentionally "no stop") — which covers most strategies.
@@ -427,10 +427,12 @@ func ExecuteStrategyWithDividends(
 		return executeOverlay(strat, ov.OverlaySpec(), cfg, barsBySymbol, capital, results, marketDBPath)
 	}
 
-	// 2b. Dividend-inclusive strategies run on adjusted-price copies of their bars.
+	// 2b. Dividend-inclusive (total-return) strategies were played on the daily simulator, which is
+	// gone: the hourly simulator pays no dividends. No row uses it (hold_strategy.total_return is 0
+	// everywhere), so refuse it with the reason instead of running something that would mislead.
 	var tr *totalReturnInfo
 	if p, ok := strat.(strategy.TotalReturnProvider); ok && p.UsesTotalReturn() {
-		barsBySymbol, tr = toTotalReturnBars(strat, cfg, barsBySymbol, reinvestDividends)
+		return RunResult{Strat: strat, Err: fmt.Errorf("%s: total-return (dividend) backtests are not supported: the hourly simulator pays no dividends", strat.ID())}
 	}
 
 	// 3. Generate signals (calculations will now write natively into outDBPath if applicable)
@@ -452,7 +454,10 @@ func ExecuteStrategyWithDividends(
 	// of idle time from unrelated long-history symbols sharing the same database.
 	scopedDates := scopeDatesToStrategy(strat, cfg, barsBySymbol, sortedDates)
 	suspect := splitSuspect(marketDBPath, signalSymbols(signals), scopedDates)
-	extras, engine, report, trades, equityCurve := simulateRun(strat.ID(), cfg, signals, barsBySymbol, scopedDates, capital, marketDBPath, tr)
+	engine, report, trades, equityCurve, err := simulateRun(strat.ID(), cfg, signals, barsBySymbol, scopedDates, capital, marketDBPath)
+	if err != nil {
+		return RunResult{Strat: strat, Err: err}
+	}
 
 	// 5. Persist the whole run in one transaction.
 	savedCurve := equityCurve
@@ -481,20 +486,19 @@ func ExecuteStrategyWithDividends(
 	}
 
 	rr := RunResult{
-		Strat:               strat,
-		Report:              report,
-		Trades:              trades,
-		EquityCurve:         equityCurve,
-		DbPath:              outDBPath,
-		RunID:               runID,
-		SignalCount:         len(signals),
-		TotalMarginInterest: extras.marginInterest,
-		Engine:              engine,
-		Suspect:             suspect,
+		Strat:       strat,
+		Report:      report,
+		Trades:      trades,
+		EquityCurve: equityCurve,
+		DbPath:      outDBPath,
+		RunID:       runID,
+		SignalCount: len(signals),
+		Engine:      engine,
+		Suspect:     suspect,
 	}
 	if bd != nil {
 		b := bd.b
-		rr.DividendsReinvested, rr.DividendCash = tr.reinvest, extras.dividendCash
+		rr.DividendsReinvested = tr.reinvest
 		rr.TotalReturn, rr.PriceReturnPct, rr.DividendReturnPct, rr.TotalReturnPct = true, b.price, b.total-b.price, b.total
 		rr.BreakdownSymbol, rr.BreakdownStart, rr.BreakdownEnd = bd.sym, b.start, b.end
 	}

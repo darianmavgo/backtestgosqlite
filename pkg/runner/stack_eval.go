@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/analytics"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
 	"github.com/olekukonko/tablewriter"
@@ -32,7 +32,7 @@ type OverlayEval struct {
 	Secondary         strategy.Strategy
 	Combined          models.PerformanceReport
 	SecondaryReport   models.PerformanceReport
-	Idle              simulator.IdleStats
+	Idle              analytics.IdleStats
 	IncrementalEquity float64 // combined final equity minus primary-only baseline
 	SecondaryPnL      float64
 	SecondaryTrades   int

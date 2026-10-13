@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
+	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
-	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/realbars"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
@@ -127,8 +127,11 @@ func regimeSignals(t *testing.T, bearIdx map[int]bool) ([]models.Signal, []strin
 	s := &Strategy{Row: refdb.HoldStrategy{ID: "t", Name: "t", Symbol: "GOOGL", AllocationPct: 1, RegimeSymbol: "googl"}}
 	s.SetDatabases(market, filepath.Join(t.TempDir(), "calc.db"))
 	sigs := s.GenerateSignals(bars)
-	_, trades, _ := simulator.NewPortfolioSimulator(s.DefaultConfig(), 100000).Run(sigs, bars, dates)
-	return sigs, dates, trades
+	out, err := hoursim.Run(hoursim.Input{Signals: sigs, Daily: bars, Dates: dates, Config: s.DefaultConfig(), Capital: 100000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sigs, dates, out.Trades
 }
 
 // Long unless the state is bear: one entry per run of non-bear bars, and the sale

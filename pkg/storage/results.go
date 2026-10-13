@@ -193,8 +193,7 @@ type RunMeta struct {
 	AllocPct      float64
 	DefaultAsset  string
 	MarketMaxDate string
-	// Engine is EngineHourly or EngineDaily (the legacy simulator, still used for settings the
-	// hourly one does not model).
+	// Engine is EngineHourly. (EngineDaily marks runs from the deleted daily simulator; none is made now.)
 	Engine string
 	// Suspect says why the run should not be ranked (a traded symbol has an unadjusted split);
 	// empty when nothing is wrong.

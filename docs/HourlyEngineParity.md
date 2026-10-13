@@ -1,15 +1,8 @@
 # Daily simulator vs hourly simulator: what changed
 
-Backtests now run on `backtestgo/pkg/sim` through `pkg/hoursim`. The old daily-range engine
-(`pkg/simulator`) runs only what `hoursim.Supported` refuses and the parked-cash runs. This is
-what the switch changes, measured by `pkg/hoursim/parity_test.go` on real hourly bars (`data/market_history_hourly.db`).
+Backtests run on `pkg/sim` through `pkg/hoursim`. The old daily-range engine (`pkg/simulator`) has been deleted; the numbers below were measured before it went, and the test that printed them now only checks the hourly run (`pkg/hoursim/realdata_test.go`). This is what the switch changed, measured on real hourly bars (`data/market_history_hourly.db`).
 
-Run it yourself:
-
-```
-HOURSIM_PARITY_STRATEGIES=streak-voo-buy-tecl,markov_model_mull HOURSIM_PARITY_VERBOSE=1 \
-  go test ./pkg/hoursim -run Parity -v
-```
+To see the hourly side today: `HOURSIM_REAL_STRATEGIES=streak-voo-buy-tecl,markov_model_mull go test ./pkg/hoursim -run RealData -v`.
 
 ## Results
 
@@ -46,9 +39,6 @@ None of these is a bug in the hourly engine. Each is the daily engine seeing the
 
 ## Not modelled by the hourly engine
 
-These run on the daily simulator and say so in the log and in `runs.engine`: margin, margin
-interest, ATR stops, position sizing other than `fixed_pct`, dividends on total-return prices, and
-the parked-cash book (`DefaultAsset`, `park_sweep`). Moving the park into `sim` is the next piece
-of work.
+These are refused with their name (`hoursim.Supported`): margin, margin interest, ATR stops, Kelly sizing, and dividends on total-return prices. The only strategy that used them, `dividend-margin-buy-hold`, was deleted; no hold row sets `total_return`.
 
 Trades from the hourly engine carry no MAE or MFE (`avg_mae`, `avg_mfe` read 0).
