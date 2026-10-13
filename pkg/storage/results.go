@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS runs (
 	default_asset   TEXT,
 	market_max_date TEXT,
 	engine          TEXT,
+	suspect         TEXT,
 	created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_runs_strategy ON runs(strategy_id, run_id);
@@ -159,15 +160,17 @@ func (r *ResultsDB) ensureSchema() error {
 	if _, err := r.DB.Exec(resultsSchema); err != nil {
 		return fmt.Errorf("create results schema in %s: %w", r.Path, err)
 	}
-	// A results file made before the engine column existed. Its runs have a NULL engine, which
-	// means the daily simulator.
-	var has int
-	if err := r.DB.Get(&has, `SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name = 'engine'`); err != nil {
-		return err
-	}
-	if has == 0 {
-		if _, err := r.DB.Exec(`ALTER TABLE runs ADD COLUMN engine TEXT`); err != nil {
-			return fmt.Errorf("add runs.engine in %s: %w", r.Path, err)
+	// A results file made before these columns existed. A run with a NULL engine was made by the
+	// daily simulator; a NULL suspect means nothing was found wrong with it.
+	for _, col := range []string{"engine", "suspect"} {
+		var has int
+		if err := r.DB.Get(&has, `SELECT COUNT(*) FROM pragma_table_info('runs') WHERE name = ?`, col); err != nil {
+			return err
+		}
+		if has == 0 {
+			if _, err := r.DB.Exec(`ALTER TABLE runs ADD COLUMN ` + col + ` TEXT`); err != nil {
+				return fmt.Errorf("add runs.%s in %s: %w", col, r.Path, err)
+			}
 		}
 	}
 	return nil
@@ -193,6 +196,9 @@ type RunMeta struct {
 	// Engine is EngineHourly or EngineDaily (the legacy simulator, still used for settings the
 	// hourly one does not model).
 	Engine string
+	// Suspect says why the run should not be ranked (a traded symbol has an unadjusted split);
+	// empty when nothing is wrong.
+	Suspect string
 }
 
 // NamedReport is one performance_summary row of a run.
@@ -232,9 +238,9 @@ func (r *ResultsDB) WriteRun(meta RunMeta, p RunPayload) (int64, error) {
 	}
 	defer tx.Rollback()
 
-	res, err := tx.Exec(`INSERT INTO runs (strategy_id, kind, window_start, window_end, capital, alloc_pct, default_asset, market_max_date, engine)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		meta.StrategyID, meta.Kind, meta.WindowStart, meta.WindowEnd, meta.Capital, meta.AllocPct, meta.DefaultAsset, meta.MarketMaxDate, meta.Engine)
+	res, err := tx.Exec(`INSERT INTO runs (strategy_id, kind, window_start, window_end, capital, alloc_pct, default_asset, market_max_date, engine, suspect)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		meta.StrategyID, meta.Kind, meta.WindowStart, meta.WindowEnd, meta.Capital, meta.AllocPct, meta.DefaultAsset, meta.MarketMaxDate, meta.Engine, meta.Suspect)
 	if err != nil {
 		return 0, err
 	}
@@ -301,6 +307,8 @@ type LatestRun struct {
 	StrategyID string
 	CreatedAt  time.Time
 	Report     models.PerformanceReport
+	// Engine and Suspect are the run's runs.engine and runs.suspect (empty when not recorded).
+	Engine, Suspect string
 }
 
 // LatestRuns returns the newest run per strategy id that has a summary row for
@@ -308,7 +316,7 @@ type LatestRun struct {
 // belong to the sleeve's standalone runs, not to the stack run).
 func (r *ResultsDB) LatestRuns() ([]LatestRun, error) {
 	rows, err := r.DB.Query(`
-		SELECT r.run_id, r.strategy_id, r.created_at,
+		SELECT r.run_id, r.strategy_id, r.created_at, COALESCE(r.engine, ''), COALESCE(r.suspect, ''),
 			p.start_date, p.end_date, p.total_trading_days, p.total_calendar_years,
 			p.initial_capital, p.final_equity, p.net_profit, p.total_return_pct, p.cagr,
 			p.sharpe_ratio, p.sortino_ratio, p.calmar_ratio, p.omega_ratio, p.ulcer_index,
@@ -338,7 +346,7 @@ func (r *ResultsDB) LatestRuns() ([]LatestRun, error) {
 		var created sql.NullTime
 		var idle, sessions, idleCurve sql.NullInt64
 		rep := &lr.Report
-		if err := rows.Scan(&lr.RunID, &lr.StrategyID, &created,
+		if err := rows.Scan(&lr.RunID, &lr.StrategyID, &created, &lr.Engine, &lr.Suspect,
 			&rep.StartDate, &rep.EndDate, &rep.TotalTradingDays, &rep.TotalCalendarYears,
 			&rep.InitialCapital, &rep.FinalEquity, &rep.NetProfit, &rep.TotalReturnPct, &rep.CAGR,
 			&rep.SharpeRatio, &rep.SortinoRatio, &rep.CalmarRatio, &rep.OmegaRatio, &rep.UlcerIndex,

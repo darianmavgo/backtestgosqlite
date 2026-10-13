@@ -82,7 +82,7 @@ func TestExportModelsCopiesOnlyTheBundledSymbols(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
-		`INSERT INTO markov_model_meta VALUES ('AMD',100,'2020-01-01','2020-06-01','t',250,0.5), ('ZZZ',100,'2020-01-01','2020-06-01','t',250,0.5)`,
+		`INSERT INTO markov_model_meta (symbol, bars, first_date, last_date, trained_at, lookback_days, state_threshold) VALUES ('AMD',100,'2020-01-01','2020-06-01','t',250,0.5), ('ZZZ',100,'2020-01-01','2020-06-01','t',250,0.5)`,
 		`INSERT INTO markov_prediction VALUES ('AMD','2020-06-01',1,0.6,0.2,0.4), ('ZZZ','2020-06-01',1,0.6,0.2,0.4)`,
 	} {
 		if _, err := db.Exec(q); err != nil {

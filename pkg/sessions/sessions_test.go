@@ -1,9 +1,11 @@
 package sessions
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
+	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 )
 
@@ -69,5 +71,41 @@ func TestRegularHandlesDaylightSaving(t *testing.T) {
 		if _, ok := Regular(utc); ok != want {
 			t.Errorf("Regular(%s) = %v, want %v", utc, ok, want)
 		}
+	}
+}
+
+// A close that moves beyond the ratio from the session before is reported, in either direction,
+// and only inside the window asked for.
+func TestSplitJumpsFindsAnUnadjustedSplit(t *testing.T) {
+	db, err := storage.OpenSQLite(filepath.Join(t.TempDir(), "m.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := storage.EnsureBarTable(db, "backtest_start"); err != nil {
+		t.Fatal(err)
+	}
+	var bars []models.Bar
+	add := func(sym string, closes ...float64) {
+		for i, c := range closes {
+			bars = append(bars, models.Bar{Symbol: sym, Date: fmt.Sprintf("2026-03-%02d", 2+i), Timeframe: "1d", AssetClass: "equity",
+				Open: c, High: c, Low: c, Close: c, AdjClose: c, Volume: 1})
+		}
+	}
+	add("SPLT", 100, 101, 50.5, 51) // 2-for-1 split, unadjusted: x0.5
+	add("REVS", 10, 10.1, 25, 25.2) // reverse split: x2.47
+	add("CALM", 100, 103, 99, 104)  // 3% moves
+	if err := storage.UpsertBars(db, "backtest_start", bars); err != nil {
+		t.Fatal(err)
+	}
+	got, err := SplitJumps(db, []string{"SPLT", "REVS", "CALM"}, 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Symbol != "REVS" || got[0].Date != "2026-03-04" || got[1].Symbol != "SPLT" || got[1].Date != "2026-03-04" {
+		t.Fatalf("jumps %v", got)
+	}
+	if got, _ := SplitJumps(db, []string{"SPLT"}, 0, "2026-03-05", ""); len(got) != 0 {
+		t.Errorf("a jump before the window was reported: %v", got)
 	}
 }

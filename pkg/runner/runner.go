@@ -30,6 +30,9 @@ type RunResult struct {
 	// Engine is the simulator that produced the run: storage.EngineHourly, or storage.EngineDaily
 	// for a strategy that uses a setting the hourly simulator does not model.
 	Engine string
+	// Suspect is why the run should not be ranked: a symbol it traded has an unadjusted split
+	// (sessions.SplitJumps). Empty when nothing is wrong.
+	Suspect string
 
 	// Set for strategies simulated on total-return (dividend-adjusted) prices.
 	// Buy-and-hold decomposition, before fees/slippage, entry signal → last bar.
@@ -444,6 +447,7 @@ func ExecuteStrategyWithDividends(
 	// strategy trading a young ticker (e.g. 2021+) gets its CAGR diluted by decades
 	// of idle time from unrelated long-history symbols sharing the same database.
 	scopedDates := scopeDatesToStrategy(strat, cfg, barsBySymbol, sortedDates)
+	suspect := splitSuspect(marketDBPath, signalSymbols(signals), scopedDates)
 	extras, engine, report, trades, equityCurve := simulateRun(strat.ID(), cfg, signals, barsBySymbol, scopedDates, capital, marketDBPath, tr)
 
 	// 5. Persist the whole run in one transaction.
@@ -466,7 +470,7 @@ func ExecuteStrategyWithDividends(
 	runID, werr := results.WriteRun(storage.RunMeta{
 		StrategyID: strat.ID(), Kind: "single",
 		WindowStart: report.StartDate, WindowEnd: report.EndDate,
-		Capital: capital, AllocPct: cfg.AllocationPct, MarketMaxDate: lastDate(sortedDates), Engine: engine,
+		Capital: capital, AllocPct: cfg.AllocationPct, MarketMaxDate: lastDate(sortedDates), Engine: engine, Suspect: suspect,
 	}, payload)
 	if werr != nil {
 		log.Printf("Warning: Failed to save results for %s to %s: %v", strat.ID(), outDBPath, werr)
@@ -482,6 +486,7 @@ func ExecuteStrategyWithDividends(
 		SignalCount:         len(signals),
 		TotalMarginInterest: extras.marginInterest,
 		Engine:              engine,
+		Suspect:             suspect,
 	}
 	if bd != nil {
 		b := bd.b

@@ -666,7 +666,7 @@ func runOnce(conf Config) error {
 		fmt.Println("✅ Nothing to backtest — every selected strategy already has a usable result. (Use -force to redo everything.)")
 		for _, s := range selectedStrategies {
 			if c, ok := existing[s.ID()]; ok {
-				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath, Engine: c.Engine, Suspect: c.Suspect})
 			}
 		}
 		runner.PrintComparisonTable(results)
@@ -810,7 +810,7 @@ func runOnce(conf Config) error {
 				continue
 			}
 			if c, ok := existing[s.ID()]; ok {
-				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+				results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath, Engine: c.Engine, Suspect: c.Suspect})
 			}
 		}
 

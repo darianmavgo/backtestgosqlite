@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
@@ -77,5 +78,48 @@ func TestUnsupportedSettingFallsBackToDailyAndRecordsIt(t *testing.T) {
 	}
 	if got := storedEngine(t, res); got != storage.EngineDaily {
 		t.Fatalf("stored engine %q", got)
+	}
+}
+
+func storedColumn(t *testing.T, res RunResult, col string) string {
+	t.Helper()
+	db, err := storage.OpenSQLiteReadOnly(res.DbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var v *string
+	if err := db.Get(&v, `SELECT `+col+` FROM runs WHERE run_id = ?`, res.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+// A run that traded through an unadjusted split is flagged, and the flag is stored with the run.
+func TestRunThroughAnUnadjustedSplitIsSuspect(t *testing.T) {
+	bars, dates := engineBars()
+	for i := 3; i < len(bars); i++ { // a 2-for-1 split that was never adjusted for
+		bars[i].Open, bars[i].High, bars[i].Low, bars[i].Close, bars[i].AdjClose = bars[i].Open/2, bars[i].High/2, bars[i].Low/2, bars[i].Close/2, bars[i].Close/2
+	}
+	market := marketDB(t, map[string][]models.Bar{"AAA": bars})
+	strat := streakRow("split_test", "AAA", 1, 0.5, 0.05, 0.5)
+	res := ExecuteStrategy(strat, strat.DefaultConfig(), map[string][]models.Bar{"AAA": bars}, dates, 100000, "", t.TempDir(), market)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if !strings.Contains(res.Suspect, "AAA 2026-01-07") {
+		t.Fatalf("suspect %q, want the split on 2026-01-07 named", res.Suspect)
+	}
+	if got := storedColumn(t, res, "suspect"); got != res.Suspect {
+		t.Fatalf("stored suspect %q, want %q", got, res.Suspect)
+	}
+}
+
+func TestACleanRunIsNotSuspect(t *testing.T) {
+	if res := runEngine(t, false); res.Suspect != "" {
+		t.Fatalf("suspect %q on clean bars", res.Suspect)
 	}
 }

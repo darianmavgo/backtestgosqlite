@@ -39,6 +39,8 @@ type SharedRunResult struct {
 	Err              error
 	// Engine is the simulator that produced the run (storage.EngineHourly or storage.EngineDaily).
 	Engine string
+	// Suspect is why the run should not be ranked (see RunResult.Suspect).
+	Suspect string
 }
 
 // SharedAccountID builds the combined-portfolio strategy_id used to persist and
@@ -181,6 +183,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		}
 	}
 
+	suspect := splitSuspect(req.MarketDBPath, signalSymbols(allSignals), req.SortedDates)
 	ran := simulateStack(entries, allSignals, req.BarsBySymbol, req.SortedDates, req.Capital, req.MarketDBPath, defaultAsset, bmMap)
 	combinedReport, perStratReports, trades, equityCurve := ran.combined, ran.perStrategy, ran.trades, ran.curve
 	combinedID := SharedAccountID(req.Primary, req.Secondaries)
@@ -229,7 +232,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 			StrategyID: combinedID, Kind: "stack",
 			WindowStart: combinedReport.StartDate, WindowEnd: combinedReport.EndDate,
 			Capital: req.Capital, AllocPct: req.Override.AllocPct, DefaultAsset: parked.Symbol,
-			MarketMaxDate: lastDate(req.SortedDates), Engine: ran.engine,
+			MarketMaxDate: lastDate(req.SortedDates), Engine: ran.engine, Suspect: suspect,
 		}, storage.RunPayload{
 			Signals: allSignals, Trades: trades, Equity: equityCurve, Reports: reports,
 			Audit: &audit, Priorities: priorities,
@@ -256,6 +259,7 @@ func ExecuteStack(req StackRequest) SharedRunResult {
 		Default:            parked,
 		ParkContribution:   parkContribution,
 		Engine:             ran.engine,
+		Suspect:            suspect,
 	}
 }
 

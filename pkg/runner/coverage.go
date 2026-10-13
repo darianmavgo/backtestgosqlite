@@ -27,6 +27,8 @@ type CompiledResult struct {
 	DbPath     string
 	Increment  int // run_id
 	ComputedAt time.Time
+	// Engine and Suspect are what the stored run recorded (see storage.RunMeta).
+	Engine, Suspect string
 }
 
 // ScanAndValidate reads the newest finished run of every strategy from the
@@ -90,7 +92,7 @@ func ScanAndValidate(runDir string, concurrency int) (byStrategy map[string]Comp
 		for _, r := range sc.runs {
 			byStrategy[r.StrategyID] = CompiledResult{
 				StrategyID: r.StrategyID, Report: r.Report, DbPath: sc.path,
-				Increment: int(r.RunID), ComputedAt: r.CreatedAt,
+				Increment: int(r.RunID), ComputedAt: r.CreatedAt, Engine: r.Engine, Suspect: r.Suspect,
 			}
 		}
 	}

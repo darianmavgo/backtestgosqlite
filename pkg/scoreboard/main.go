@@ -33,6 +33,9 @@ const (
 // startDate is the -start flag value (default backtest window start).
 var startDate string
 
+// includeSuspect is the -include-suspect flag value of the run in progress.
+var includeSuspect bool
+
 // targetDb and outDir resolve through APP_FOLDER and reports (.env).
 var (
 	targetDb = appenv.MarketDB()
@@ -41,15 +44,17 @@ var (
 
 // Config holds the settings of a run.
 type Config struct {
-	Concurrency int      // -concurrency
-	Serial      bool     // -serial
-	Start       string   // -start
-	Force       bool     // -force
-	Detail      int      // -detail: strategies that keep their equity curve (-1 = all)
-	Strategy    string   // -strategy: comma-separated ids, a family name, or "all" (empty = all)
-	RunID       int      // -run-id
-	Mode        string   // subcommand (empty = default)
-	Args        []string // positional arguments
+	Concurrency int    // -concurrency
+	Serial      bool   // -serial
+	Start       string // -start
+	Force       bool   // -force
+	Detail      int    // -detail: strategies that keep their equity curve (-1 = all)
+	Strategy    string // -strategy: comma-separated ids, a family name, or "all" (empty = all)
+	RunID       int    // -run-id
+	// IncludeSuspect keeps runs that traded through an unadjusted split in the ranking.
+	IncludeSuspect bool     // -include-suspect
+	Mode           string   // subcommand (empty = default)
+	Args           []string // positional arguments
 }
 
 // DefaultConfig returns the CLI defaults.
@@ -77,6 +82,7 @@ func Main() {
 	flag.IntVar(&conf.Detail, "detail", d.Detail, "Strategies whose daily equity curve is saved: the N best by CAGR of this run, for example 100 (the others save trades, signals and the summary only, which makes a bulk run faster). -1 saves every curve")
 	flag.IntVar(&conf.RunID, "run-id", d.RunID, "Run folder under the reports root to read (compile, status) or to continue (default mode). Without it compile and status read the latest run and the default mode starts a new one")
 	flag.StringVar(&conf.Strategy, "strategy", d.Strategy, "Strategies to compare: comma-separated ids, a family (streak, hold, tree, markov), or all. Empty = every registered strategy")
+	flag.BoolVar(&conf.IncludeSuspect, "include-suspect", d.IncludeSuspect, "Rank strategies that traded through an unadjusted split too (they are left out by default: the split books a gain or loss nobody could have had)")
 	conf.Mode = cliutils.PopSubcommand(map[string]string{"compile": "compile", "status": "status"})
 	flag.Parse()
 	conf.Args = flag.Args()
@@ -92,6 +98,7 @@ func Run(conf Config) error {
 		conf.Concurrency = 1
 	}
 	startDate = conf.Start
+	includeSuspect = conf.IncludeSuspect
 
 	// outDir is the reports root until here, then the folder of this run. It is
 	// reset each call so a process that runs several scoreboard commands in a row
@@ -267,10 +274,11 @@ func runAll(concurrency int, force bool, arg string, detail int) error {
 			continue
 		}
 		if c, ok := existing[s.ID()]; ok {
-			results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath})
+			results = append(results, runner.RunResult{Strat: s, Report: c.Report, DbPath: c.DbPath, Engine: c.Engine, Suspect: c.Suspect})
 		}
 	}
 
+	results = rankable(results)
 	runner.PrintComparisonTable(results)
 	if err := saveScoreboardToSQLite(results, filepath.Join(outDir, "scoreboard.db")); err != nil {
 		return err
@@ -358,9 +366,11 @@ func runCompile(concurrency int, arg string) error {
 			Strat:  runner.ResolveStrategy(id),
 			Report: c.Report,
 			DbPath: c.DbPath,
+			Engine: c.Engine, Suspect: c.Suspect,
 		})
 	}
 
+	results = rankable(results)
 	runner.PrintComparisonTable(results)
 	if err := saveScoreboardToSQLite(results, filepath.Join(outDir, "scoreboard.db")); err != nil {
 		return err
@@ -523,4 +533,21 @@ func writeScoreboard(dbPath string, results []runner.RunResult) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// rankable drops the runs flagged suspect (a traded symbol has an unadjusted split) unless
+// -include-suspect was given, and says which it dropped.
+func rankable(in []runner.RunResult) []runner.RunResult {
+	if includeSuspect {
+		return in
+	}
+	out := make([]runner.RunResult, 0, len(in))
+	for _, r := range in {
+		if r.Suspect != "" {
+			fmt.Printf("   left out of the ranking: %s (%s)\n", r.Strat.ID(), r.Suspect)
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }

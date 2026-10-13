@@ -2,14 +2,17 @@ package runner
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/appenv"
 	"github.com/darianmavgo/backtestgosqlite/pkg/hoursim"
 	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/options"
+	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/simulator"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
 	"github.com/darianmavgo/backtestgosqlite/pkg/strategy"
@@ -169,4 +172,39 @@ func simulateStack(
 	combined, per, trades, curve := sim.Run(signals, daily, dates)
 	return stackRun{combined: combined, perStrategy: per, trades: trades, curve: curve,
 		preempted: sim.PreemptedTradeCount, parked: sim.DefaultAssetResult(), engine: storage.EngineDaily}
+}
+
+// splitSuspect says why a run should not be ranked: a symbol it traded has a close-to-close jump
+// beyond sessions.DefaultSplitJumpRatio inside the dates it simulated, almost always an unadjusted
+// split. It reads the market database and returns "" when nothing is wrong, when there is no
+// database to read, or when the check itself fails (a check must never stop a run).
+func splitSuspect(marketDB string, symbols, dates []string) string {
+	if marketDB == "" || len(symbols) == 0 || len(dates) == 0 {
+		return ""
+	}
+	if _, err := os.Stat(marketDB); err != nil {
+		return ""
+	}
+	db, err := storage.OpenSQLiteReadOnly(marketDB)
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+	jumps, err := sessions.SplitJumps(db, symbols, 0, dates[0], dates[len(dates)-1])
+	if err != nil {
+		log.Printf("Warning: split check on %s: %v", marketDB, err)
+		return ""
+	}
+	if len(jumps) == 0 {
+		return ""
+	}
+	var parts []string
+	for i, j := range jumps {
+		if i == 3 {
+			parts = append(parts, fmt.Sprintf("and %d more", len(jumps)-3))
+			break
+		}
+		parts = append(parts, j.String())
+	}
+	return "unadjusted split? " + strings.Join(parts, ", ")
 }
