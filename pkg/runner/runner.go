@@ -288,7 +288,8 @@ func formatIdleDays(report models.PerformanceReport) string {
 // ConfigOverride replaces fields of a strategy's DefaultConfig. Zero values
 // keep the strategy's own setting. AllocPct is a fraction of equity per
 // position (0.10 = 10%). When set, sizing is fixed_pct so that fraction is
-// what the fill uses, including strategies whose default is fixed shares.
+// what the fill uses, including strategies whose default is fixed shares, and a
+// signal's own allocation (the Markov strength ladder) no longer applies.
 type ConfigOverride struct {
 	StopLoss     float64
 	Target       float64
@@ -314,6 +315,7 @@ func (o ConfigOverride) Apply(cfg strategy.StrategyConfig) strategy.StrategyConf
 	if o.AllocPct > 0 {
 		cfg.AllocationPct = o.AllocPct
 		cfg.PositionSizing = "fixed_pct"
+		cfg.FlatAllocation = true
 	}
 	return cfg
 }

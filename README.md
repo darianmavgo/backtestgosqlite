@@ -114,7 +114,7 @@ Every command in this repo, in the order you use them to take one idea from raw 
 | 2 | Find symbols (optional) | `./bin/universe -stocks-only` | Rebuilds the stock and ETF universe to pick related tickers. Needs `POLYGON_API_KEY`. | writes `refdata/universe.db` |
 | 3 | See what exists | `./bin/strategy` then `./bin/backtest -strategylist` | Confirms the GOOGL ids above are registered and shows row counts per family. | reads `refdata/strategies.db` |
 | 4 | Explore the idea | `./bin/study -list`, `./bin/study -study hmm_regime -symbol GOOGL`, `./bin/markov_test` | Regime study for GOOGL; `markov_test` prints the bear / sideways / bull matrix and tomorrow's odds. Use `-study googl_market_context` only if a caller supplies a cluster DB. | reads market DB; writes `data/reports/<study>.db` |
-| 5 | Train models | `./bin/train markov GOOGL` and `./bin/train tree GOOGL` | Fits the Markov regime table and the depth-3 tree that `markov_model_googl` and `googl_tree` read. `streak` and `hold` have nothing to train. Use `-through <date>` on `tree` to keep later months out of sample. | writes `data/markov_models.db`, `data/tree_models.db` |
+| 5 | Train models | `./bin/train markov GOOGL` and `./bin/train tree GOOGL` | Fits the Markov regime table and the depth-3 tree that `markov_model_googl` and `googl_tree` read. `streak` and `hold` have nothing to train. Use `-through <date>` on `markov` or `tree` to keep later months out of sample (see [docs/CorrectlyUsingMarkov.md](../docs/CorrectlyUsingMarkov.md)). | writes `data/markov_models.db`, `data/tree_models.db` |
 | 6 | Pick a list | `./bin/stratlist sql/lists/<file>.sql` | Turns a SELECT on `strategies.db` into ids, for example every strategy whose signal symbol is GOOGL. Feed it to `backtest -strategy "$(...)"`. | reads `refdata/strategies.db` |
 | 7 | First backtest | `./bin/backtest -strategy streak-googl-down3,googl_tree,markov_model_googl` | Runs each idea alone: an IN-SAMPLE pass, then one OUT-OF-SAMPLE pass on the last 12 months. Tune on the in-sample numbers only. | writes `data/reports/<run_id>/` (`streak.db`, `tree.db`, `markov.db`, `report.html`, `oos/`) |
 | 8 | Look at the grid | `./bin/gridsearch params streak-googl-down3` | Prints the hold, take-profit, stop and regime grid with no simulation. | none |
@@ -561,6 +561,24 @@ Runs every stage for a set of stocks as one controlled run: download the bars, t
 
 `scripts/googl_pipeline.sh` is a one-line wrapper for `pipeline -symbol GOOGL`. Not yet in the pipeline: `markov_test` (its logic is still in `cmd/`) and `universe`, `transaction_calc` and `livescan`, which are not part of building a strategy. `hmm_regime.db` is still written to `data/reports/` and shared between runs, because the `markov_hmm` strategies read it from there. `park_sweep` uses its own configured park symbol (GOOGL).
 
+## backtest export_views
+
+Writes the indicator calculations as SQL views, and a new database holding those views and only the market history they read. It writes new files only; it never writes the market database, and it touches no broker or account.
+
+```bash
+./bin/backtest export_views -strategy streak-voo-up5-tqqq   # data/reports/streak-voo-up5-tqqq.db and .sql
+./bin/backtest export_views -symbols VOO,TQQQ               # the shared indicator views over those two symbols
+./bin/backtest export_views -dry-run -strategy <id>         # list the views, write nothing
+```
+
+The database has `backtest_start` (same columns and indexes as the market table) with only the **daily session rows** (`length(Date) = 10`) of the **relevant symbols**, plus the views. Hourly bars are left out because no view reads them. The relevant symbols are the strategy's own (a streak row: its watch and trade symbols), or `-symbols`. With neither, every symbol's daily bars are copied.
+
+With `-strategy <id>` the views are that strategy's own signal pipeline (`sql/strategies/...`) with the row's parameters filled in, named `v_<id>_slice`, `v_<id>_signals`, and so on (dashes in the id become underscores). They are the pipeline's own SQL, so they return what a run puts in its slice tables. Streak strategies are checked against a pipeline run in a test; rotation strategies create their views but are not compared to a run. Hold, tree and markov strategies are refused with the reason, because they read a trained model or attached database.
+
+Without `-strategy` the views are the shared indicators (definitions in `sql/views/`): `v_daily_bars`, `v_bar_sma`, `v_streak_diff` / `v_streak_group` / `v_streak_slice`, `v_tree_base` / `v_tree_chg` / `v_tree_win` / `v_tree_features`, `v_avg_volume` (20, 50 and 200 sessions), `v_session_ratio` / `v_split_jumps`. Filter by `symbol`: every window partitions by symbol alone so SQLite searches the index.
+
+Flags: `-strategy`, `-symbols`, `-db` (market DB, default `appenv.MarketDB()`), `-db-out` (default `auto`: `data/reports/views.db`, or `<id>.db` with `-strategy`; `none` skips it), `-sql-out` (the script; same `auto` and `none`), `-dry-run`. An existing `-db-out` file is replaced.
+
 ## runview
 
 A local, read-only browser for a run folder: the pipeline steps with their status and timings, every result database with its tables (sort, per-column filter, search across all columns, paging, CSV export), the HTML reports, and a SQL box. The newest run opens first, and a run still in progress refreshes its steps every few seconds.
@@ -661,7 +679,9 @@ Average daily share volume (ADTV) of every symbol in the market database, over o
 ./bin/train streak                      # says there is nothing to train
 ```
 
-Flags for `markov` and `tree` (`tree` has no `-batch`, and only `tree` has `-through <date>`, which trains on bars up to that date so the later months stay out of sample): `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables).
+Flags for `markov` and `tree` (`tree` has no `-batch`): `-db`, `-model-db`, `-ref-db`, `-symbols`, `-batch 200`, `-calc-dir` (keep the last batch's slice tables). Both take `-through <date>`, which learns only from bars up to that date so the later months stay out of sample, and `markov` also takes `-from <date>`, the first session it may learn from. With `markov -through`, later sessions are still scored, with the counts frozen at that date, and `markov_model_meta.trained_through` records it; that is the model a live scan extends, so train with the backtest's in-sample end.
+
+**`slippage_pct` (every row family).** An adverse price move applied to each fill, as a fraction of the fill price: a long entry pays `price * (1 + slippage_pct)`, and every exit (take-profit, stop, time-up, signal) sells at `price * (1 - slippage_pct)`. A short is the mirror image. It is charged once per side, so a round trip costs about twice the value. It stands in for the bid/ask spread and market impact on a limit or market fill. It is not a commission (that is `CommissionPerShare`) and not a financing cost (`cash_yield`). `0.001` is 0.1% per side. Code: `slip()` in `pkg/sim/run.go`.
 
 ## stratlist
 
@@ -725,7 +745,7 @@ Write a small reference database holding only the rows of the named strategies, 
   -out ../trade_orchestrator/pkg/strategies/deploy/strategies.db
 ```
 
-`-ids` takes strategy ids and `a+b+c` stacks, comma-separated. Every id must be a row in `streak_strategy`, `tree_strategy`, `hold_strategy` or `markov_strategy`, or the command fails and names the ones that are not. `-src` chooses the full database. `trade_orchestrator` embeds the output and reads it where it has no reference database.
+`-ids` takes strategy ids and `a+b+c` stacks, comma-separated. Every id must be a row in `streak_strategy`, `tree_strategy`, `hold_strategy` or `markov_strategy`, or the command fails and names the ones that are not. `-src` chooses the full database. `-alloc 0.20` sizes every exported row at that fraction of equity per position and records it in the bundle's `bundle_meta` table (`alloc_pct`); give it the `-alloc` the backtest ran with, because a live position is sized from the row and nothing else carries the backtest's allocation across. `backtest stack -alloc 0.20` is flat: every position is 20% of equity, and a signal's own allocation (the Markov pipeline's 5 to 30% by signal strength) is ignored in the run (`StrategyConfig.FlatAllocation`), as it is live. `trade_orchestrator` embeds the output and reads it where it has no reference database.
 
 A strategy that needs something built from the bars before it can signal implements `strategy.Preparer`, and a live scan (`livescan`, `runner.RunLiveScan`) calls it after refreshing the bars. `markov_strategy` brings its saved model up to the last completed session when it is behind, because the model holds one prediction per date and has none for a session it was not trained through. It does not refit: `train.ExtendMarkov` (stage `sql/stages/markov_extend`) scores each new session from its 20-bar return with the counts frozen at the model's `trained_through`, the same way an out-of-sample backtest scores the sessions after its cutoff, so live and out-of-sample agree and a scan needs about 25 closes per symbol, not years. Only a symbol with no saved model is trained (`MARKOV_TRAIN_THROUGH` and `MARKOV_TRAIN_FROM` apply then); refit deliberately with `train markov`. A failed `Prepare` stops the scan with `PREPARE_FAILED`, and a missing model never passes as "no signal".
 

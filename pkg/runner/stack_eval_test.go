@@ -140,11 +140,11 @@ func TestBuildConfigAllocForcesFixedPct(t *testing.T) {
 		FixedShares: 1, PositionCap: 1, HoldingWindow: 1,
 	}
 	over := ConfigOverride{AllocPct: 0.10}.Apply(cfg)
-	if over.AllocationPct != 0.10 || over.PositionSizing != "fixed_pct" {
+	if over.AllocationPct != 0.10 || over.PositionSizing != "fixed_pct" || !over.FlatAllocation {
 		t.Fatalf("override = %+v, want 10%% fixed_pct", over)
 	}
 	kept := ConfigOverride{}.Apply(cfg)
-	if kept.AllocationPct != 1 || kept.PositionSizing != "fixed_shares" {
+	if kept.AllocationPct != 1 || kept.PositionSizing != "fixed_shares" || kept.FlatAllocation {
 		t.Fatalf("zero override changed config: %+v", kept)
 	}
 }

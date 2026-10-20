@@ -43,6 +43,7 @@ type Signal struct {
 type Config struct {
 	InitialCapital float64
 	Allocation     float64 // share of equity per position; unset -> DefaultAllocation
+	FlatAlloc      bool    // every position is sized at Allocation: a signal's own Alloc is ignored
 	DefaultAlloc   float64 // the share when neither the signal nor Allocation gives one; 0 -> DefaultAllocation
 	CashYield      float64 // annual
 	Slippage       float64

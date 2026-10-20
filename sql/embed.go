@@ -29,3 +29,9 @@ var Stages embed.FS
 //
 //go:embed view_symbol_stats.sql
 var SymbolStatsView string
+
+// Views holds the calculations written as views over backtest_start,
+// addressed as "views/<file>.sql" and run in name order by pkg/export_views.
+//
+//go:embed views
+var Views embed.FS

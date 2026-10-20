@@ -148,6 +148,18 @@ func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
 // TreeDB is the trained decision trees (written by train tree, read by backtest).
 func TreeDB() string { return filepath.Join(Data(), "tree_models.db") }
 
+// BDCDB is the SEC EDGAR BDC Schedule of Investments database.
+func BDCDB() string { return filepath.Join(Data(), "bdc_edgar.db") }
+
+// SECUserAgent returns the SEC EDGAR User-Agent header (SEC_USER_AGENT),
+// falling back to a compliant default contact string when unset.
+func SECUserAgent() string {
+	if ua := Get("SEC_USER_AGENT"); ua != "" {
+		return ua
+	}
+	return "TradeWellResearch research@tradewell.local"
+}
+
 // DataFile returns a path to name inside the data directory.
 func DataFile(name string) string { return filepath.Join(Data(), name) }
 

@@ -3,6 +3,7 @@ package backtest
 import (
 	"flag"
 	"fmt"
+	"github.com/darianmavgo/backtestgosqlite/pkg/export_views"
 	"log"
 	"os"
 	"path/filepath"
@@ -184,7 +185,15 @@ func validateDefaultAsset(asset string, shared bool) error {
 
 // Main is the CLI entry point.
 func Main() {
+	// `backtest export_views` has its own flags; dispatch before this command registers its own.
+	if len(os.Args) > 1 && os.Args[1] == "export_views" {
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+		export_views.Main()
+		return
+	}
 	// Subcommand dispatch:
+	//   backtest export_views -> write the indicator calculations as SQL views over
+	//                          backtest_start (a .sql script, optionally in a copy of the market DB)
 	//   backtest stale      -> assess which strategies' cached reports/*.db
 	//                          results are stale (unregistered strategy,
 	//                          newer market data, or an edited SQL pipeline

@@ -159,9 +159,13 @@ type StrategyConfig struct {
 	// row per session and costs more to write than the strategy costs to run, so a
 	// bulk ranking run keeps it only for the strategies worth looking at. It does
 	// not change the simulation or its report.
-	SkipEquityCurve    bool    `json:"-"`
-	PositionCap        int     `json:"position_cap"`           // Max concurrent open positions (e.g. 5)
-	AllocationPct      float64 `json:"allocation_pct"`         // Portfolio equity allocation per trade (e.g. 0.20 for 20%)
+	SkipEquityCurve bool    `json:"-"`
+	PositionCap     int     `json:"position_cap"`   // Max concurrent open positions (e.g. 5)
+	AllocationPct   float64 `json:"allocation_pct"` // Portfolio equity allocation per trade (e.g. 0.20 for 20%)
+	// FlatAllocation sizes every position at AllocationPct and ignores a signal's own
+	// allocation (the Markov pipeline sizes 5 to 30% by signal strength). A backtest run
+	// with a stack-wide -alloc sets it, so the run is the flat sizing live trades.
+	FlatAllocation     bool    `json:"flat_allocation,omitempty"`
 	FixedShares        int     `json:"fixed_shares,omitempty"` // Shares per position if PositionSizing == "fixed_shares"
 	FixedDollar        float64 `json:"fixed_dollar,omitempty"` // Capital per position if PositionSizing == "fixed_dollar"
 	SlippagePct        float64 `json:"slippage_pct"`           // Estimated slippage per fill (e.g. 0.0005 for 0.05%)

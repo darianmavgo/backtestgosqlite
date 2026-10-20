@@ -589,7 +589,7 @@ func (a *account) equity() float64 {
 }
 
 // shares sizes a position as a fixed share of equity: the signal's allocation
-// override, else the config's, else DefaultAlloc (20%). More than 100% (no margin here) also
+// override (unless FlatAlloc), else the config's, else DefaultAlloc (20%). More than 100% (no margin here) also
 // falls back to 20%. A target above the cash is cut to 95% of the cash.
 func (c Config) shares(cash, equity, entry, override float64) int {
 	if entry <= 0 || equity <= 0 {
@@ -609,7 +609,7 @@ func (c Config) shares(cash, equity, entry, override float64) int {
 		return int(target / entry)
 	}
 	alloc := c.Allocation
-	if override > 0 {
+	if override > 0 && !c.FlatAlloc {
 		alloc = override
 	}
 	if alloc <= 0 || alloc > 1 {

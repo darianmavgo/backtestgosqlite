@@ -48,6 +48,7 @@ func Config(cfg strategy.StrategyConfig, capital float64) sim.Config {
 	c := sim.Config{
 		InitialCapital:      capital,
 		Allocation:          cfg.AllocationPct,
+		FlatAlloc:           cfg.FlatAllocation,
 		CashYield:           cfg.CashYieldAnnual,
 		Slippage:            cfg.SlippagePct,
 		Commission:          cfg.CommissionPerShare,

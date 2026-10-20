@@ -74,3 +74,63 @@ func Export(srcPath, dstPath string, ids []string) (map[string][]string, error) 
 	}
 	return found, nil
 }
+
+// bundleMeta records how a bundle was made, so the program that trades it can check it.
+const bundleMeta = `CREATE TABLE IF NOT EXISTS bundle_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
+
+// rowTables are the five strategy row tables, each with an allocation_pct column.
+var rowTables = []string{"streak_strategy", "tree_strategy", "hold_strategy", "markov_strategy", "rotation_strategy"}
+
+// SetAllocation sizes every row of the bundle at dstPath at alloc (a fraction of equity per
+// position, 0.20 = 20%) and records it in bundle_meta as alloc_pct. It is how the allocation a
+// backtest ran with (backtest stack -alloc) reaches live: the bundle is a derived copy, so the
+// full database is left alone.
+func SetAllocation(dstPath string, alloc float64) error {
+	if alloc <= 0 || alloc > 1 {
+		return fmt.Errorf("allocation %v: want a fraction in (0, 1], such as 0.20", alloc)
+	}
+	db, err := storage.OpenSQLite(dstPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	for _, table := range rowTables {
+		var n int
+		if err := db.Get(&n, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table); err != nil {
+			return err
+		}
+		if n == 0 {
+			continue // a bundle holds only the families it exports
+		}
+		if _, err := db.Exec(`UPDATE `+table+` SET allocation_pct = ?`, alloc); err != nil {
+			return fmt.Errorf("set allocation on %s: %w", table, err)
+		}
+	}
+	if _, err := db.Exec(bundleMeta); err != nil {
+		return err
+	}
+	_, err = db.Exec(`INSERT INTO bundle_meta (key, value) VALUES ('alloc_pct', ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value`, fmt.Sprint(alloc))
+	return err
+}
+
+// BundleAllocation is the allocation SetAllocation recorded in the bundle at path. ok is false
+// for a bundle made without one.
+func BundleAllocation(path string) (alloc float64, ok bool, err error) {
+	db, err := storage.OpenSQLite(path)
+	if err != nil {
+		return 0, false, err
+	}
+	defer db.Close()
+	var v string
+	if err := db.Get(&v, `SELECT value FROM bundle_meta WHERE key = 'alloc_pct'`); err != nil {
+		if strings.Contains(err.Error(), "no such table") || strings.Contains(err.Error(), "no rows") {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+	if _, err := fmt.Sscan(v, &alloc); err != nil {
+		return 0, false, fmt.Errorf("bundle_meta alloc_pct %q: %w", v, err)
+	}
+	return alloc, true, nil
+}

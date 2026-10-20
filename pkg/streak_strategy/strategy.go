@@ -27,6 +27,14 @@ type Strategy struct {
 // ID is the table's id column.
 func (s *Strategy) ID() string { return s.Row.ID }
 
+// SQLDir is the pipeline directory that calculates this row's signals.
+func (s *Strategy) SQLDir() string {
+	if s.PipelineDir != "" {
+		return s.PipelineDir
+	}
+	return pipelineDir
+}
+
 // Family is the strategy family, which names its result database.
 func (s *Strategy) Family() string { return "streak" }
 
@@ -167,11 +175,7 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 // GenerateSignals runs the shared SQL pipeline (sql/strategies/streak_strategy)
 // in the calc database. Both database paths must be set.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
-	dir := s.PipelineDir
-	if dir == "" {
-		dir = pipelineDir
-	}
-	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), dir, s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
+	return strategy.RunPipeline(s.ID(), s.Name(), s.Description(), s.SQLDir(), s.DefaultConfig(), s.marketDBPath, s.calcDBPath, "market", barsBySymbol)
 }
 
 // ValidateRow reports why a streak_strategy row cannot be registered or promoted.

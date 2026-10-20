@@ -564,3 +564,22 @@ func TestFixedDollarBuysThatManyDollarsAndIsCutToTheCash(t *testing.T) {
 		t.Fatalf("trades %+v, want 9 shares (95%% of $1000 at $100)", r.Trades)
 	}
 }
+
+// A signal's own allocation sizes the position unless the config is flat, in which case every
+// position is the config's share of equity.
+func TestFlatAllocIgnoresTheSignalsOwnAllocation(t *testing.T) {
+	bs := series(session("2025-01-02", 100, map[int]ohlc{6: {100, 101, 99, 100.5}}), session("2025-01-03", 100, nil))
+	s := sig("2025-01-02", 100.5)
+	s.Alloc = 0.05
+
+	graded := one(bs, []Signal{s}, Config{PositionCap: 1, Allocation: 0.20}).Trades[0]
+	// 5% of 100,000 at 100.5 = 49 shares
+	if graded.Shares != 49 {
+		t.Fatalf("signal allocation should size the position, got %d shares", graded.Shares)
+	}
+	flat := one(bs, []Signal{s}, Config{PositionCap: 1, Allocation: 0.20, FlatAlloc: true}).Trades[0]
+	// 20% of 100,000 at 100.5 = 199 shares
+	if flat.Shares != 199 {
+		t.Fatalf("flat allocation should ignore the signal's 5%%, got %d shares", flat.Shares)
+	}
+}

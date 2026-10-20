@@ -48,6 +48,7 @@ func export() {
 	out := flag.String("out", "", "reference database to write")
 	ids := flag.String("ids", "", "strategy ids and a+b+c stacks, comma-separated")
 	modelsOut := flag.String("models-out", "", "directory to also write markov_models.db and tree_models.db into, holding only the trained models of the exported rows' signal symbols")
+	alloc := flag.Float64("alloc", 0, "size every exported row at this fraction of equity per position (0.20 = 20%) and record it in the bundle; use the -alloc the backtest ran with. 0 keeps each row's own allocation")
 	markovSrc := flag.String("markov-src", appenv.MarkovDB(), "full Markov model database to copy models from")
 	treeSrc := flag.String("tree-src", appenv.TreeDB(), "full tree model database to copy models from")
 	flag.Parse()
@@ -70,6 +71,12 @@ func export() {
 	}
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *alloc > 0 {
+		if err := refdb.SetAllocation(*out, *alloc); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("every row sized at %.0f%% of equity per position (bundle_meta alloc_pct)\n", *alloc*100)
 	}
 	fmt.Printf("wrote %s with %d strategies\n", *out, len(members))
 	if *modelsOut == "" {
