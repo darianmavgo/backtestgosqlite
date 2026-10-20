@@ -38,6 +38,7 @@ Each command is one stage and answers one question. Run them left to right, or r
 | Is it real or overfit: walk-forward folds plus a verdict per strategy | `validate` |
 | In-sample / out-of-sample ledger with tiers A to D | `strateval` |
 | Rank every registered strategy, or a list | `scoreboard` |
+| Score existing backtest trades by the SPY Markov regime at entry (bull / sideways / bear) | `regime_score` |
 | Live signal scan for the next session | `livescan` |
 | Research studies (clustering, HMM regimes, lead/lag, decision trees) | `study` |
 | Report on an IBKR transaction CSV | `transaction_calc` |
