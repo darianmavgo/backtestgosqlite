@@ -10,6 +10,7 @@
 //	streak     nothing to train (rule parameters are row columns)
 //	hold       nothing to train
 //	tree       trained: per-symbol 5 bucket CloudForest tree -> data/tree_models.db
+//	hmm        trained: Gaussian hidden Markov regime model (QQQ) -> data/hmm_models.db, not part of `all`
 //
 // markov_hmm strategies read hmm_regime.db, which `study hmm_regime` writes.
 package train
@@ -42,6 +43,7 @@ var families = map[string]family{
 	"streak": noModel("streak", "a streak strategy has no fitted model; its parameters are the columns of its streak_strategy row."),
 	"hold":   noModel("hold", "a hold strategy has no fitted model; its parameters are the columns of its hold_strategy row."),
 	"tree":   {run: runTree, note: "trains the per-symbol 5 bucket decision tree on the market database"},
+	"hmm":    {run: runHMM, note: "fits the hidden Markov regime model of QQQ on the daily bars database (subcommands: compare, extend, report)"},
 }
 
 // Main is the CLI entry point.
@@ -59,6 +61,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if args[0] == "all" {
 		code := 0
 		for _, name := range sortedFamilies() {
+			if name == "hmm" {
+				continue // reads daily_bars.db, not the market database, and replaces a saved model: train it deliberately
+			}
 			if c := families[name].run(nil, stdout, stderr); c != 0 {
 				code = c
 			}

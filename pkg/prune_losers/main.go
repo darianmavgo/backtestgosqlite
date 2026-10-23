@@ -31,7 +31,7 @@ const MaxWorkers = lastbacktest.MaxWorkers
 // familyTables are the row-backed strategy tables of strategies.db.
 var familyTables = []string{
 	"streak_strategy", "hold_strategy",
-	"tree_strategy", "markov_strategy", "rotation_strategy",
+	"tree_strategy", "markov_strategy", "hmm_strategy", "rotation_strategy",
 }
 
 // Config holds the settings of a run.

@@ -84,6 +84,28 @@ CREATE TABLE IF NOT EXISTS markov_strategy (
 	total_trades     INTEGER
 );
 
+-- One runnable hmm strategy per row (pkg/hmm_strategy): trade trade_symbol from the regime the
+-- hidden Markov model of hmm_symbol is in. rule is calm_filter (long while the probability of the
+-- stressed regime is under stress_prob) or calm_down (long when it falls back under stress_prob).
+CREATE TABLE IF NOT EXISTS hmm_strategy (
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	hmm_symbol       TEXT NOT NULL DEFAULT 'QQQ',
+	trade_symbol     TEXT NOT NULL DEFAULT 'QQQ',
+	rule             TEXT NOT NULL,
+	stress_prob      REAL NOT NULL,
+	hold_days        INTEGER NOT NULL,
+	take_profit_pct  REAL NOT NULL,
+	stop_loss_pct    REAL NOT NULL,
+	allocation_pct   REAL NOT NULL,
+	cash_yield       REAL NOT NULL,
+	slippage_pct     REAL NOT NULL,
+	source_strategy  TEXT,
+	source_label     TEXT,
+	win_rate         REAL,
+	total_trades     INTEGER
+);
+
 -- One rotation strategy per row (pkg/rotation_strategy): rank the liquid
 -- universe on momentum each session and hold the top few. symbols is a comma
 -- separated candidate list, or a symbol_lists.symbol_list_id to use that list,
@@ -401,6 +423,92 @@ func UpsertStreakStrategies(db *sqlx.DB, rows []StreakStrategy) error {
 			cash_yield = excluded.cash_yield,
 			slippage_pct = excluded.slippage_pct,
 			next_day_limit = excluded.next_day_limit,
+			source_strategy = excluded.source_strategy,
+			source_label = excluded.source_label,
+			win_rate = excluded.win_rate,
+			total_trades = excluded.total_trades`
+	for _, r := range rows {
+		if _, err := tx.NamedExec(q, r); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// HMMStrategy is one row of hmm_strategy.
+type HMMStrategy struct {
+	ID             string   `db:"id"`
+	Name           string   `db:"name"`
+	HMMSymbol      string   `db:"hmm_symbol"`
+	TradeSymbol    string   `db:"trade_symbol"`
+	Rule           string   `db:"rule"`
+	StressProb     float64  `db:"stress_prob"`
+	HoldDays       int      `db:"hold_days"`
+	TakeProfitPct  float64  `db:"take_profit_pct"`
+	StopLossPct    float64  `db:"stop_loss_pct"`
+	AllocationPct  float64  `db:"allocation_pct"`
+	CashYield      float64  `db:"cash_yield"`
+	SlippagePct    float64  `db:"slippage_pct"`
+	SourceStrategy string   `db:"source_strategy"`
+	SourceLabel    string   `db:"source_label"`
+	WinRate        *float64 `db:"win_rate"`
+	TotalTrades    *int     `db:"total_trades"`
+}
+
+// HMMStrategies returns every hmm_strategy row, ordered by id.
+func HMMStrategies(db *sqlx.DB) ([]HMMStrategy, error) { return hmmStrategiesWhere(db, "") }
+
+// HMMStrategyByID returns the row whose id is exactly id.
+func HMMStrategyByID(db *sqlx.DB, id string) (HMMStrategy, bool, error) {
+	rows, err := hmmStrategiesWhere(db, " WHERE id = ?", id)
+	if err != nil || len(rows) == 0 {
+		return HMMStrategy{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func hmmStrategiesWhere(db *sqlx.DB, where string, args ...any) ([]HMMStrategy, error) {
+	var out []HMMStrategy
+	err := db.Select(&out, `
+		SELECT id, name, hmm_symbol, trade_symbol, rule, stress_prob, hold_days,
+		       take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
+		       slippage_pct,
+		       COALESCE(source_strategy, '') AS source_strategy,
+		       COALESCE(source_label, '') AS source_label,
+		       win_rate, total_trades
+		FROM hmm_strategy`+where+` ORDER BY id`, args...)
+	return out, err
+}
+
+// UpsertHMMStrategies inserts or replaces each row by id.
+func UpsertHMMStrategies(db *sqlx.DB, rows []HMMStrategy) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	const q = `
+		INSERT INTO hmm_strategy (
+			id, name, hmm_symbol, trade_symbol, rule, stress_prob, hold_days,
+			take_profit_pct, stop_loss_pct, allocation_pct, cash_yield,
+			slippage_pct, source_strategy, source_label, win_rate, total_trades
+		) VALUES (
+			:id, :name, :hmm_symbol, :trade_symbol, :rule, :stress_prob, :hold_days,
+			:take_profit_pct, :stop_loss_pct, :allocation_pct, :cash_yield,
+			:slippage_pct, :source_strategy, :source_label, :win_rate, :total_trades
+		)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			hmm_symbol = excluded.hmm_symbol,
+			trade_symbol = excluded.trade_symbol,
+			rule = excluded.rule,
+			stress_prob = excluded.stress_prob,
+			hold_days = excluded.hold_days,
+			take_profit_pct = excluded.take_profit_pct,
+			stop_loss_pct = excluded.stop_loss_pct,
+			allocation_pct = excluded.allocation_pct,
+			cash_yield = excluded.cash_yield,
+			slippage_pct = excluded.slippage_pct,
 			source_strategy = excluded.source_strategy,
 			source_label = excluded.source_label,
 			win_rate = excluded.win_rate,
@@ -751,6 +859,7 @@ func resolveSymbolLists(db Selector, rows []RotationStrategy) {
 var strategyTables = map[string]bool{
 	"streak_strategy": true, "hold_strategy": true,
 	"tree_strategy": true, "markov_strategy": true,
+	"hmm_strategy":      true,
 	"rotation_strategy": true,
 }
 

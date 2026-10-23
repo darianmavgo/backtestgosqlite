@@ -15,6 +15,7 @@ sql/strategies/
 ├── streak_strategy/   one pipeline for every streak_strategy row
 ├── tree_strategy/     one pipeline for every tree_strategy row
 ├── markov_model/      reads the persisted Markov model (see train)
+├── hmm_strategy/      reads the persisted hidden Markov model (see train hmm)
 ├── markov_hmm/        reads hmm_regime.db from study hmm_regime
 └── voo_up3/           owned by the voo-up3 strategy
 ```

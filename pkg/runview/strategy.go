@@ -15,7 +15,7 @@ import (
 )
 
 // definitionTables are the refdata tables whose rows define a strategy by id.
-var definitionTables = []string{"streak_strategy", "tree_strategy", "markov_strategy", "hold_strategy", "rotation_strategy"}
+var definitionTables = []string{"streak_strategy", "tree_strategy", "markov_strategy", "hmm_strategy", "hold_strategy", "rotation_strategy"}
 
 // heavyTables hold one row per bar or trade, so the strategy view links to
 // them filtered instead of loading them.

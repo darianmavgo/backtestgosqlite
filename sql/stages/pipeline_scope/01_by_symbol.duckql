@@ -6,5 +6,7 @@ SELECT id FROM tree_strategy WHERE upper(signal_symbol) IN (__SYMBOL_LIST__) OR 
 UNION
 SELECT id FROM markov_strategy WHERE upper(signal_symbol) IN (__SYMBOL_LIST__) OR upper(trade_symbol) IN (__SYMBOL_LIST__)
 UNION
+SELECT id FROM hmm_strategy WHERE upper(hmm_symbol) IN (__SYMBOL_LIST__) OR upper(trade_symbol) IN (__SYMBOL_LIST__)
+UNION
 SELECT id FROM hold_strategy WHERE upper(symbol) IN (__SYMBOL_LIST__)
 ORDER BY 1

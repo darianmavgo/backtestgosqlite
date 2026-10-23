@@ -71,39 +71,7 @@ Shortcut for steps 4 and 5: `./bin/stackopt -candidates-file ids.txt -max-dd 0.1
 
 Every `backtest` and `backtest stack` run now does step 5 itself (see the holdout note under `backtest`). Result to date: no stack reached 79% CAGR with drawdown under 6%. Liquid stacks held a Calmar of about 4 to 8 in-sample and about 4.5 on the holdout. The benchmark to beat is in [docs/omnifunds_benchmark.md](docs/omnifunds_benchmark.md).
 
-### Found: about 80% CAGR with drawdown under 10%
-
-`rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20` (found 2026-10-09, run folder `data/reports/58`) is the first strategy to reach the goal. Capital $100,000, cash yield 0, slippage 0.05% per side.
-
-| Window | Dates | CAGR | Max drawdown | Sharpe | Calmar | Trades | Win rate |
-|---|---|---|---|---|---|---|---|
-| In-sample | 2021-10-01 to 2025-10-02 | 78% | 16% | 3.39 | 4.84 | 1,249 | 70.8% |
-| Held out | 2025-10-03 to 2026-10-01 | 80% | 5% | 3.55 | 16.18 | 323 | 69.3% |
-
-Read the table before quoting the goal. The held-out year clears both numbers (80% CAGR, 5% drawdown). The four in-sample years reach 78% CAGR but their worst drawdown is 16%, so "under 10%" is shown on one year only, and that year is also short. The in-sample years are not clean either: the symbol list was pruned using results, and the position size was set after seeing them. Treat it as a strong lead, not a proven result.
-
-**How it works**
-
-- **Universe:** the 50 2x leveraged ETFs of `etf-2x-sector-pairs-pruned`. That is 25 market sectors, each as a 2x long fund and its matched 2x inverse, with the names that lost money in both windows removed (`prune_losers symbols`).
-- **Entry:** every session it tries to buy every name in the list, nothing is ranked (`pick = all`). Each name gets a buy limit at 95% of the previous close that expires at the close. Most limits do not fill, and a name that dips 5% or more intraday does. It is a buy-the-dip rule on a volatile fund.
-- **Size:** each position is 20% of portfolio value, so at most about five fills are open at once. A filled name sits out until the next calendar month (`cooldown = month`).
-- **Exit:** the first of take profit at +3% over the fill, stop at 5% under it, or the close 2 sessions after the entry session. There is no regime filter.
-- **Why it works:** a limit order only fills on a drop, the win is small (3%) and the loss is capped (5%), and holding a day or two lets a bounce arrive. The 70% win rate pays for the 3-to-5 payoff. Both a sector and its inverse are in the list, so a dip in either is bought, and the book is long some sector whichever way the market moves.
-- **What it is not:** it sits idle on about half of all days (612 of the in-sample sessions), and the result depends on the daily low reaching the limit, so fills in live trading will differ from the backtest. This has not yet been run live.
-
-How it was built: `strategy derive` copied `rotation-2x-sector-pairs-daily-limit90` with the gridsearch parameters (95% limit, TP3, SL5, hold 2; 33% CAGR, 12% drawdown at 10% positions), then `-position-pct 0.20` doubled the position size. That took the 4-year CAGR from 33% to 78%, and the in-sample drawdown from 12% to 16%. To rerun it: `./bin/backtest -strategy rotation-2x-sector-pairs-daily-limit95-tp3-sl5-hold2-pos20`.
-
-**Buying power: 48 limits against one account**
-
-The strategy puts a buy limit on every name each session, and each is worth 20% of equity. 48 limits are about 960% of equity against 100% of cash (the live account is a cash account). The backtest and the live system handle that differently.
-
-- **Backtest:** an order that does not fill reserves nothing. Only names whose daily low reaches the limit become entries, and on a day with several fills they are taken in alphabetical order. A fill that costs more than the cash left is skipped, and a skipped name is not marked filled, so it is not put on the monthly cooldown. Cash is the only cap on how many names are held.
-- **Live:** a working buy order reserves its cash at the broker, so the orders cannot all rest. `trade_orchestrator` stages them as `WATCHING` (no cash claimed) and `trigger_limits` handles them in three steps:
-  1. **Seat before the open (09:20, 09:31 to 09:50 ET).** Place limits at the broker one at a time, nearest to filling first (how far the ask must fall to reach the limit), until Schwab refuses one for buying power. The refusal is the signal that the account is full, so no count of slots is computed. The refused name goes back to `WATCHING`.
-  2. **Swap while the market is open (09:31 to 15:30 ET).** If a watched name is more than 0.3% nearer its limit than the farthest resting order, cancel the resting order, wait for Schwab to report it `CANCELED` (the cash is free only then), and seat the nearer name. At most 8 swaps per pass.
-  3. **Trigger every 5 minutes (09:35 to 16:05 ET).** When a watched name's low of the day has reached its limit, size it against the cash left at that moment and place it as a day limit with its take profit and stop. After the close, cancel every limit that was never reached.
-- **Where live and backtest differ:** the backtest picks among filled names alphabetically and live picks the nearest to filling, so the same day can book different names. More important, the backtest holds a limit on all 48 names at once, but live can rest only as many as the cash allows, 5 at 20% each. On a day when more than 5 names dip to their limit, live can miss fills the backtest booked. A name placed by the 5-minute trigger after its low was reached only fills if the price comes back to the limit. **I have not measured how often this happens or what it costs in CAGR.** Until it is measured, treat the 80% as an upper bound for the live system.
-- **To measure it:** count, in the saved `trades`, the sessions with more than 5 same-day entries, then rerun with a position cap of 5 and nearest-first ordering to see the CAGR left.
+Strategies that looked like they reached the goal and did not hold up are logged, with the reason, in [docs/StrategyLog.md](docs/StrategyLog.md). No strategy has reached the goal.
 
 ## Create and polish a strategy: GOOGL walkthrough
 
@@ -116,6 +84,8 @@ Every command in this repo, in the order you use them to take one idea from raw 
 | 3 | See what exists | `./bin/strategy` then `./bin/backtest -strategylist` | Confirms the GOOGL ids above are registered and shows row counts per family. | reads `refdata/strategies.db` |
 | 4 | Explore the idea | `./bin/study -list`, `./bin/study -study hmm_regime -symbol GOOGL`, `./bin/markov_test` | Regime study for GOOGL; `markov_test` prints the bear / sideways / bull matrix and tomorrow's odds. Use `-study googl_market_context` only if a caller supplies a cluster DB. | reads market DB; writes `data/reports/<study>.db` |
 | 5 | Train models | `./bin/train markov GOOGL` and `./bin/train tree GOOGL` | Fits the Markov regime table and the depth-3 tree that `markov_model_googl` and `googl_tree` read. `streak` and `hold` have nothing to train. Use `-through <date>` on `markov` or `tree` to keep later months out of sample (see [docs/CorrectlyUsingMarkov.md](../docs/CorrectlyUsingMarkov.md)). | writes `data/markov_models.db`, `data/tree_models.db` |
+| 5a | QQQ regime model | `./bin/daily_bars` then `./bin/train hmm` (also `train hmm compare`, `extend`, `report`, `export`) | Downloads QQQ daily bars from 2010 into `data/daily_bars.db` (replacing that symbol's history; `-dry-run` writes nothing), then fits a 3-state Gaussian hidden Markov model of daily return and 20-day realized volatility, with the newest 12 months held out (`-through`, `-holdout-months`). `extend` appends predictions with the frozen parameters and never refits. `train hmm` is not part of `train all`. Full walk-through: [docs/MarkovQQQ.md](../docs/MarkovQQQ.md). | writes `data/daily_bars.db`, `data/hmm_models.db` |
+| 5b | Trade the QQQ regime | `./bin/backtest -strategy hmm-calm-qqq,hmm-calmdown-qqq -auto-download=false` | The `hmm` family reads the model from step 5a. `hmm-calm-qqq` is long while the stressed regime is unlikely, `hmm-calmdown-qqq` after stress eases. The model's regimes are volatility regimes, so a rule works with the stressed one (highest volatility), never a state number. QQQ hourly bars start 2024-10, so the backtest window is about two years and the held-out year is thin. The model's `hmm_symbol` is a row field, default QQQ | writes `data/reports/<run_id>/hmm.db` |
 | 6 | Pick a list | `./bin/stratlist sql/lists/<file>.sql` | Turns a SELECT on `strategies.db` into ids, for example every strategy whose signal symbol is GOOGL. Feed it to `backtest -strategy "$(...)"`. | reads `refdata/strategies.db` |
 | 7 | First backtest | `./bin/backtest -strategy streak-googl-down3,googl_tree,markov_model_googl` | Runs each idea alone: an IN-SAMPLE pass, then one OUT-OF-SAMPLE pass on the last 12 months. Tune on the in-sample numbers only. | writes `data/reports/<run_id>/` (`streak.db`, `tree.db`, `markov.db`, `report.html`, `oos/`) |
 | 8 | Look at the grid | `./bin/gridsearch params streak-googl-down3` | Prints the hold, take-profit, stop and regime grid with no simulation. | none |
@@ -160,7 +130,7 @@ Default files:
 |---|---|
 | Market bars | `data/market_history_hourly.db`, table `backtest_start` (`appenv.MarketDB`, `appenv.HourlyDB`). Hourly bars (timeframe 1h, `Date` = `YYYY-MM-DD HH:MM:SS` UTC) are the only bars downloaded. The daily session rows that signals and the simulation clock read (`Date` = `YYYY-MM-DD`, timeframe 1d) are derived from them in the same table. There is no separate daily database |
 | Minute bars (1m, 5m, ...) | `data/market_history_minute.db`, table `backtest_start` (`appenv.MinuteDB`; not created until minute bars are downloaded) |
-| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`, `rotation_strategy`, and `symbol_lists`: `symbol_list_id`, `list` = comma separated tickers. `etf-pre-2021` is every ETF in `universe.db` first traded before 2021-01-01, from `sql/seed/symbol_lists.sql`. A `rotation_strategy` row whose `symbols` equals a `symbol_list_id` (case and surrounding spaces ignored) uses that list; any other value is a literal ticker list. `strategy export` carries the lists a row names) |
+| Strategy tables and symbol lists | `refdata/strategies.db` (`streak_strategy`, `hold_strategy`, `tree_strategy`, `markov_strategy`, `hmm_strategy`, `rotation_strategy`, and `symbol_lists`: `symbol_list_id`, `list` = comma separated tickers. `etf-pre-2021` is every ETF in `universe.db` first traded before 2021-01-01, from `sql/seed/symbol_lists.sql`. A `rotation_strategy` row whose `symbols` equals a `symbol_list_id` (case and surrounding spaces ignored) uses that list; any other value is a literal ticker list. `strategy export` carries the lists a row names) |
 | Stock and ETF universe | `refdata/universe.db`, table `universe` |
 | Backtest results | one folder per run, `data/reports/<run_id>/`, numbered 1, 2, 3, … Inside it one database per strategy family (`markov.db`, `tree.db`, `streak.db`, `hold.db`, `builtin.db` for Go-defined strategies, `stack.db` for stacks), the HTML report as `report.html`, and the held-out pass in `oos/` with the same file names |
 | Shared-account results | `data/reports/shared_<primary>_<secondary>_….db` |
@@ -261,6 +231,7 @@ Every run prints the database it reads bars from, with size and last update, rig
 ./bin/backtest -strategy streak-voo-buy-tecl -capital 100000
 ./bin/backtest -strategy streak-voo-buy-tecl,mara_tree
 ./bin/backtest -strategy all
+./bin/backtest -family rotation                 # every row of one family: streak, hold, tree, markov, hmm, rotation (same as -strategy rotation; not combinable with -strategy)
 ./bin/backtest -strategy markov                 # every row of one family: streak, hold, tree or markov
 ./bin/backtest -strategy markov -run-id 7       # continue run 7: strategies already done in it are skipped
 ./bin/backtest -strategy "$(./bin/stratlist -comma sql/lists/sample_100_per_table.sql)"

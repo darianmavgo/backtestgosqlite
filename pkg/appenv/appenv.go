@@ -99,6 +99,11 @@ func MarketDB() string { return HourlyDB() }
 // HourlyDB is the hourly bars and the sessions derived from them.
 func HourlyDB() string { return filepath.Join(Data(), "market_history_hourly.db") }
 
+// DailyBarsDB is long-history daily closes for the few symbols a model needs more years of
+// than the hourly database holds (written by daily_bars; the hourly database is never touched).
+// It is not a market database: signals and the simulator still read only MarketDB.
+func DailyBarsDB() string { return filepath.Join(Data(), "daily_bars.db") }
+
 // MinuteDB is the minute bars (1m, 5m, ...).
 func MinuteDB() string { return filepath.Join(Data(), "market_history_minute.db") }
 
@@ -144,6 +149,10 @@ func MarkovTrainFrom() string { return strings.TrimSpace(os.Getenv("MARKOV_TRAIN
 
 // MarkovDB is the trained Markov models (written by train markov, read by backtest).
 func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
+
+// HMMDB is the trained hidden Markov models and their daily regime predictions (written by
+// train hmm, extended by the daily regime_predict, never refit by either).
+func HMMDB() string { return filepath.Join(Data(), "hmm_models.db") }
 
 // TreeDB is the trained decision trees (written by train tree, read by backtest).
 func TreeDB() string { return filepath.Join(Data(), "tree_models.db") }

@@ -184,6 +184,7 @@ func TestETFRankingByDollarVolume(t *testing.T) {
 	ref := mk("strategies.db", `CREATE TABLE streak_strategy (id TEXT, name TEXT, signal_symbol TEXT, trade_symbol TEXT);
 		CREATE TABLE tree_strategy (id TEXT, name TEXT, signal_symbol TEXT, trade_symbol TEXT);
 		CREATE TABLE markov_strategy (id TEXT, name TEXT, signal_symbol TEXT, trade_symbol TEXT);
+		CREATE TABLE hmm_strategy (id TEXT, name TEXT, hmm_symbol TEXT, trade_symbol TEXT);
 		CREATE TABLE hold_strategy (id TEXT, name TEXT, symbol TEXT);
 		INSERT INTO streak_strategy VALUES ('streak-big-down3','n','BIG','BIG'), ('streak-small-big','n','SMALL','BIG')`)
 
