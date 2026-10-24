@@ -90,6 +90,22 @@ func deriveSymbol(db *sqlx.DB, table, sym string) (int, error) {
 		if t, err := time.Parse("2006-01-02", (*last)[:10]); err == nil {
 			from = t.AddDate(0, 0, -2).Format("2006-01-02") + " 00:00:00"
 		}
+		// Hourly bars downloaded for an earlier start than the first session leave a gap that
+		// reading only from the latest session on would never fill, so read it all.
+		var first, firstHour *string
+		if err := db.Get(&first, fmt.Sprintf(`SELECT MIN(Date) FROM %s WHERE symbol = ? AND timeframe = '1d'`, table), sym); err != nil {
+			return 0, err
+		}
+		if err := db.Get(&firstHour, fmt.Sprintf(`SELECT MIN(Date) FROM %s WHERE symbol = ? AND timeframe = '1h' AND length(Date) = 19`, table), sym); err != nil {
+			return 0, err
+		}
+		if first != nil && firstHour != nil && len(*first) >= 10 && len(*firstHour) >= 10 {
+			f, e1 := time.Parse("2006-01-02", (*first)[:10])
+			h, e2 := time.Parse("2006-01-02", (*firstHour)[:10])
+			if e1 == nil && e2 == nil && h.AddDate(0, 0, 7).Before(f) {
+				from = ""
+			}
+		}
 	}
 	var rows []hourRow
 	if err := db.Select(&rows, fmt.Sprintf(`SELECT CAST(Date AS TEXT) AS Date, open, high, low, close, volume FROM %s

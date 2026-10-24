@@ -39,6 +39,9 @@ const (
 	// RuleNormalFilter is long on every session whose most likely regime is the middle volatility
 	// rank (neither the calmest nor the most stressed). It ignores stress_prob.
 	RuleNormalFilter = "normal_filter"
+	// RuleStressFilter is long on every session whose stressed-regime probability is at or over
+	// stress_prob. It is for funds that hold up or rise when the model's symbol is stressed.
+	RuleStressFilter = "stress_filter"
 )
 
 // Strategy is one hmm_strategy row, runnable by backtest, gridsearch, scoreboard and livescan.
@@ -78,6 +81,9 @@ func (s *Strategy) Description() string {
 	switch s.Row.Rule {
 	case RuleCalmDown:
 		rule = "when the " + s.hmmSymbol() + " model's stressed regime falls back under"
+	case RuleStressFilter:
+		return fmt.Sprintf("Buy %s the next session open while the %s model's stressed regime is at or over %.0f%% probability. Hold %dd, TP +%.1f%%, SL -%.1f%%.",
+			s.tradeSymbol(), s.hmmSymbol(), s.Row.StressProb*100, s.Row.HoldDays, s.Row.TakeProfitPct*100, s.Row.StopLossPct*100)
 	case RuleNormalFilter:
 		return fmt.Sprintf("Buy %s the next session open while the %s model's most likely regime is the middle (normal) volatility one. Hold %dd, TP +%.1f%%, SL -%.1f%%.",
 			s.tradeSymbol(), s.hmmSymbol(), s.Row.HoldDays, s.Row.TakeProfitPct*100, s.Row.StopLossPct*100)
@@ -264,8 +270,8 @@ func ValidateRow(row refdb.HMMStrategy) error {
 			return fmt.Errorf("%s %q is not a plain ticker", c.name, c.v)
 		}
 	}
-	if row.Rule != RuleCalmFilter && row.Rule != RuleCalmDown && row.Rule != RuleNormalFilter {
-		return fmt.Errorf("rule %q must be %s, %s or %s", row.Rule, RuleCalmFilter, RuleCalmDown, RuleNormalFilter)
+	if row.Rule != RuleCalmFilter && row.Rule != RuleCalmDown && row.Rule != RuleNormalFilter && row.Rule != RuleStressFilter {
+		return fmt.Errorf("rule %q must be %s, %s, %s or %s", row.Rule, RuleCalmFilter, RuleCalmDown, RuleNormalFilter, RuleStressFilter)
 	}
 	if row.StressProb <= 0 || row.StressProb >= 1 {
 		return fmt.Errorf("stress_prob %v must be between 0 and 1", row.StressProb)

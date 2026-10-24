@@ -398,3 +398,32 @@ func TestNormalFilterEntersWhileTheMiddleRegimeIsMostLikely(t *testing.T) {
 		t.Fatalf("description %q", d)
 	}
 }
+
+func TestStressFilterEntersExactlyWhileStressIsHigh(t *testing.T) {
+	w := newWorld(t)
+	ds, ps := stressSeries(t, w)
+	var want []string
+	for i := range ds {
+		if ps[i] >= 0.5 {
+			want = append(want, ds[i])
+		}
+	}
+	if len(want) == 0 || len(want) == len(ds) {
+		t.Fatalf("the series does not exercise the rule: %d of %d sessions qualify", len(want), len(ds))
+	}
+	got := dates(signals(t, w, row(RuleStressFilter)))
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stress_filter dates %d, want %d from the saved model", len(got), len(want))
+	}
+	// It is the other side of calm_filter: together they cover every session once.
+	calm := dates(signals(t, w, row(RuleCalmFilter)))
+	if len(calm)+len(got) != len(ds) {
+		t.Fatalf("calm_filter %d + stress_filter %d sessions, want %d", len(calm), len(got), len(ds))
+	}
+	if d := (&Strategy{Row: row(RuleStressFilter)}).Description(); !strings.Contains(d, "stressed regime is at or over") {
+		t.Fatalf("description %q", d)
+	}
+	if err := ValidateRow(row(RuleStressFilter)); err != nil {
+		t.Fatal(err)
+	}
+}

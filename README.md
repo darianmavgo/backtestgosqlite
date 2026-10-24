@@ -691,15 +691,15 @@ Report how complete the bar history is for the symbols a strategy needs, so a ba
 
 Make one row of a sweep the stored defaults of a strategy: its hold days, take-profit and stop-loss. Use it on a row-backed strategy (streak, hold, tree, markov, hmm or rotation) after `gridsearch`, with the `label` of the chosen `gridsearch_results` row, exactly as `gridsearch` prints it.
 
-**Writes:** `hold_days`, `take_profit_pct` and `stop_loss_pct` of that strategy's row in `refdata/strategies.db`, and nothing else. Live by default. `-dry-run` shows the change and writes nothing.
+**Writes:** `hold_days`, `take_profit_pct` and `stop_loss_pct` of that strategy's row in `refdata/strategies.db`, and then the table's seed file in `sql/seed`. Live by default. `-dry-run` shows the change and writes nothing.
 
 ```bash
 sqlite3 -header data/reports/12/gridsearch.db "select label, cagr from gridsearch_results order by cagr desc limit 5"
-./bin/strategy defaults -id hmm-normal-tecl -label "TECL/Hold-8d/TP+0%/SL-2%" -gridsearch-db data/reports/12/gridsearch.db -dry-run
-./bin/strategy defaults -id hmm-normal-tecl -label "TECL/Hold-8d/TP+0%/SL-2%" -gridsearch-db data/reports/12/gridsearch.db
+./bin/strategy defaults -label "TECL/Hold-8d/TP+0%/SL-2%" -gridsearch-db data/reports/12/gridsearch.db -dry-run
+./bin/strategy defaults -label "TECL/Hold-8d/TP+0%/SL-2%" -gridsearch-db data/reports/12/gridsearch.db
 ```
 
-The label must belong to `-id` (ids match loosely on case, `-` and `_`) or the command refuses. A label that appears more than once for the strategy with different parameters is refused too. It does not edit the seed file under `sql/seed` that created the row: run `strategy seed -table <table> -force` afterwards or re-running the seed puts the old values back, and re-export the bundle if the strategy is deployed. Flags: `-id`, `-label`, `-gridsearch-db` (all required), `-ref` (default `refdata/strategies.db`), `-dry-run`.
+The strategy is the one the sweep row belongs to (`gridsearch_results.strategy_id`). Add `-id` only when the sweep holds the same label for more than one strategy, or to check the row is for the strategy you expect: the label must belong to `-id` (ids match loosely on case, `-` and `_`) or the command refuses. A label that appears more than once for the strategy with different parameters is refused too. After the write it recreates the table's seed file from the database (the same dump as `strategy seed`, so the seed never holds the old values): `sql/seed/<table>.sql` if that file exists, or the `-seed` path, whatever was in it replaced. `-no-seed` skips this, and `-dry-run` writes neither. A table with no seed file gets none unless `-seed` is given. Re-export the bundle afterwards if the strategy is deployed. Flags: `-label` and `-gridsearch-db` (required), `-id`, `-seed`, `-no-seed` (optional), `-ref` (default `refdata/strategies.db`), `-dry-run`.
 
 ### strategy seed
 

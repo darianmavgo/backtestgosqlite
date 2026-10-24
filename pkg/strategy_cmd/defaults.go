@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
@@ -33,13 +34,15 @@ type sweepRow struct {
 
 // defaultsMain is `strategy defaults`.
 func defaultsMain() {
-	id := flag.String("id", "", "strategy id whose row gets the parameters")
+	id := flag.String("id", "", "strategy id whose row gets the parameters (default: the strategy the sweep row belongs to)")
 	label := flag.String("label", "", "label of the gridsearch_results row to copy, as gridsearch prints it, like TECL/Hold-8d/TP+0%/SL-2%")
 	grid := flag.String("gridsearch-db", "", "gridsearch.db holding that row, usually data/reports/<run>/gridsearch.db")
 	ref := flag.String("ref", appenv.RefDB(), "reference database whose strategy row is changed")
+	seed := flag.String("seed", "", "seed file to recreate after the change (default sql/seed/<table>.sql, recreated only if it already exists)")
+	noSeed := flag.Bool("no-seed", false, "do not recreate the seed file")
 	dryRun := flag.Bool("dry-run", false, "show the change and write nothing")
 	flag.Parse()
-	if err := SetDefaults(os.Stdout, *ref, *grid, *id, *label, *dryRun); err != nil {
+	if err := SetDefaults(os.Stdout, *ref, *grid, *id, *label, SeedOptions{Path: *seed, Skip: *noSeed}, *dryRun); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -52,10 +55,13 @@ func looseID(s string) string {
 // the given label the
 // stored defaults of the strategy id in the reference database at refPath. The row must belong to
 // that strategy. Nothing else in the strategy row changes. With dryRun it only reports.
-func SetDefaults(out io.Writer, refPath, gridPath, id, label string, dryRun bool) error {
+// Afterwards the table's seed file is recreated from the database (see SeedOptions), so the
+// committed seed never holds the old values.
+func SetDefaults(out io.Writer, refPath, gridPath, id, label string, seed SeedOptions, dryRun bool) error {
 	label = strings.TrimSpace(label)
-	if id == "" || gridPath == "" || label == "" {
-		return fmt.Errorf("defaults needs -id <strategy>, -label <gridsearch_results label> and -gridsearch-db <path>")
+	id = strings.TrimSpace(id)
+	if gridPath == "" || label == "" {
+		return fmt.Errorf("defaults needs -label <gridsearch_results label> and -gridsearch-db <path> (and -id <strategy> when the sweep holds more than one strategy with that label)")
 	}
 	gdb, err := storage.OpenSQLiteReadOnly(gridPath)
 	if err != nil {
@@ -65,6 +71,25 @@ func SetDefaults(out io.Writer, refPath, gridPath, id, label string, dryRun bool
 	var found []sweepRow
 	if err := gdb.Select(&found, `SELECT id, strategy_id, label, hold_days, take_profit_pct, stop_loss_pct FROM gridsearch_results WHERE label = ? ORDER BY id`, label); err != nil {
 		return fmt.Errorf("read %s: %w", gridPath, err)
+	}
+	if id == "" {
+		// The sweep says which strategy the label belongs to, unless several share it.
+		var ids []string
+		seen := map[string]bool{}
+		for _, f := range found {
+			if k := looseID(f.StrategyID); !seen[k] {
+				seen[k] = true
+				ids = append(ids, f.StrategyID)
+			}
+		}
+		switch len(ids) {
+		case 0:
+			return fmt.Errorf("no gridsearch_results row labelled %q in %s", label, gridPath)
+		case 1:
+			id = ids[0]
+		default:
+			return fmt.Errorf("label %q in %s belongs to %d strategies (%s): add -id to say which", label, gridPath, len(ids), strings.Join(ids, ", "))
+		}
 	}
 	var mine []sweepRow
 	for _, f := range found {
@@ -121,14 +146,42 @@ func SetDefaults(out io.Writer, refPath, gridPath, id, label string, dryRun bool
 		return nil
 	}
 	if dryRun {
-		fmt.Fprintln(out, "dry run: nothing written")
+		fmt.Fprintln(out, "dry run: nothing written, and the seed file is not recreated")
 		return nil
 	}
 	if _, err := rdb.Exec(`UPDATE `+table+` SET hold_days = ?, take_profit_pct = ?, stop_loss_pct = ? WHERE id = ?`, r.HoldDays, r.TakeProfit, r.StopLoss, stored); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "written to %s. The seed file that created the row (sql/seed) still holds the old values: update it too, and re-export the bundle if the strategy is deployed.\n", refPath)
+	fmt.Fprintf(out, "written to %s\n", refPath)
+	if err := recreateSeed(out, refPath, table, seed); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "If the strategy is deployed, re-export the bundle (orchestrator deploy_strategy).")
 	return nil
+}
+
+// SeedOptions say what SetDefaults does with the seed file. Skip leaves it alone. A Path is
+// always recreated. With neither, sql/seed/<table>.sql is recreated if it exists, because dumping
+// a table nobody seeds from (thousands of streak rows) would add a file nobody asked for.
+type SeedOptions struct {
+	Path string
+	Skip bool
+}
+
+func recreateSeed(out io.Writer, refPath, table string, seed SeedOptions) error {
+	if seed.Skip {
+		fmt.Fprintf(out, "seed file not recreated (-no-seed). Run: strategy seed -table %s -force\n", table)
+		return nil
+	}
+	path := seed.Path
+	if path == "" {
+		path = filepath.Join("sql", "seed", table+".sql")
+		if _, err := os.Stat(path); err != nil {
+			fmt.Fprintf(out, "no seed file at %s, so none was recreated. To make one: strategy seed -table %s\n", path, table)
+			return nil
+		}
+	}
+	return SeedFile(out, refPath, table, nil, path, true, false)
 }
 
 // findStrategyRow returns the table and stored id of the strategy row id, matching loosely on

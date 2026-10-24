@@ -109,3 +109,51 @@ func TestSplitJumpsFindsAnUnadjustedSplit(t *testing.T) {
 		t.Errorf("a jump before the window was reported: %v", got)
 	}
 }
+
+// Hourly bars downloaded later for an earlier start must get their sessions, not only the days
+// after the latest session.
+func TestDeriveBackfillsSessionsBeforeTheFirstOne(t *testing.T) {
+	db, err := storage.OpenSQLite(filepath.Join(t.TempDir(), "market_history_hourly.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := storage.EnsureBarTable(db, "backtest_start"); err != nil {
+		t.Fatal(err)
+	}
+	add := func(at string) {
+		t.Helper()
+		if _, err := db.Exec(`INSERT INTO backtest_start (symbol, Date, timeframe, open, high, low, close, volume) VALUES ('AAA', ?, '1h', 100, 101, 99, 100, 10)`, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("2024-10-09 15:00:00")
+	add("2024-10-10 15:00:00")
+	if n, err := Derive(db, "backtest_start"); err != nil || n != 2 {
+		t.Fatalf("first derive = %d, %v", n, err)
+	}
+	// Older hourly bars arrive: two in 2021, and one inside the last week before the first session.
+	add("2021-03-02 15:00:00")
+	add("2021-03-03 15:00:00")
+	add("2024-10-08 15:00:00")
+	if _, err := Derive(db, "backtest_start"); err != nil {
+		t.Fatal(err)
+	}
+	var days []string
+	if err := db.Select(&days, `SELECT substr(CAST(Date AS TEXT), 1, 10) FROM backtest_start WHERE symbol = 'AAA' AND timeframe = '1d' ORDER BY Date`); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"2021-03-02", "2021-03-03", "2024-10-08", "2024-10-09", "2024-10-10"}
+	if fmt.Sprint(days) != fmt.Sprint(want) {
+		t.Fatalf("sessions %v, want %v", days, want)
+	}
+	// Once filled, a run reads nothing old and adds no rows.
+	if _, err := Derive(db, "backtest_start"); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	db.Get(&count, `SELECT COUNT(*) FROM backtest_start WHERE timeframe = '1d'`)
+	if count != 5 {
+		t.Fatalf("session rows = %d, want 5", count)
+	}
+}

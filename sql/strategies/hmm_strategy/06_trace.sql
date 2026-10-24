@@ -30,6 +30,8 @@ SELECT
     CASE
         WHEN s.entry IS NOT NULL AND '__RULE__' = 'normal_filter' THEN 'ENTER: normal regime is the most likely, probability ' || printf('%.2f', d.normal_prob)
         WHEN '__RULE__' = 'normal_filter' AND d.normal_prob IS NOT NULL AND s.entry IS NULL AND NOT (d.normal_prob > d.calm_prob AND d.normal_prob > d.stress_prob) THEN 'no entry: normal is not the most likely regime (calm ' || printf('%.2f', d.calm_prob) || ', normal ' || printf('%.2f', d.normal_prob) || ', stressed ' || printf('%.2f', d.stress_prob) || ')'
+        WHEN s.entry IS NOT NULL AND '__RULE__' = 'stress_filter' THEN 'ENTER: stressed probability ' || printf('%.2f', d.stress_prob) || ' is at or over ' || '__STRESS_PROB__'
+        WHEN '__RULE__' = 'stress_filter' AND s.entry IS NULL AND d.stress_prob < __STRESS_PROB__ THEN 'no entry: stressed probability ' || printf('%.2f', d.stress_prob) || ' is under ' || '__STRESS_PROB__'
         WHEN s.entry IS NOT NULL THEN 'ENTER: stressed probability ' || printf('%.2f', d.stress_prob) || ' (' || '__RULE__' || ', threshold ' || '__STRESS_PROB__' || ')'
         WHEN d.stress_prob >= __STRESS_PROB__ THEN 'no entry: stressed probability ' || printf('%.2f', d.stress_prob) || ' is at or over ' || '__STRESS_PROB__'
         WHEN '__RULE__' = 'calm_down' THEN 'no entry: calm_down needs the session before to be stressed, it was ' || printf('%.2f', coalesce(d.prev_stress_prob, 0))
