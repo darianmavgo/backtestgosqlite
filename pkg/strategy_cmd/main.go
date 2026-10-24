@@ -6,6 +6,8 @@
 //	strategy export          write a reference database holding only some rows
 //	strategy coverage        report how complete the daily (or -hourly) bars are for the symbols a strategy needs
 //	strategy derive          copy a rotation row with a sweep's parameter set and/or a position size
+//	strategy seed            write a table's schema and rows as a seed SQL file
+//	strategy defaults        make one gridsearch row's hold, take-profit and stop-loss the strategy row's defaults
 package strategy_cmd
 
 import (
@@ -29,13 +31,17 @@ import (
 
 // Main is the CLI entry point of cmd/strategy.
 func Main() {
-	switch cliutils.PopSubcommand(map[string]string{"export": "export", "derive": "derive", "coverage": "coverage"}) {
+	switch cliutils.PopSubcommand(map[string]string{"export": "export", "derive": "derive", "coverage": "coverage", "defaults": "defaults", "seed": "seed"}) {
 	case "export":
 		export()
 	case "derive":
 		deriveMain()
 	case "coverage":
 		coverageMain()
+	case "defaults":
+		defaultsMain()
+	case "seed":
+		seedMain()
 	default:
 		list()
 	}

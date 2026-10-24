@@ -36,6 +36,9 @@ const (
 	// RuleCalmDown is long on the session the stressed-regime probability falls back under
 	// stress_prob after a session at or over it.
 	RuleCalmDown = "calm_down"
+	// RuleNormalFilter is long on every session whose most likely regime is the middle volatility
+	// rank (neither the calmest nor the most stressed). It ignores stress_prob.
+	RuleNormalFilter = "normal_filter"
 )
 
 // Strategy is one hmm_strategy row, runnable by backtest, gridsearch, scoreboard and livescan.
@@ -72,8 +75,12 @@ func (s *Strategy) tradeSymbol() string {
 // Description summarizes the strategy.
 func (s *Strategy) Description() string {
 	rule := "while the " + s.hmmSymbol() + " model's stressed regime is under"
-	if s.Row.Rule == RuleCalmDown {
+	switch s.Row.Rule {
+	case RuleCalmDown:
 		rule = "when the " + s.hmmSymbol() + " model's stressed regime falls back under"
+	case RuleNormalFilter:
+		return fmt.Sprintf("Buy %s the next session open while the %s model's most likely regime is the middle (normal) volatility one. Hold %dd, TP +%.1f%%, SL -%.1f%%.",
+			s.tradeSymbol(), s.hmmSymbol(), s.Row.HoldDays, s.Row.TakeProfitPct*100, s.Row.StopLossPct*100)
 	}
 	return fmt.Sprintf("Buy %s the next session open %s %.0f%% probability. Hold %dd, TP +%.1f%%, SL -%.1f%%.",
 		s.tradeSymbol(), rule, s.Row.StressProb*100, s.Row.HoldDays, s.Row.TakeProfitPct*100, s.Row.StopLossPct*100)
@@ -257,8 +264,8 @@ func ValidateRow(row refdb.HMMStrategy) error {
 			return fmt.Errorf("%s %q is not a plain ticker", c.name, c.v)
 		}
 	}
-	if row.Rule != RuleCalmFilter && row.Rule != RuleCalmDown {
-		return fmt.Errorf("rule %q must be %s or %s", row.Rule, RuleCalmFilter, RuleCalmDown)
+	if row.Rule != RuleCalmFilter && row.Rule != RuleCalmDown && row.Rule != RuleNormalFilter {
+		return fmt.Errorf("rule %q must be %s, %s or %s", row.Rule, RuleCalmFilter, RuleCalmDown, RuleNormalFilter)
 	}
 	if row.StressProb <= 0 || row.StressProb >= 1 {
 		return fmt.Errorf("stress_prob %v must be between 0 and 1", row.StressProb)

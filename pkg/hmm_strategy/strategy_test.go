@@ -340,3 +340,61 @@ func TestSignalTraceAgreesWithTheSignals(t *testing.T) {
 		}
 	}
 }
+
+// normal_filter enters while the middle volatility rank is the most likely regime. The reference
+// ranks the saved states by volatility on its own and compares the three filtered probabilities.
+func TestNormalFilterEntersWhileTheMiddleRegimeIsMostLikely(t *testing.T) {
+	w := newWorld(t)
+	db, err := storage.OpenSQLiteReadOnly(w.model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var states []int
+	if err := db.Select(&states, `SELECT state FROM hmm_params WHERE symbol = 'QQQ' ORDER BY mu_vol`); err != nil || len(states) != 3 {
+		t.Fatalf("states by volatility: %v %v", states, err)
+	}
+	var rows []struct {
+		Date  string  `db:"date"`
+		State int     `db:"state"`
+		Prob  float64 `db:"prob"`
+	}
+	if err := db.Select(&rows, `SELECT date, state, prob FROM hmm_state_prob WHERE symbol = 'QQQ' ORDER BY date, state`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	byDate := map[string]map[int]float64{}
+	var order []string
+	for _, r := range rows {
+		if byDate[r.Date] == nil {
+			byDate[r.Date] = map[int]float64{}
+			order = append(order, r.Date)
+		}
+		byDate[r.Date][r.State] = r.Prob
+	}
+	var want []string
+	for _, d := range order {
+		p := byDate[d]
+		if p[states[1]] > p[states[0]] && p[states[1]] > p[states[2]] {
+			want = append(want, d)
+		}
+	}
+	if len(want) == 0 || len(want) == len(order) {
+		t.Fatalf("the series does not exercise the rule: %d of %d sessions qualify", len(want), len(order))
+	}
+	r := row(RuleNormalFilter)
+	got := signals(t, w, r)
+	if !reflect.DeepEqual(dates(got), want) {
+		t.Fatalf("normal_filter dates %d, want %d from the saved model", len(got), len(want))
+	}
+	// It never enters on a calm_filter-only reading: some normal sessions are under the stress
+	// threshold and some calm sessions are too, so the two rules must differ.
+	if calm := dates(signals(t, w, row(RuleCalmFilter))); reflect.DeepEqual(calm, want) {
+		t.Fatal("normal_filter returned the calm_filter dates")
+	}
+	if err := ValidateRow(r); err != nil {
+		t.Fatalf("a normal_filter row must validate: %v", err)
+	}
+	if d := (&Strategy{Row: r}).Description(); !strings.Contains(d, "normal") {
+		t.Fatalf("description %q", d)
+	}
+}

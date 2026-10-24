@@ -26,8 +26,7 @@ data/*.db-shm
 data/*.db-wal
 data/*.sqlite-shm
 data/*.sqlite-wal
-*.sqlite
-*.db
+
 *.db-shm
 *.db-wal
 *.sqlite-shm

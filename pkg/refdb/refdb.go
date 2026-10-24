@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS markov_strategy (
 
 -- One runnable hmm strategy per row (pkg/hmm_strategy): trade trade_symbol from the regime the
 -- hidden Markov model of hmm_symbol is in. rule is calm_filter (long while the probability of the
--- stressed regime is under stress_prob) or calm_down (long when it falls back under stress_prob).
+-- stressed regime is under stress_prob), calm_down (long when it falls back under stress_prob) or
+-- normal_filter (long while the middle volatility regime is the most likely one, which ignores stress_prob).
 CREATE TABLE IF NOT EXISTS hmm_strategy (
 	id               TEXT PRIMARY KEY,
 	name             TEXT NOT NULL,

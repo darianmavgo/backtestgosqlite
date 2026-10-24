@@ -465,7 +465,9 @@ Run one research study.
 ./bin/study -study voo_up3_etf
 ```
 
-Registered ids: `market_context_20d`, `cluster_5pct`, `googl_market_context`, `gain_5pct_frequency`, `hmm_regime`, `etf_study`, `sp500_lead_lag`, `market_clustering`, `qqq_tqqq_volume`, `voo_up3_etf`, `mara_decision_tree`, `mu_decision_tree`, `march_april_voo_gld_uten`.
+Registered ids: `hmm_regime_etf`, `market_context_20d`, `cluster_5pct`, `googl_market_context`, `gain_5pct_frequency`, `hmm_regime`, `etf_study`, `sp500_lead_lag`, `market_clustering`, `qqq_tqqq_volume`, `voo_up3_etf`, `mara_decision_tree`, `mu_decision_tree`, `march_april_voo_gld_uten`.
+
+`hmm_regime_etf` (`./bin/study -study hmm_regime_etf [-symbol QQQ]`, about 2 minutes) splits every active ETF's next-session return by the regime the saved HMM had at the previous close, with regimes ranked by volatility. It reads `data/hmm_models.db` and `refdata/universe.db`, drops sessions with a close ratio past 1.8x as unadjusted splits, and writes `data/reports/hmm_regime_etf.db` (`hmm_regime_etf`, `hmm_regime_top` (the top 10 ETFs per regime, with `MinRegime` 100 sessions), `hmm_regime_pick` (top 10 picked in-sample, read held-out), `hmm_regime_etf_info`, `etf_dropped`; recreated on each run). Per ETF and sample (`all`, `in`, `oos`): mean and log return per regime, the Welch t of not-stressed against stressed, the share of variance explained, the volatility ratio, and the growth of holding only after not-stressed closes. The SQL is `sql/stages/hmm_regime_etf`. It needs a three-state model.
 
 `cluster_5pct` and `googl_market_context` need a cluster database supplied in code (`SetClusterDB`). The CLI does not pass one, so those two exit until a caller sets it. `cluster_5pct` also expects `data/gain_5pct_frequency.db` beside the market DB.
 
@@ -684,6 +686,33 @@ Report how complete the bar history is for the symbols a strategy needs, so a ba
 ```
 
 `-id` takes strategy ids and `a+b+c` stacks and reports every symbol they need (candidates, regime symbol, benchmark); `-symbols` adds more. For each symbol it prints first and last session with a bar, sessions expected, sessions present, missing, the longest run of missing sessions and the coverage percent. A session is a day any of the listed symbols (or SPY) traded, counted from the symbol's first to its last session, so a later listing is not a gap. A session is present when the symbol has at least one regular-session hourly bar, and the table adds the average bars per covered day (a full session is 7). A day with no trade in any hour looks the same as a missing download, which is where the thin names show gaps. Flags: `-start` (default `2021-01-01`), `-end`, `-db`.
+
+### strategy defaults
+
+Make one row of a sweep the stored defaults of a strategy: its hold days, take-profit and stop-loss. Use it on a row-backed strategy (streak, hold, tree, markov, hmm or rotation) after `gridsearch`, with the `label` of the chosen `gridsearch_results` row, exactly as `gridsearch` prints it.
+
+**Writes:** `hold_days`, `take_profit_pct` and `stop_loss_pct` of that strategy's row in `refdata/strategies.db`, and nothing else. Live by default. `-dry-run` shows the change and writes nothing.
+
+```bash
+sqlite3 -header data/reports/12/gridsearch.db "select label, cagr from gridsearch_results order by cagr desc limit 5"
+./bin/strategy defaults -id hmm-normal-tecl -label "TECL/Hold-8d/TP+0%/SL-2%" -gridsearch-db data/reports/12/gridsearch.db -dry-run
+./bin/strategy defaults -id hmm-normal-tecl -label "TECL/Hold-8d/TP+0%/SL-2%" -gridsearch-db data/reports/12/gridsearch.db
+```
+
+The label must belong to `-id` (ids match loosely on case, `-` and `_`) or the command refuses. A label that appears more than once for the strategy with different parameters is refused too. It does not edit the seed file under `sql/seed` that created the row: run `strategy seed -table <table> -force` afterwards or re-running the seed puts the old values back, and re-export the bundle if the strategy is deployed. Flags: `-id`, `-label`, `-gridsearch-db` (all required), `-ref` (default `refdata/strategies.db`), `-dry-run`.
+
+### strategy seed
+
+Write a table's schema and rows as a seed SQL file, so a seed is made from the database and never edited to match it. It is the equivalent of the `sqlite3` `.schema` and `.dump` for one table, with rows as `INSERT OR REPLACE` ordered by `id`, so running the file twice changes nothing.
+
+**Writes:** `sql/seed/<table>.sql` (or `-out`). It refuses to replace a file that exists unless `-force`, because a hand-written seed has comments the dump does not keep. `-dry-run` prints the seed to the terminal and writes nothing. It reads the database and never changes it.
+
+```bash
+./bin/strategy seed -table hmm_strategy -dry-run
+./bin/strategy seed -table hmm_strategy -ids hmm-normal-tecl,hmm-calm-soxl -out sql/seed/hmm_strategy.sql -force
+```
+
+Flags: `-table` (required), `-ids` (only these rows), `-out`, `-ref` (default `refdata/strategies.db`), `-force`, `-dry-run`. The table needs an `id` column. It does not write the `.duckql` twin. Dump a table right after `strategy defaults` or any other change, so the seed matches.
 
 ### strategy derive
 
