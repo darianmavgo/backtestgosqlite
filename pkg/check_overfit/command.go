@@ -3,7 +3,6 @@ package check_overfit
 import (
 	"context"
 	"database/sql"
-	"flag"
 	"fmt"
 	"io"
 
@@ -18,21 +17,6 @@ type Config struct {
 	RunID    int    // run folder holding walk_forward.db when DB is empty; 0 = the latest run
 	Strategy string // comma-separated ids to show; empty or "all" shows every strategy in the file
 	Gates    Gates
-}
-
-// Main parses flags and runs. It returns errors instead of exiting.
-//
-// Deprecated: check_overfit is the second half of `validate`. Use `validate verdict`.
-func Main(out io.Writer) error {
-	var conf Config
-	flag.StringVar(&conf.DB, "db", "", "SQLite file written by walk_forward (default: walk_forward.db in the run folder)")
-	flag.IntVar(&conf.RunID, "run-id", 0, "run folder under data/reports holding walk_forward.db (0 = the latest run)")
-	flag.StringVar(&conf.Strategy, "strategy", "", "comma-separated strategy ids to show (default: every strategy in the file)")
-	flag.IntVar(&conf.Gates.MinOOSTrades, "min-oos-trades", 8, "below this many out-of-sample trades the verdict is INSUFFICIENT")
-	flag.IntVar(&conf.Gates.TrialCutoff, "trial-cutoff", 20, "parameter combinations at or above this can be CURVE_FIT when the out-of-sample Sharpe collapses")
-	flag.Float64Var(&conf.Gates.Decay, "decay", 0.25, "out-of-sample Sharpe below this fraction of in-sample Sharpe is DECAYS (and CURVE_FIT when trials are high)")
-	flag.Parse()
-	return Report(context.Background(), out, conf)
 }
 
 // Report prints the verdict of every strategy in the walk-forward database: the

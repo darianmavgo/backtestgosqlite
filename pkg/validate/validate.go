@@ -7,8 +7,7 @@
 //	validate verdict         only the verdict (reads walk_forward.db)
 //
 // Both halves keep their files in one run folder, data/reports/<run_id>/.
-// pkg/walk_forward and pkg/check_overfit hold the logic and the old commands of
-// those names remain as deprecated aliases.
+// pkg/walk_forward and pkg/check_overfit hold the logic.
 package validate
 
 import (

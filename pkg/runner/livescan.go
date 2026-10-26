@@ -14,7 +14,7 @@ const DefaultBarsTable = "backtest_start"
 // RunLiveScan runs the live signal-scan phase in-process with the standard
 // defaults: DefaultBarsTable, one worker per CPU, and AutoDownload on, so a
 // fresh or empty marketDB is created and filled for the strategies' symbols
-// (Yahoo primary, Stooq fallback, no API key) before scanning. A stale tip
+// (the configured market data source) before scanning. A stale tip
 // is still refused via ResolveLiveAsOf. outDir, if set, receives
 // livescan.db. It is the entrypoint for callers that embed livescan instead
 // of shelling out to the cmd/livescan binary.

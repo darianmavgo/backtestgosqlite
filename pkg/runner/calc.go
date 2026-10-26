@@ -40,10 +40,9 @@ func calcDir(outDir string) (string, func()) {
 	}
 	dir, err := os.MkdirTemp("", "bt-calc-")
 	if err != nil {
-		// Fall back to the reports folder rather than failing the run.
-		dir = filepath.Join(outDir, "calc")
-		_ = os.MkdirAll(dir, 0o755)
-		return dir, func() {}
+		// Writing scratch tables into the reports folder instead would leave them behind for
+		// the next run to find, so stop.
+		panic(fmt.Sprintf("runner: cannot create a temporary folder for the calculation databases: %v (check free space and permissions on the OS temp folder, or run with -keep-calc to use <out-dir>/calc)", err))
 	}
 	return dir, func() { _ = os.RemoveAll(dir) }
 }

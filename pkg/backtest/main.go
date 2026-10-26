@@ -199,14 +199,10 @@ func Main() {
 	//                          newer market data, or an edited SQL pipeline
 	//                          since the result was made) and exit — no
 	//                          backtests run
-	//   backtest optimized  -> deprecated: this is `gridsearch apply`, which calls
-	//                          into this package. Runs every selected strategy
-	//                          with the best config a prior sweep found for it
 	//   backtest covered-call -> hold -symbol (default VOO) and sell a monthly
 	//                          call; needs `market_history -source polygon-options`
 	//   backtest stack      -> rank existing strategies as idle-cash overlays
 	//                          on one primary, one shared cash ledger
-	//                          (stack-eval is the deprecated name)
 	conf := DefaultConfig()
 	d := conf
 	flag.StringVar(&conf.Db, "db", d.Db, "Path to source SQLite DB containing historical market bars")
@@ -250,17 +246,7 @@ func Main() {
 	flag.Float64Var(&conf.OptSlip, "opt-slip", d.OptSlip, "(covered-call) $ per share given up vs the last-trade option price when selling")
 	flag.BoolVar(&conf.NoReinvestDividends, "no-reinvest-dividends", d.NoReinvestDividends, "Total-return strategies (e.g. schd-buy-hold): take dividends as idle cash instead of reinvesting them")
 	flag.StringVar(&conf.DefaultAsset, "default-asset", d.DefaultAsset, "Shared-account only: symbol that leftover cash is held in after each session (e.g. GOOGL)")
-	called := ""
-	if len(os.Args) > 1 {
-		called = os.Args[1]
-	}
-	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "optimized": "optimized", "stack": "stack-eval", "stack-eval": "stack-eval", "newrun": "newrun", "lastrun": "lastrun"})
-	switch called {
-	case "stack-eval":
-		fmt.Fprintln(os.Stderr, "note: `backtest stack-eval` is now `backtest stack`")
-	case "optimized":
-		fmt.Fprintln(os.Stderr, "note: `backtest optimized` is now `gridsearch apply`")
-	}
+	conf.Mode = cliutils.PopSubcommand(map[string]string{"covered-call": "covered-call", "stale": "stale", "stack": "stack-eval", "newrun": "newrun", "lastrun": "lastrun"})
 	flag.Parse()
 	conf.Args = flag.Args()
 	if family != "" {

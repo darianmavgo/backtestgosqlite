@@ -191,7 +191,8 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 // trained model produces no signals and says how to train one.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	if s.marketDBPath == "" || s.calcDBPath == "" {
-		return nil // Go fallback not implemented for MarkovModel
+		log.Printf("markov_strategy %s: no signals: market and calc database paths are not set (SetDatabases was not called); the strategy only runs through the SQL pipeline", s.ID())
+		return nil
 	}
 	dir := s.PipelineDir
 	if dir == "" {

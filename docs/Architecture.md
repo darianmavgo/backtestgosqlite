@@ -9,7 +9,7 @@ The module is `github.com/darianmavgo/backtestgosqlite`. SQLite is `modernc.org/
 ```
 cmd/<name>/main.go     thin main; calls pkg/<name>.Main
 pkg/appenv             APP_FOLDER and .env
-pkg/datasource         Yahoo, Stooq, Polygon, Polygon options, SQLite reads
+pkg/datasource         Alpaca, Polygon, Polygon options, Yahoo (daily bars), SQLite reads
 pkg/market_history     gap-filling writer into the market DB
 pkg/storage            bar, trade, signal, equity, performance, option schemas
 pkg/refdb              strategies.db universes, ETF-tree rows, streak_strategy
@@ -54,7 +54,7 @@ data/reports/          one SQLite file per run, plus HTML
 
 `market_history.Run` opens `-db`, ensures the bar table, and upserts. With no `-symbols` it reads `SELECT DISTINCT symbol FROM <table>` in the settings DB (`leveraged_etf` by default, `-limit 50`). A `-symbols` name that is a `symbol_lists` id expands to that list's tickers (`expandSymbolLists`). Bare arguments are tickers when `-symbols` is empty: commas are separators, values are uppercased.
 
-Coverage is per `(symbol, timeframe)`. The writer requests only the missing span unless `-force`. Yahoo is the default primary source and Stooq is its fallback. `-source polygon` uses Polygon and falls back to Yahoo. `-source stooq` uses Stooq only. `-source polygon-options` does not download equities; it lists call chains for one underlying and stores them in the market DB. The Polygon key is `-polygon-key` or `POLYGON_API_KEY` via `datasource.ResolvePolygonAPIKey`. Stooq's HTTP body is parsed in memory into `models.Bar` and then inserted. There is no file ingest path.
+Coverage is per `(symbol, timeframe)`. The writer requests only the missing span unless `-force`. The default source is Alpaca and `-source polygon` uses Polygon. There is no fallback: a failed download is an error naming the source and symbol. `-source polygon-options` does not download equities; it lists call chains for one underlying and stores them in the market DB. The Polygon key is `-polygon-key` or `POLYGON_API_KEY` via `datasource.ResolvePolygonAPIKey`. Each source's HTTP body is parsed in memory into `models.Bar` and then inserted. There is no file ingest path.
 
 Bar table (`storage.EnsureBarTable`), default name `backtest_start`:
 

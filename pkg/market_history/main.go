@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/darianmavgo/backtestgosqlite/pkg/datasource"
-	"github.com/darianmavgo/backtestgosqlite/pkg/models"
 	"github.com/darianmavgo/backtestgosqlite/pkg/refdb"
 	"github.com/darianmavgo/backtestgosqlite/pkg/sessions"
 	"github.com/darianmavgo/backtestgosqlite/pkg/storage"
@@ -97,22 +96,6 @@ func expandSymbolLists(settingsDB string, tokens []string) ([]string, error) {
 		add(strings.ToUpper(tok))
 	}
 	return out, nil
-}
-
-func fetchWithFallback(ctx context.Context, out io.Writer, primary, fallback datasource.DataSource, req datasource.FetchRequest) ([]models.Bar, error) {
-	bars, err := primary.Fetch(ctx, req)
-	if err == nil && len(bars) > 0 {
-		return bars, nil
-	}
-	if fallback != nil {
-		fmt.Fprintf(out, "Primary source (%s) failed for %s: %v. Attempting fallback to %s...\n", primary.Name(), req.Symbol, err, fallback.Name())
-		fallbackBars, fallbackErr := fallback.Fetch(ctx, req)
-		if fallbackErr == nil && len(fallbackBars) > 0 {
-			return fallbackBars, nil
-		}
-		return nil, fmt.Errorf("%s failed: %w (fallback %s failed: %v)", primary.Name(), err, fallback.Name(), fallbackErr)
-	}
-	return nil, err
 }
 
 // Config holds every setting of a download run. Zero values mean "unset";
@@ -421,7 +404,6 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	var primarySource datasource.DataSource
-	var fallbackSource datasource.DataSource
 
 	switch strings.ToLower(cfg.Source) {
 	case "polygon":
@@ -501,7 +483,7 @@ func Run(ctx context.Context, cfg Config) (*Summary, error) {
 		fetchError := false
 
 		for _, winReq := range missingWindows {
-			bars, err := fetchWithFallback(ctx, out, primarySource, fallbackSource, winReq)
+			bars, err := primarySource.Fetch(ctx, winReq)
 			if err != nil {
 				fmt.Fprintf(out, "[%d/%d] Failed fetching missing data for %s (%s to %s): %v\n",
 					idx+1, len(symbols), sym, winReq.StartDate.Format("2006-01-02"), winReq.EndDate.Format("2006-01-02"), err)

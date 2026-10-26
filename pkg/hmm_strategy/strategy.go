@@ -220,6 +220,7 @@ func (s *Strategy) SetDatabases(marketDBPath, calcDBPath string) {
 // pipeline. It never trains: a symbol with no model produces no signals and says how to train one.
 func (s *Strategy) GenerateSignals(barsBySymbol map[string][]models.Bar) []models.Signal {
 	if s.marketDBPath == "" || s.calcDBPath == "" {
+		log.Printf("hmm_strategy %s: no signals: market and calc database paths are not set (SetDatabases was not called)", s.ID())
 		return nil
 	}
 	sym := s.hmmSymbol()
