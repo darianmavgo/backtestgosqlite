@@ -107,9 +107,9 @@ func TestStaleModelWarns(t *testing.T) {
 	}
 }
 
-// A live scan prepares each markov strategy: it trains the signal symbol through the
-// latest bar when the saved model is behind, and does nothing when it is current.
-func TestPrepareTrainsThroughTheLatestBarOnlyWhenBehind(t *testing.T) {
+// A live scan prepares each markov strategy: it extends the saved model through the latest bar
+// when it is behind, does nothing when it is current, and fails when there is no model.
+func TestPrepareExtendsOnlyWhenBehindAndNeverTrains(t *testing.T) {
 	app := t.TempDir()
 	t.Setenv("APP_FOLDER", app)
 	market := realbars.Copy(t, "GOOGL")
@@ -123,8 +123,18 @@ func TestPrepareTrainsThroughTheLatestBarOnlyWhenBehind(t *testing.T) {
 		t.Fatalf("last bar %q %v", last, err)
 	}
 
+	// No model: Prepare says how to make one instead of fitting one from the bars it happens to hold.
+	if err := s.Prepare(context.Background(), market); err == nil || !strings.Contains(err.Error(), "train markov -symbols GOOGL") {
+		t.Fatalf("a symbol with no model must fail Prepare naming the train command, got %v", err)
+	}
+	if _, err := os.Stat(modelDB); err == nil {
+		t.Fatal("Prepare created a model file")
+	}
+	if _, err := train.TrainMarkov(context.Background(), train.MarkovConfig{MarketDB: market, ModelDB: modelDB, Symbols: []string{"GOOGL"}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Prepare(context.Background(), market); err != nil {
-		t.Fatalf("first Prepare: %v", err)
+		t.Fatalf("Prepare with a current model: %v", err)
 	}
 	trained, ok := ModelLastDate(modelDB, "GOOGL")
 	if !ok || trained != last {

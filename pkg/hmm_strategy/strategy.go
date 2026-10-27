@@ -112,8 +112,10 @@ func (s *Strategy) MinHistoryBars() int { return 25 }
 // live scan calls it each session: it downloads the symbol's daily bars and runs the filter with
 // the parameters frozen at the model's trained_through, the same way an out-of-sample backtest
 // scores the sessions after its cutoff. It never refits and never creates a model: a symbol with
-// none needs `train hmm`. Running it on every instance keeps the strategy independent of the
-// instance's ephemeral model file and of the regime_predict job.
+// none needs `train hmm`. The model file's last date is the only thing it consults, so a caller
+// that already holds predictions for newer sessions (the orchestrator loads them from its
+// database before the scan) makes Prepare return without a download; the strategy itself needs no
+// database and works from the bundled model alone.
 func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 	sym := s.hmmSymbol()
 	modelDB := appenv.HMMDB()

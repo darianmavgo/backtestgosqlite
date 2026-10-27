@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -71,8 +69,9 @@ func (s *Strategy) MinHistoryBars() int {
 // A live scan calls it each session, because the model holds one prediction per date and has none
 // for a session it was not trained through. It never refits an existing model: it scores the new
 // sessions with the counts frozen at the model's trained_through, which is how an out-of-sample
-// backtest scores the sessions after its cutoff, so live and out-of-sample agree. Only a symbol
-// with no model at all is trained here (MARKOV_TRAIN_THROUGH and MARKOV_TRAIN_FROM apply then).
+// backtest scores the sessions after its cutoff, so live and out-of-sample agree. A symbol with
+// no model is an error: a model fitted on whatever bars the instance holds is not the one that
+// was backtested, so training is a deliberate `train markov` and an export, never a side effect.
 func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 	sym := strings.ToUpper(strings.TrimSpace(s.Row.SignalSymbol))
 	last, err := storage.SymbolLastDate(marketDB, sym)
@@ -102,18 +101,7 @@ func (s *Strategy) Prepare(ctx context.Context, marketDB string) error {
 		}
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(modelDB), 0o755); err != nil {
-		return err
-	}
-	res, err := train.TrainMarkov(ctx, train.MarkovConfig{MarketDB: marketDB, ModelDB: modelDB, Symbols: []string{sym},
-		Through: appenv.MarkovTrainThrough(), From: appenv.MarkovTrainFrom()})
-	if err != nil {
-		return fmt.Errorf("train markov %s: %w", sym, err)
-	}
-	if res.Trained == 0 {
-		return fmt.Errorf("train markov %s trained no model (fewer than 21 bars?)", sym)
-	}
-	return nil
+	return fmt.Errorf("no Markov model for %s in %s: train one with `train markov -symbols %s` in backtestgosqlite, then export the bundle (scripts/export_strategies.sh) so the deployed binary carries it", sym, modelDB, sym)
 }
 
 // DefaultConfig maps every execution column.

@@ -139,19 +139,11 @@ func RequireHourly(path string) error {
 	return fmt.Errorf("%s is not an hourly database: daily databases are retired, pass %s", path, HourlyDB())
 }
 
-// MarkovTrainThrough is the last session a live Markov retrain may learn from
-// (MARKOV_TRAIN_THROUGH, YYYY-MM-DD); "" = no limit, the model learns through the latest bar.
-// Set it to the in-sample end of a backtest so the deployed model is the one that was tested.
-func MarkovTrainThrough() string { return strings.TrimSpace(os.Getenv("MARKOV_TRAIN_THROUGH")) }
-
-// MarkovTrainFrom is the first session a live Markov retrain may learn from (MARKOV_TRAIN_FROM).
-func MarkovTrainFrom() string { return strings.TrimSpace(os.Getenv("MARKOV_TRAIN_FROM")) }
-
 // MarkovDB is the trained Markov models (written by train markov, read by backtest).
 func MarkovDB() string { return filepath.Join(Data(), "markov_models.db") }
 
 // HMMDB is the trained hidden Markov models and their daily regime predictions (written by
-// train hmm, extended by the daily regime_predict, never refit by either).
+// train hmm, extended by the hmm strategies' Prepare, never refit by either).
 func HMMDB() string { return filepath.Join(Data(), "hmm_models.db") }
 
 // TreeDB is the trained decision trees (written by train tree, read by backtest).
